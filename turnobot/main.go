@@ -41,6 +41,7 @@ type Negocio struct {
 	Direccion    string     `firestore:"direccion" json:"direccion"`
 	Horario      string     `firestore:"horario" json:"horario"`
 	Telefono     string     `firestore:"telefono" json:"telefono"`
+	TimeZone     string     `firestore:"timezone" json:"timezone"`
 	Servicios    []Service  `json:"servicios"`
 	Empleados    []Employee `json:"empleados"`
 }
@@ -280,9 +281,11 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		http.Error(w, "Formato de hora inválido. Use HH:MM", http.StatusBadRequest)
 		return
 	}
+	// Construir el instante exacto en la zona horaria del negocio
+	loc := shopLocation(ctx, slug)
 	eventDateTime := time.Date(
 		parsedDate.Year(), parsedDate.Month(), parsedDate.Day(),
-		hour.Hour(), hour.Minute(), 0, 0, bogotaLocation(),
+		hour.Hour(), hour.Minute(), 0, 0, loc,
 	)
 
 	// Resolver el nombre y la duración real del servicio a partir de su ID
@@ -403,8 +406,9 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Firestore devuelve los timestamps en UTC; se formatean en la zona horaria
-	// del negocio (America/Bogota) para que la hora mostrada coincida con la elegida.
-	loc := bogotaLocation()
+	// del negocio (configurada en el documento, fallback America/Bogota) para
+	// que la hora mostrada coincida con la elegida.
+	loc := shopLocation(ctx, slug)
 
 	// Mapa empID -> nombre para mostrar el profesional asignado
 	empNames := map[string]string{}
@@ -518,6 +522,31 @@ func bogotaLocation() *time.Location {
 	return loc
 }
 
+// getShopTimeZone devuelve la zona horaria configurada del negocio
+// (campo "timezone" en Firestore) o un fallback seguro si no existe.
+func getShopTimeZone(ctx context.Context, slug string) string {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return "America/Bogota" // Fallback seguro
+	}
+	var negocio Negocio
+	doc.DataTo(&negocio)
+	if negocio.TimeZone == "" {
+		return "America/Bogota"
+	}
+	return negocio.TimeZone
+}
+
+// shopLocation devuelve el *time.Location del negocio, resolviendo la zona
+// horaria desde Firestore con respaldo a Bogotá si es inválida o no existe.
+func shopLocation(ctx context.Context, slug string) *time.Location {
+	loc, err := time.LoadLocation(getShopTimeZone(ctx, slug))
+	if err != nil {
+		return bogotaLocation()
+	}
+	return loc
+}
+
 // ---------------------------------------------------------------------------
 // Google Calendar helpers (lógica centralizada)
 // ---------------------------------------------------------------------------
@@ -552,8 +581,11 @@ func calendarServiceForEmployee(ctx context.Context, negocioID, empID string) (*
 func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, durationMinutes int) ([]string, error) {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
 
+	// Usar la zona horaria del negocio, NO la del servidor local
+	loc := shopLocation(ctx, negocioID)
+
 	// Horario laboral base (9am a 6pm)
-	startDay := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, bogotaLocation())
+	startDay := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, loc)
 	endDay := startDay.Add(9 * time.Hour)
 
 	if err != nil {
@@ -684,16 +716,19 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 	// Usar la duración dinámica en lugar de 1 hora fija
 	end := start.Add(time.Duration(durationMinutes) * time.Minute)
 
+	// Etiquetar el evento con la zona horaria del negocio
+	tzString := getShopTimeZone(ctx, negocioID)
+
 	evt := &calendar.Event{
 		Summary:     fmt.Sprintf("Cita - %s", serviceName),
 		Description: "Agendado automáticamente vía Turnobot Web",
 		Start: &calendar.EventDateTime{
 			DateTime: start.Format(time.RFC3339),
-			TimeZone: "America/Bogota",
+			TimeZone: tzString,
 		},
 		End: &calendar.EventDateTime{
 			DateTime: end.Format(time.RFC3339),
-			TimeZone: "America/Bogota",
+			TimeZone: tzString,
 		},
 	}
 	created, err := svc.Events.Insert(emp.CalendarID, evt).Context(ctx).Do()

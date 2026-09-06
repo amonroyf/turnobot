@@ -32,6 +32,7 @@ func main() {
 		"direccion":   "Calle 123 # 45-67, Bogotá",
 		"horario":     "Lun - Sáb: 9:00 AM a 7:00 PM",
 		"telefono":    "3001234567",
+		"timezone":    "America/Bogota",
 	})
 	if err != nil {
 		log.Fatalf("Error creando negocio: %v", err)

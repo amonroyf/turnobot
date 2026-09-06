@@ -58,6 +58,7 @@ export default function RegisterShop() {
         horario: '',
         telefono: '',
         calendar_id: 'primary',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, // Detecta la zona del navegador
         created_at: new Date()
       });
 
