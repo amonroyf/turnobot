@@ -1,0 +1,47 @@
+# Binarios compilados
+turnobot/turnobot
+*.exe
+*.exe
+*.exe
+
+# Node modules (dependencias del frontend)
+frontend/node_modules/
+
+# Build artifacts del frontend
+frontend/dist/
+frontend/.vite/
+
+# Archivos de entorno
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.DB
+
+# IDE
+.vscode/
+.idea/
+
+# Build del backend (si se compila localmente)
+turnobot/turnobot
+
+# Archivos fuente de dependencias
+**/go.mod
+**/go.sum
+
+# Frontend dist + node_modules
+frontend/dist/
+frontend/node_modules/
+frontend/.vite/
+
+# Archivo de paquetes de dependencias de frontend
+package-lock.json
+
+# Archivos temporales
+/tmp/
