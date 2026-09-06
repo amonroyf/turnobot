@@ -9,11 +9,20 @@ export default function MisCitas({ slug, API_URL, onVolver }) {
 
   const buscarCitas = async (e) => {
     e.preventDefault();
-    if (!telefono.trim()) return;
+
+    // Eliminar todo lo que no sea un número (espacios, guiones, letras)
+    const telefonoLimpio = telefono.replace(/\D/g, '');
+
+    if (!telefonoLimpio) {
+      setError("Por favor ingresa un número válido.");
+      return;
+    }
+
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas?telefono=${encodeURIComponent(telefono.trim())}`);
+      // Enviar el teléfono limpio al backend
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas?telefono=${telefonoLimpio}`);
       if (!res.ok) throw new Error('Error del servidor');
       const data = await res.json();
       setCitas(data);

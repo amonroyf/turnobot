@@ -785,6 +785,9 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		frontendURL = "http://localhost:5173"
 	}
 
+	// NUEVO: Asegurarnos de limpiar barras finales y apuntar a la ruta /admin
+	adminURL := strings.TrimRight(frontendURL, "/") + "/admin"
+
 	// Renderizar pantalla de éxito y redirigir
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	html := fmt.Sprintf(`
@@ -794,7 +797,7 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 			<p style="color: gray; font-size: 14px;">Redirigiendo a tu panel...</p>
 			<script>setTimeout(() => window.location.href='%s', 3000)</script>
 		</div>
-	`, frontendURL)
+	`, adminURL)
 	fmt.Fprint(w, html)
 }
 

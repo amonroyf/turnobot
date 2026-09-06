@@ -70,11 +70,18 @@ export default function BookingApp() {
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    // Sanitizar el teléfono antes de enviarlo a la base de datos
+    const payload = {
+      ...booking,
+      clienteTelefono: booking.clienteTelefono.replace(/\D/g, '')
+    };
+
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(booking)
+        body: JSON.stringify(payload) // Usar el payload limpio
       });
       if (res.ok) {
         setStep(5); // Pantalla de éxito
