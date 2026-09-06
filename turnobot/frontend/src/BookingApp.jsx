@@ -63,20 +63,6 @@ export default function BookingApp({ slug = "barberia-vip" }) {
     setLoading(false);
   };
 
-  // Refrescar horarios sin bloquear la UI (se llama tras un 409)
-  const refreshSlots = async () => {
-    if (!booking.empleadoId || !booking.fecha) return;
-    try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${booking.empleadoId}&fecha=${booking.fecha}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSlots(data);
-      }
-    } catch (_) {
-      // Silencioso: el usuario ya ve el error, los slots se actualizarán al volver a elegir fecha
-    }
-  };
-
   // Paso Final: Confirmar cita
   const confirmarCita = async (e) => {
     e.preventDefault();
@@ -88,38 +74,15 @@ export default function BookingApp({ slug = "barberia-vip" }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(booking)
       });
-
       if (res.ok) {
-        setLoading(false);
         setStep(5); // Pantalla de éxito
-        return;
+      } else {
+        setError("Hubo un problema al agendar. Intenta de nuevo.");
       }
-
-      if (res.status === 409) {
-        setLoading(false);
-        const data = await res.json().catch(() => ({}));
-        if (data.error === 'double_booking') {
-          // El cliente ya tiene una cita a esta hora
-          setError("Ya tienes una cita agendada a esta hora. Por favor elige otro horario.");
-          setStep(3); // Devolver al selector de horarios
-          refreshSlots();
-        } else {
-          // Otro usuario tomó el horario (condición de carrera)
-          setError("Este horario acaba de ser reservado por otra persona. Por favor elige otro.");
-          setStep(3);
-          refreshSlots();
-        }
-        return;
-      }
-
-      // Otros errores del servidor
-      setLoading(false);
-      const data = await res.json().catch(() => ({}));
-      setError(data.message || "Hubo un problema al agendar. Intenta de nuevo.");
     } catch (err) {
-      setLoading(false);
-      setError("No se pudo conectar con el servidor. Verifica tu conexión.");
+      setError("Hubo un problema al agendar");
     }
+    setLoading(false);
   };
 
   const iniciarAgendamiento = () => {

@@ -296,6 +296,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Verificar que el cliente NO tenga ya una cita que se superponga con este horario.
+	// Un cliente no puede estar en dos citas al mismo tiempo (aunque sea con barberos diferentes).
+	if hasCustomerOverlap(ctx, slug, req.ClienteTelefono, eventDateTime) {
+		log.Printf("Doble reserva del cliente %s: %s %s en %s", req.ClienteTelefono, req.Fecha, req.Hora, slug)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "double_booking",
+			"message": "Ya tienes una cita agendada a esta hora. Por favor elige otro horario.",
+		})
+		return
+	}
+
 	// Resolver el nombre real del servicio a partir de su ID
 	serviceName := resolveServiceName(ctx, slug, req.ServicioID)
 
@@ -559,6 +573,39 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time) (
 		}
 	}
 	return slots, nil
+}
+
+// hasCustomerOverlap verifica si el cliente ya tiene una cita que se superpone
+// con el horario solicitado (mismo negocio, mismo teléfono, hora dentro de ±60 min).
+func hasCustomerOverlap(ctx context.Context, negocioID, phone string, requested time.Time) bool {
+	if phone == "" {
+		return false
+	}
+
+	docs, err := firestoreClient.Collection("reservas").
+		Where("user_phone", "==", phone).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: error verificando overlap del cliente: %v", err)
+		return false // No bloquear la reserva si hay error de Firestore
+	}
+
+	for _, d := range docs {
+		var b Booking
+		d.DataTo(&b)
+		if b.NegocioID != negocioID {
+			continue
+		}
+		// Si la diferencia entre las dos citas es menor a 60 minutos, hay superposición
+		diff := b.DateTime.Sub(requested)
+		if diff < 0 {
+			diff = -diff
+		}
+		if diff < 60*time.Minute {
+			return true
+		}
+	}
+	return false
 }
 
 // isSlotAvailable verifica si un slot horario exacto sigue libre en Google Calendar.
