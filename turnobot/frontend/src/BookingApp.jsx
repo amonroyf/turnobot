@@ -48,9 +48,11 @@ export default function BookingApp() {
   const empleadoElegido = negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
   // Paso 3: Buscar horarios cuando elige empleado y fecha
-  const fetchHorarios = async (fecha) => {
+  // opts.preserveError: mantiene el error actual (p. ej. el aviso de slot ocupado)
+  // en vez de limpiarlo, útil al recargar los horarios tras un 409.
+  const fetchHorarios = async (fecha, opts = {}) => {
     setLoading(true);
-    setError('');
+    if (!opts.preserveError) setError('');
     setBooking({ ...booking, fecha });
     try {
       // URL actualizada para enviar el servicioId y calcular saltos según su duración
@@ -83,11 +85,23 @@ export default function BookingApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload) // Usar el payload limpio
       });
+
       if (res.ok) {
         setStep(5); // Pantalla de éxito
-      } else {
-        setError("Hubo un problema al agendar. Intenta de nuevo.");
+        return;
       }
+
+      // El backend devuelve 409 cuando un slot se acaba de reservar (carrera).
+      // Mostramos su mensaje y recargamos los horarios para reflejar la baja.
+      const data = await res.json().catch(() => null);
+      if (res.status === 409 && data?.message) {
+        setError(data.message);
+        setStep(3);
+        await fetchHorarios(booking.fecha, { preserveError: true });
+        return;
+      }
+
+      setError("Hubo un problema al agendar. Intenta de nuevo.");
     } catch (err) {
       setError("Hubo un problema al agendar");
     }

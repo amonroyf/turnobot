@@ -74,14 +74,15 @@ type BookingRequest struct {
 
 // Booking is a confirmed appointment.
 type Booking struct {
-	NegocioID   string    `firestore:"negocio_id"`
-	EmpID       string    `firestore:"emp_id"`
-	UserPhone   string    `firestore:"user_phone"`
-	ClientName  string    `firestore:"client_name"`
-	ServiceName string    `firestore:"service_name"`
-	DateTime    time.Time `firestore:"date_time"`
-	CalendarEvt string    `firestore:"calendar_event_id,omitempty"`
-	CreatedAt   time.Time `firestore:"created_at"`
+	NegocioID      string    `firestore:"negocio_id"`
+	EmpID          string    `firestore:"emp_id"`
+	UserPhone      string    `firestore:"user_phone"`
+	ClientName     string    `firestore:"client_name"`
+	ServiceName    string    `firestore:"service_name"`
+	DurationMinute int       `firestore:"duration_minutes,omitempty"`
+	DateTime       time.Time `firestore:"date_time"`
+	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
+	CreatedAt      time.Time `firestore:"created_at"`
 }
 
 // ---------------------------------------------------------------------------
@@ -337,14 +338,15 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Guardar la reserva en Firestore
 	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
-		NegocioID:   slug,
-		EmpID:       req.EmpleadoID,
-		UserPhone:   req.ClienteTelefono,
-		ClientName:  req.ClienteNombre,
-		ServiceName: serviceName,
-		DateTime:    eventDateTime,
-		CalendarEvt: eventID,
-		CreatedAt:   time.Now(),
+		NegocioID:      slug,
+		EmpID:          req.EmpleadoID,
+		UserPhone:      req.ClienteTelefono,
+		ClientName:     req.ClienteNombre,
+		ServiceName:    serviceName,
+		DurationMinute: duration,
+		DateTime:       eventDateTime,
+		CalendarEvt:    eventID,
+		CreatedAt:      time.Now(),
 	})
 	if err != nil {
 		http.Error(w, "Error guardando la reserva", http.StatusInternalServerError)
@@ -588,57 +590,114 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	startDay := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, loc)
 	endDay := startDay.Add(9 * time.Hour)
 
+	var slots []string
+
 	if err != nil {
 		// Mock para desarrollo frontend si el calendario no está vinculado
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
-		return []string{"09:00", "09:30", "10:00", "14:00", "15:00"}, nil
-	}
-
-	req := &calendar.FreeBusyRequest{
-		TimeMin: startDay.Format(time.RFC3339),
-		TimeMax: endDay.Format(time.RFC3339),
-		Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
-	}
-	result, err := svc.Freebusy.Query(req).Context(ctx).Do()
-	if err != nil {
-		return nil, err
-	}
-
-	var busyPeriods [][2]time.Time
-	for _, cal := range result.Calendars {
-		for _, period := range cal.Busy {
-			tStart, _ := time.Parse(time.RFC3339, period.Start)
-			tEnd, _ := time.Parse(time.RFC3339, period.End)
-			busyPeriods = append(busyPeriods, [2]time.Time{tStart, tEnd})
+		slots = []string{"09:00", "09:30", "10:00", "14:00", "15:00"}
+	} else {
+		req := &calendar.FreeBusyRequest{
+			TimeMin: startDay.Format(time.RFC3339),
+			TimeMax: endDay.Format(time.RFC3339),
+			Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
 		}
-	}
-
-	var slots []string
-	slotDuration := time.Duration(durationMinutes) * time.Minute
-	currentTime := startDay
-
-	// Evaluar espacios iterando en saltos iguales a la duración del servicio
-	for currentTime.Before(endDay) {
-		slotEnd := currentTime.Add(slotDuration)
-		if slotEnd.After(endDay) {
-			break
+		result, err := svc.Freebusy.Query(req).Context(ctx).Do()
+		if err != nil {
+			return nil, err
 		}
 
-		free := true
-		for _, bp := range busyPeriods {
-			if currentTime.Before(bp[1]) && slotEnd.After(bp[0]) {
-				free = false
-				break
+		var busyPeriods [][2]time.Time
+		for _, cal := range result.Calendars {
+			for _, period := range cal.Busy {
+				tStart, _ := time.Parse(time.RFC3339, period.Start)
+				tEnd, _ := time.Parse(time.RFC3339, period.End)
+				busyPeriods = append(busyPeriods, [2]time.Time{tStart, tEnd})
 			}
 		}
 
-		if free && currentTime.After(time.Now()) {
-			slots = append(slots, currentTime.Format("15:04"))
+		slotDuration := time.Duration(durationMinutes) * time.Minute
+		currentTime := startDay
+
+		// Evaluar espacios iterando en saltos iguales a la duración del servicio
+		for currentTime.Before(endDay) {
+			slotEnd := currentTime.Add(slotDuration)
+			if slotEnd.After(endDay) {
+				break
+			}
+
+			free := true
+			for _, bp := range busyPeriods {
+				if currentTime.Before(bp[1]) && slotEnd.After(bp[0]) {
+					free = false
+					break
+				}
+			}
+
+			if free && currentTime.After(time.Now()) {
+				slots = append(slots, currentTime.Format("15:04"))
+			}
+			currentTime = currentTime.Add(slotDuration)
 		}
-		currentTime = currentTime.Add(slotDuration)
 	}
 
-	return slots, nil
+	// Excluir los horarios ya reservados en Firestore (fuente de verdad local).
+	// Esto protege contra la doble reserva del mismo slot aunque el empleado no
+	// tenga Google Calendar vinculado (modo mock) o hay latencia en el freebusy.
+	booked := firestoreBookedIntervals(ctx, negocioID, empID, startDay, endDay)
+	slotDur := time.Duration(durationMinutes) * time.Minute
+	filtered := slots[:0]
+	for _, s := range slots {
+		t, _ := time.Parse("15:04", s)
+		candStart := time.Date(day.Year(), day.Month(), day.Day(), t.Hour(), t.Minute(), 0, 0, loc)
+		candEnd := candStart.Add(slotDur)
+		conflict := false
+		for _, iv := range booked {
+			if candStart.Before(iv[1]) && iv[0].Before(candEnd) {
+				conflict = true
+				break
+			}
+		}
+		if !conflict {
+			filtered = append(filtered, s)
+		}
+	}
+
+	return filtered, nil
+}
+
+// firestoreBookedIntervals devuelve los intervalos [inicio, fin) ya reservados
+// para un empleado dentro de [startDay, endDay), consultando la colección reservas.
+// La duración se usa para calcular el fin del intervalo (default 60 min).
+func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, startDay, endDay time.Time) [][2]time.Time {
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", negocioID).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: no se pudieron cargar reservas para calcular slots de %s: %v", negocioID, err)
+		return nil
+	}
+
+	var intervals [][2]time.Time
+	for _, d := range docs {
+		var b Booking
+		d.DataTo(&b)
+		if b.EmpID != empID {
+			continue
+		}
+		dur := time.Duration(b.DurationMinute) * time.Minute
+		if dur <= 0 {
+			dur = 60 * time.Minute
+		}
+		start := b.DateTime
+		end := start.Add(dur)
+		// Filtrar intervalos que no tocan el día consultado
+		if !start.Before(endDay) || !end.After(startDay) {
+			continue
+		}
+		intervals = append(intervals, [2]time.Time{start, end})
+	}
+	return intervals
 }
 
 // hasCustomerOverlap verifica si el cliente ya tiene una cita que se superpone
