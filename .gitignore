@@ -1,13 +1,12 @@
-# Binarios compilados
-turnobot/turnobot
-*.exe
-
 # Node modules del frontend
 frontend/node_modules/
 
 # Build artifacts del frontend
 frontend/dist/
 frontend/.vite/
+
+# Build artifacts del backend (si se compila localmente)
+turnobot/turnobot
 
 # Archivos de entorno
 .env
@@ -25,9 +24,6 @@ Thumbs.DB
 # IDE
 .vscode/
 .idea/
-
-# Frontend package-lock (se genera localmente)
-frontend/package-lock.json
 
 # Archivos temporales
 /tmp/
