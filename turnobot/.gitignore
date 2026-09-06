@@ -31,9 +31,6 @@ Thumbs.DB
 # Build del backend (si se compila localmente)
 turnobot/turnobot
 
-# Archivos fuente de dependencias
-**/go.mod
-**/go.sum
 
 # Frontend dist + node_modules
 frontend/dist/

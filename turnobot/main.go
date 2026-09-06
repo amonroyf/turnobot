@@ -281,13 +281,26 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, bogotaLocation(),
 	)
 
+	// Verificar disponibilidad EXACTA en Google Calendar antes de crear el evento.
+	// Esto previene la condición de carrera: si otro usuario reservó este horario
+	// entre que el cliente eligió la hora y presionó "Confirmar", devolvemos 409.
+	if !isSlotAvailable(ctx, slug, req.EmpleadoID, eventDateTime) {
+		log.Printf("Slot ocupado: %s %s para emp %s en %s", req.Fecha, req.Hora, req.EmpleadoID, slug)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "slot_taken",
+			"message": "Este horario acaba de ser reservado por otra persona. Por favor elige otro.",
+		})
+		return
+	}
+
 	// Resolver el nombre real del servicio a partir de su ID
 	serviceName := resolveServiceName(ctx, slug, req.ServicioID)
 
-
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
 	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, eventDateTime)
-
 
 	// Guardar la reserva en Firestore
 	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
@@ -546,6 +559,37 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time) (
 		}
 	}
 	return slots, nil
+}
+
+// isSlotAvailable verifica si un slot horario exacto sigue libre en Google Calendar.
+// Retorna true si está disponible (o si hay mock/no-OAuth, para no bloquear el MVP).
+func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart time.Time) bool {
+	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
+	if err != nil {
+		// Sin OAuth configurado: no podemos verificar, asumimos disponible (mock mode)
+		log.Printf("Aviso: %v. No se puede verificar disponibilidad, asumiendo libre.", err)
+		return true
+	}
+
+	slotEnd := slotStart.Add(1 * time.Hour)
+
+	req := &calendar.FreeBusyRequest{
+		TimeMin: slotStart.Format(time.RFC3339),
+		TimeMax: slotEnd.Format(time.RFC3339),
+		Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
+	}
+	result, err := svc.Freebusy.Query(req).Context(ctx).Do()
+	if err != nil {
+		log.Printf("Aviso: error verificando disponibilidad: %v. Asumiendo libre.", err)
+		return true
+	}
+
+	for _, cal := range result.Calendars {
+		if len(cal.Busy) > 0 {
+			return false // Hay al menos un evento ocupando este slot
+		}
+	}
+	return true
 }
 
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
