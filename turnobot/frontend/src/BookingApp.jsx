@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
 
 // URL base del backend Go. Se configura con VITE_API_URL (o REACT_APP_API_URL).
 // Si está vacío, usa rutas relativas (el proxy de Vite en dev, o mismo dominio en prod).
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
-export default function BookingApp({ slug = "barberia-vip" }) {
-  // view: 'menu' | 'agendar' | 'citas' | 'info'
+export default function BookingApp() {
+  const { slug } = useParams();
   const [view, setView] = useState('menu');
 
   // Flujo de agendamiento

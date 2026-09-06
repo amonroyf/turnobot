@@ -281,22 +281,33 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, bogotaLocation(),
 	)
 
-	// Verificar disponibilidad EXACTA en Google Calendar antes de crear el evento.
-	// Esto previene la condición de carrera: si otro usuario reservó este horario
-	// entre que el cliente eligió la hora y presionó "Confirmar", devolvemos 409.
-	if !isSlotAvailable(ctx, slug, req.EmpleadoID, eventDateTime) {
-		log.Printf("Slot ocupado: %s %s para emp %s en %s", req.Fecha, req.Hora, req.EmpleadoID, slug)
+	// 1. Verificación estricta de disponibilidad en el último milisegundo.
+	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate)
+	if err != nil {
+		log.Printf("Error verificando disponibilidad en el calendario: %v", err)
+		http.Error(w, "Error verificando disponibilidad en el calendario", http.StatusInternalServerError)
+		return
+	}
+	disponible := false
+	for _, s := range slotsActuales {
+		if s == req.Hora {
+			disponible = true
+			break
+		}
+	}
+	if !disponible {
+		log.Printf("Slot ocupado al confirmar: %s %s para emp %s en %s", req.Fecha, req.Hora, req.EmpleadoID, slug)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "slot_taken",
-			"message": "Este horario acaba de ser reservado por otra persona. Por favor elige otro.",
+			"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
 		})
 		return
 	}
 
-	// Verificar que el cliente NO tenga ya una cita que se superponga con este horario.
+	// 2. Verificar que el cliente NO tenga ya una cita que se superponga con este horario.
 	// Un cliente no puede estar en dos citas al mismo tiempo (aunque sea con barberos diferentes).
 	if hasCustomerOverlap(ctx, slug, req.ClienteTelefono, eventDateTime) {
 		log.Printf("Doble reserva del cliente %s: %s %s en %s", req.ClienteTelefono, req.Fecha, req.Hora, slug)

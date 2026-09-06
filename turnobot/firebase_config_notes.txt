@@ -1,0 +1,13 @@
+# Firebase configuration placeholder.
+# In production, replace these values with your real Firebase project credentials.
+# Do NOT commit real secrets or private keys to the repository.
+#
+# Example structure:
+# export const firebaseConfig = {
+#   apiKey: "AIza...",
+#   authDomain: "PROJECT_ID.firebaseapp.com",
+#   projectId: "PROJECT_ID",
+#   storageBucket: "PROJECT_ID.firebasestorage.app",
+#   messagingSenderId: "...",
+#   appId: "1:...:web:...",
+# };

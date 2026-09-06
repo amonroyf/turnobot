@@ -1,0 +1,40 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Función de ayuda: Verifica si el usuario autenticado es dueño del negocio
+    function isOwner(slug) {
+      return request.auth != null &&
+             request.auth.uid == get(/databases/$(database)/documents/negocios/$(slug)).data.owner_uid;
+    }
+
+    // 1. Colección principal: NEGOCIOS
+    match /negocios/{slug} {
+      // Público: Los clientes necesitan leer el local para agendar
+      allow read: if true;
+      // Privado: Solo el dueño puede editar la información de su local
+      allow write: if request.auth != null && request.auth.uid == resource.data.owner_uid;
+
+      // Subcolecciones: SERVICIOS y EMPLEADOS
+      match /servicios/{servicioId} {
+        allow read: if true;
+        allow write: if isOwner(slug);
+      }
+
+      match /empleados/{empId} {
+        allow read: if true;
+        allow write: if isOwner(slug);
+      }
+    }
+
+    // 2. Colección principal: RESERVAS
+    match /reservas/{reservaId} {
+      // Público: Cualquiera puede CREAR una reserva
+      allow create: if true;
+
+      // Privado: Solo el dueño del negocio puede leer, editar o eliminar sus reservas
+      allow read, update, delete: if request.auth != null &&
+             request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid;
+    }
+  }
+}
