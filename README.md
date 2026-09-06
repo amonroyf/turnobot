@@ -12,7 +12,7 @@ Aplicación web para reservas de citas, con sincronización automática a Google
 ## Repositorio
 
 - `turnobot/` — backend Go (`main.go`, `seed.go`, `Dockerfile`, `go.mod`, `go.sum`).
-- `frontend/` — código del sitio web (`src/`, `public/`, `vite.config.js`).
+- `turnobot/frontend/` — código del sitio web (`src/`, `public/`, `vite.config.js`).
 - `.env.example` — plantilla de variables (no incluir `.env` en Git).
 
 ## Despliegue backend
@@ -39,7 +39,7 @@ Esto popula Firestore con un negocio de ejemplo (`barberia-vip`), servicios y em
 
 ## Frontend
 
-Desde `frontend/`:
+Desde `turnobot/frontend/`:
 
   npm install
   npm run dev
@@ -48,7 +48,7 @@ Para producción, compilar con la variable de entorno que apunte a tu backend:
 
   VITE_API_URL=https://turnobot-xxxx.run.app npm run build
 
-El resultado va en `frontend/dist/`.
+El resultado va en `turnobot/frontend/dist/`.
 
 ## Flujo de OAuth por empleado
 
@@ -68,4 +68,4 @@ El `state` transporta `negocio_id|emp_id` para guardar el refresh token en Fires
 
 - No se almacenan secretos en este repo (solo `.env.example`).
 - El binario compilado `turnobot/turnobot` no se versiona.
-- `frontend/node_modules/`, `frontend/dist/` y `frontend/package-lock.json` no se versionan.
+- `turnobot/frontend/node_modules/`, `turnobot/frontend/dist/` y `turnobot/frontend/package-lock.json` no se versionan.

@@ -1,9 +1,9 @@
 # Node modules del frontend
-frontend/node_modules/
+turnobot/frontend/node_modules/
 
 # Build artifacts del frontend
-frontend/dist/
-frontend/.vite/
+turnobot/frontend/dist/
+turnobot/frontend/.vite/
 
 # Build artifacts del backend (si se compila localmente)
 turnobot/turnobot

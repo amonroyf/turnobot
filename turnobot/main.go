@@ -230,9 +230,10 @@ func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	json.NewEncoder(w).Encode(negocio)
 }
 
-// GET /api/v1/b/{slug}/slots?emp_id=XYZ&fecha=YYYY-MM-DD
+// GET /api/v1/b/{slug}/slots?emp_id=XYZ&servicio_id=ABC&fecha=YYYY-MM-DD
 func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	empID := r.URL.Query().Get("emp_id")
+	servicioID := r.URL.Query().Get("servicio_id")
 	fechaStr := r.URL.Query().Get("fecha")
 
 	if empID == "" || fechaStr == "" {
@@ -246,7 +247,10 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate)
+	// Agrega la lectura del servicio para calcular saltos según su duración real
+	_, duration := resolveService(r.Context(), slug, servicioID)
+
+	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error obteniendo slots: %v", err)
 		http.Error(w, "Error calculando disponibilidad", http.StatusInternalServerError)
@@ -281,8 +285,11 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, bogotaLocation(),
 	)
 
+	// Resolver el nombre y la duración real del servicio a partir de su ID
+	serviceName, duration := resolveService(ctx, slug, req.ServicioID)
+
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
-	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate)
+	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error verificando disponibilidad en el calendario: %v", err)
 		http.Error(w, "Error verificando disponibilidad en el calendario", http.StatusInternalServerError)
@@ -321,11 +328,9 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Resolver el nombre real del servicio a partir de su ID
-	serviceName := resolveServiceName(ctx, slug, req.ServicioID)
-
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
-	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, eventDateTime)
+	// con la duración real del servicio.
+	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime)
 
 	// Guardar la reserva en Firestore
 	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
@@ -482,19 +487,24 @@ func deleteCalendarEvent(ctx context.Context, negocioID, empID, eventID string) 
 	}
 }
 
-// resolveServiceName busca el nombre real del servicio en Firestore a partir de su ID.
-func resolveServiceName(ctx context.Context, slug, servicioID string) string {
+// resolveService busca el nombre y la duración real del servicio en Firestore.
+func resolveService(ctx context.Context, slug, servicioID string) (string, int) {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID).Get(ctx)
 	if err != nil {
-		// Fallback: usar el ID enviado por el frontend
-		return servicioID
+		return servicioID, 60 // Fallback: 60 minutos por defecto
 	}
 	var svc Service
 	doc.DataTo(&svc)
-	if svc.Name == "" {
-		return servicioID
+
+	duration := svc.Duration
+	if duration == 0 {
+		duration = 60
 	}
-	return svc.Name
+	name := svc.Name
+	if name == "" {
+		name = servicioID
+	}
+	return name, duration
 }
 
 // bogotaLocation devuelve la zona horaria de Colombia. En el contenedor de
@@ -537,21 +547,24 @@ func calendarServiceForEmployee(ctx context.Context, negocioID, empID string) (*
 	return svc, &emp.Employee, err
 }
 
-// getFreeSlots devuelve los horarios libres de un empleado para un día concreto.
-func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time) ([]string, error) {
+// getFreeSlots devuelve los horarios libres de un empleado para un día concreto,
+// dividiendo el día en bloques de la duración real del servicio.
+func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, durationMinutes int) ([]string, error) {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
+
+	// Horario laboral base (9am a 6pm)
+	startDay := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, bogotaLocation())
+	endDay := startDay.Add(9 * time.Hour)
+
 	if err != nil {
 		// Mock para desarrollo frontend si el calendario no está vinculado
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
-		return []string{"09:00", "10:00", "11:30", "14:00", "15:00", "16:30"}, nil
+		return []string{"09:00", "09:30", "10:00", "14:00", "15:00"}, nil
 	}
 
-	start := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, bogotaLocation())
-	end := start.Add(9 * time.Hour)
-
 	req := &calendar.FreeBusyRequest{
-		TimeMin: start.Format(time.RFC3339),
-		TimeMax: end.Format(time.RFC3339),
+		TimeMin: startDay.Format(time.RFC3339),
+		TimeMax: endDay.Format(time.RFC3339),
 		Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
 	}
 	result, err := svc.Freebusy.Query(req).Context(ctx).Do()
@@ -569,20 +582,30 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time) (
 	}
 
 	var slots []string
-	for h := 9; h < 18; h++ {
-		slotStart := time.Date(day.Year(), day.Month(), day.Day(), h, 0, 0, 0, bogotaLocation())
-		slotEnd := slotStart.Add(1 * time.Hour)
+	slotDuration := time.Duration(durationMinutes) * time.Minute
+	currentTime := startDay
+
+	// Evaluar espacios iterando en saltos iguales a la duración del servicio
+	for currentTime.Before(endDay) {
+		slotEnd := currentTime.Add(slotDuration)
+		if slotEnd.After(endDay) {
+			break
+		}
+
 		free := true
 		for _, bp := range busyPeriods {
-			if slotStart.Before(bp[1]) && slotEnd.After(bp[0]) {
+			if currentTime.Before(bp[1]) && slotEnd.After(bp[0]) {
 				free = false
 				break
 			}
 		}
-		if free && slotStart.After(time.Now()) {
-			slots = append(slots, slotStart.Format("15:04"))
+
+		if free && currentTime.After(time.Now()) {
+			slots = append(slots, currentTime.Format("15:04"))
 		}
+		currentTime = currentTime.Add(slotDuration)
 	}
+
 	return slots, nil
 }
 
@@ -651,14 +674,15 @@ func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart tim
 }
 
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
-func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, start time.Time) string {
+func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time) string {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
 	if err != nil {
 		log.Printf("Aviso: %v. Generando mock event ID.", err)
 		return "mock_event_123"
 	}
 
-	end := start.Add(1 * time.Hour)
+	// Usar la duración dinámica en lugar de 1 hora fija
+	end := start.Add(time.Duration(durationMinutes) * time.Minute)
 
 	evt := &calendar.Event{
 		Summary:     fmt.Sprintf("Cita - %s", serviceName),

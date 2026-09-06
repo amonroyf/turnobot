@@ -53,10 +53,11 @@ export default function BookingApp() {
     setError('');
     setBooking({ ...booking, fecha });
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${booking.empleadoId}&fecha=${fecha}`);
+      // URL actualizada para enviar el servicioId y calcular saltos según su duración
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${booking.empleadoId}&servicio_id=${booking.servicioId}&fecha=${fecha}`);
       if (!res.ok) throw new Error('Error del servidor');
       const data = await res.json();
-      setSlots(data); // Ej: ["09:00", "10:00", "14:00"]
+      setSlots(data || []);
       setStep(3);
     } catch (err) {
       setError("Error buscando horarios");
