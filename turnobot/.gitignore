@@ -41,7 +41,9 @@ frontend/node_modules/
 frontend/.vite/
 
 # Archivo de paquetes de dependencias de frontend
-package-lock.json
+frontend/package-lock.json
+
+/turnobot/turnobot
 
 # Archivos temporales
 /tmp/
