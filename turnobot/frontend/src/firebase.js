@@ -3,12 +3,12 @@ import { getAuth, GoogleAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
+  apiKey: "AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU",
   authDomain: "stalwart-coast-439901-d0.firebaseapp.com",
   projectId: "stalwart-coast-439901-d0",
   storageBucket: "stalwart-coast-439901-d0.firebasestorage.app",
-  messagingSenderId: "TU_SENDER_ID",
-  appId: "TU_APP_ID",
+  messagingSenderId: "850305350371",
+  appId: "1:850305350371:web:39bb88e72d95ebdce2e3d6",
 };
 
 const app = initializeApp(firebaseConfig);
