@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 export default function RegisterShop() {
@@ -31,11 +31,12 @@ export default function RegisterShop() {
     setError('');
 
     try {
-      // 1. Verificar si el slug ya existe antes de crear el usuario
-      const docRef = doc(db, 'negocios', formData.slug);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
+      // 1. Verificar si el slug ya existe via REST (evita abrir un canal de
+      //    Firestore sin autenticar antes de crear el usuario: previene el
+      //    colgado del WebChannel al transicionar sesión null -> autenticado).
+      const API_URL = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API_URL}/api/v1/b/${formData.slug}`);
+      if (res.status === 200) {
         setError('Este enlace ya está en uso. Por favor, elige otro.');
         setLoading(false);
         return;
@@ -50,7 +51,7 @@ export default function RegisterShop() {
       const user = userCredential.user;
 
       // 3. Crear el documento del negocio en Firestore (inyectando el owner_uid)
-      await setDoc(docRef, {
+      await setDoc(doc(db, 'negocios', formData.slug), {
         name: formData.name,
         owner_uid: user.uid, // <-- Blindamos la regla de seguridad multi-tenant
         whatsapp: '',

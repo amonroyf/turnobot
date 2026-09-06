@@ -30,20 +30,9 @@ test.describe('Register + Admin Panel', () => {
 
     // Redirige al panel y carga el negocio recién creado
     await expect(page).toHaveURL(/\/admin$/);
-    const heading = page.getByRole('heading', { name: nombre });
-    for (let attempt = 0; attempt < 6; attempt++) {
-      try {
-        await heading.waitFor({ state: 'visible', timeout: 15000 });
-        break;
-      } catch {
-        // El stream Listen de Firestore a veces se aborta (net::ERR_ABORTED)
-        // y deja el panel en "Cargando...". Un reload con la sesión persistida
-        // reabre el canal y el panel carga.
-        await page.reload();
-        await page.waitForTimeout(2000);
-      }
-    }
-    await expect(heading).toBeVisible();
+    await expect(page.getByRole('heading', { name: nombre })).toBeVisible({
+      timeout: 30000,
+    });
 
     // El documento existe en Firestore con el owner_uid
     const negocio = await db.collection('negocios').doc(slug).get();
@@ -55,12 +44,14 @@ test.describe('Register + Admin Panel', () => {
     await page.getByPlaceholder('Minutos').fill('30');
     await page.getByPlaceholder('Precio').fill('25000');
     await page.getByRole('button', { name: 'Guardar Servicio' }).click();
-    await expect(page.getByText('Corte Tradicional')).toBeVisible();
+    await expect(page.getByText('Corte Tradicional')).toBeVisible({
+      timeout: 20000,
+    });
 
     // Crear un profesional desde el panel
     await page.getByPlaceholder('Nombre del profesional').fill('Pepe');
     await page.getByRole('button', { name: 'Añadir Profesional' }).click();
-    await expect(page.getByText('Pepe')).toBeVisible();
+    await expect(page.getByText('Pepe')).toBeVisible({ timeout: 20000 });
 
     // Verificar en Firestore las subcolecciones
     const servicios = await db.collection('negocios').doc(slug).collection('servicios').get();

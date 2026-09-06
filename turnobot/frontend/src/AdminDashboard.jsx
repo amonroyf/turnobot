@@ -11,6 +11,7 @@ import {
   where,
   getDocs,
   onSnapshot,
+  addDoc,
 } from 'firebase/firestore';
 
 export default function AdminDashboard() {
@@ -44,7 +45,7 @@ export default function AdminDashboard() {
           const docSnap = qs.docs[0];
           setNegocio({ id: docSnap.id, ...docSnap.data() });
 
-          const unSubServicios = onSnapshot(
+          onSnapshot(
             collection(db, `negocios/${docSnap.id}/servicios`),
             (snapshot) =>
               setServicios(
@@ -52,7 +53,7 @@ export default function AdminDashboard() {
               ),
           );
 
-          const unSubProfesionales = onSnapshot(
+          onSnapshot(
             collection(db, `negocios/${docSnap.id}/empleados`),
             (snapshot) =>
               setProfesionales(
@@ -64,7 +65,7 @@ export default function AdminDashboard() {
             collection(db, 'reservas'),
             where('negocio_id', '==', docSnap.id),
           );
-          const unSubReservas = onSnapshot(qReservas, (snapshot) => {
+          onSnapshot(qReservas, (snapshot) => {
             const citas = snapshot.docs
               .map((d) => ({ id: d.id, ...d.data() }))
               .sort(
@@ -73,12 +74,6 @@ export default function AdminDashboard() {
               );
             setReservas(citas);
           });
-
-          return () => {
-            unSubServicios();
-            unSubProfesionales();
-            unSubReservas();
-          };
         }
       }
 
@@ -105,6 +100,7 @@ export default function AdminDashboard() {
       );
       setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
     } catch (err) {
+      console.error('Error al guardar el servicio:', err);
       alert('Error al guardar el servicio');
     }
   };
@@ -123,6 +119,7 @@ export default function AdminDashboard() {
       );
       setNuevoProfesional({ name: '' });
     } catch (err) {
+      console.error('Error al guardar el profesional:', err);
       alert('Error al guardar el profesional');
     }
   };
@@ -153,7 +150,7 @@ export default function AdminDashboard() {
 
   if (loading) return <div className="p-8 text-center">Cargando panel...</div>;
 
-  if (!user || !negocio) {
+  if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
         <h1 className="text-3xl font-bold mb-6 text-gray-800">Turnobot Admin</h1>
@@ -163,6 +160,23 @@ export default function AdminDashboard() {
         >
           Iniciar Sesión con Google
         </button>
+      </div>
+    );
+  }
+
+  if (!negocio) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+        <h1 className="text-3xl font-bold mb-4 text-gray-800">Turnobot Admin</h1>
+        <p className="text-gray-600 mb-6">
+          Aún no has creado tu barbería.
+        </p>
+        <a
+          href="/register"
+          className="p-4 bg-black text-white font-bold rounded-xl w-full max-w-xs text-center"
+        >
+          Crear mi barbería
+        </a>
       </div>
     );
   }

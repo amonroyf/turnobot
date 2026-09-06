@@ -1,22 +1,30 @@
 import admin from 'firebase-admin';
 
-// Usa Application Default Credentials (gcloud auth application-default login).
-// Sin firebase.json de entorno: google-auth-library lee la ruta well-known
-// (~/.config/gcloud/application_default_credentials.json) o GOOGLE_APPLICATION_CREDENTIALS.
+// Usa Application Default Credentials: prioriza GOOGLE_APPLICATION_CREDENTIALS
+// (necesario en CI/CD); si no existe, google-auth-library cae a la ruta
+// well-known (~/.config/gcloud/application_default_credentials.json).
 if (!admin.apps.length) {
-  admin.initializeApp({ projectId: 'stalwart-coast-439901-d0' });
+  admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: 'stalwart-coast-439901-d0',
+  });
 }
 
 export const db = admin.firestore();
 
 const SLUG_E2E = 'tienda-e2e';
 
-// Elimina todas las reservas de la tienda de prueba para empezar con agenda vacía.
+// Elimina todas las reservas de la tienda de prueba en bloques de máximo 400
+// documentos (límite de batch de Firestore) para empezar con agenda vacía.
 export const limpiarReservasE2E = async (slug = SLUG_E2E) => {
   const snapshot = await db.collection('reservas').where('negocio_id', '==', slug).get();
-  const batch = db.batch();
-  snapshot.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
+  if (snapshot.empty) return;
+
+  for (let i = 0; i < snapshot.docs.length; i += 400) {
+    const batch = db.batch();
+    snapshot.docs.slice(i, i + 400).forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
 };
 
 // Crea la tienda estática de pruebas (idempotente) con un servicio y un empleado
