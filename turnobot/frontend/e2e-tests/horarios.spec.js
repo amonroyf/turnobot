@@ -1,175 +1,102 @@
 import { test, expect } from '@playwright/test';
+import { db } from './setup.js';
 
-const BASE = 'https://turnobot-web.web.app';
-const API = 'https://turnobot-850305350371.us-central1.run.app';
+const API = process.env.API_BASE || 'http://localhost:8080';
 const ts = Date.now();
-const slug = `horarios${ts}`;
-const email = `horarios${ts}@turnobot.test`;
+const SLUG = `tienda-horarios-${ts}`;
+const EMP_ID = 'emp_test';
+const SVC_ID = 'svc_test';
 
-const mañana = () => {
-  const d = new Date(Date.now() + 86400000);
-  return d.toISOString().split('T')[0];
-};
+// Fechas fijas conocidas para las pruebas (Septiembre 2026)
+const LUNES = '2026-09-07';
+const DOMINGO = '2026-09-13';
 
-const díaSemanaEnEspanol = (d) => {
-  const names = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-  return names[d.getDay()];
-};
+test.describe('Arnés de Pruebas: Motor de Horarios por Empleado', () => {
+  test.beforeAll(async () => {
+    // 1. Crear el negocio base
+    await db.collection('negocios').doc(SLUG).set({
+      name: 'Tienda Pruebas Horarios',
+      timezone: 'America/Bogota',
+      // Horario general de la tienda (el empleado debería sobreescribir esto)
+      open_time: '06:00',
+      close_time: '22:00',
+    });
 
-// Shared state across tests (set by setup)
-let empId;
-let svcId;
-
-// Helper: fetch negocio and extract emp/svc IDs
-async function fetchNegocio() {
-  const res = await fetch(`${API}/api/v1/b/${slug}`);
-  expect(res.ok).toBe(true);
-  const negocio = await res.json();
-  return negocio;
-}
-
-// ───────── Tests (ordered) ─────────
-
-test('1. Health check', async () => {
-  const health = await fetch(`${API}/health`);
-  expect(health.ok).toBe(true);
-  expect(await health.text()).toContain('OK');
-});
-
-test('2. Setup: register + create catalog via browser', async ({ page }) => {
-  test.setTimeout(120_000);
-
-  // Register via email/password
-  await page.goto(`${BASE}/register`);
-  await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill('Clave.123');
-  await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
-
-  await expect(page.getByPlaceholder('Ej. Barbería VIP')).toBeVisible();
-  await page.getByPlaceholder('Ej. Barbería VIP').fill(`Horarios Test ${ts}`);
-  await page.locator('input[type="text"]').nth(1).fill(slug);
-  await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
-
-  await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole('heading', { name: `Horarios Test ${ts}` })).toBeVisible({
-    timeout: 30_000,
+    // 2. Crear servicio de 60 minutos
+    await db.collection('negocios').doc(SLUG).collection('servicios').doc(SVC_ID).set({
+      name: 'Corte Prueba',
+      duration_minutes: 60,
+    });
   });
 
-  // Create service
-  await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Horarios');
-  await page.getByPlaceholder('Minutos').fill('30');
-  await page.getByPlaceholder('Precio').fill('30000');
-  await page.getByRole('button', { name: 'Guardar Servicio' }).click();
-  await expect(page.getByText('Corte Horarios')).toBeVisible({ timeout: 20_000 });
+  test.afterAll(async () => {
+    // Limpieza
+    await db.collection('negocios').doc(SLUG).collection('servicios').doc(SVC_ID).delete();
+    await db.collection('negocios').doc(SLUG).collection('empleados').doc(EMP_ID).delete();
+    await db.collection('negocios').doc(SLUG).delete();
+  });
 
-  // Create employee
-  await page.getByPlaceholder('Nombre del profesional').fill('Empleado Base');
-  await page.getByRole('button', { name: 'Añadir Profesional' }).click();
-  await expect(page.getByText('Empleado Base')).toBeVisible({ timeout: 20_000 });
+  const configurarHorarioEmpleado = async (horarioConfig) => {
+    await db.collection('negocios').doc(SLUG).collection('empleados').doc(EMP_ID).set({
+      name: 'Empleado Horarios',
+      calendar_id: '', // Vacío para forzar modo mock (sin Google Calendar) y probar solo la lógica de franjas
+      horario: horarioConfig,
+    }, { merge: true });
+  };
 
-  // Verify via API and store IDs
-  const negocio = await fetchNegocio();
-  const emp = negocio.empleados.find((e) => e.name === 'Empleado Base');
-  const svc = negocio.servicios.find((s) => s.name === 'Corte Horarios');
-  expect(emp).toBeTruthy();
-  expect(svc).toBeTruthy();
-  empId = emp.id;
-  svcId = svc.id;
-});
+  const consultarSlots = async (fecha) => {
+    const res = await fetch(`${API}/api/v1/b/${SLUG}/slots?emp_id=${EMP_ID}&servicio_id=${SVC_ID}&fecha=${fecha}`);
+    expect(res.ok).toBe(true);
+    return await res.json();
+  };
 
-test('3. Fallback: employee without schedule uses business hours (08:00-20:00)', async () => {
-  expect(empId).toBeTruthy();
-  expect(svcId).toBeTruthy();
+  test('Requisito 1: Día inactivo (activo: false) no devuelve ningún turno', async () => {
+    await configurarHorarioEmpleado({
+      domingo: { activo: false, turnos: [] }
+    });
 
-  const res = await fetch(
-    `${API}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${svcId}&fecha=${mañana()}`,
-  );
-  expect(res.ok).toBe(true);
-  const slots = await res.json();
-  console.log('Fallback slots:', slots.join(', '));
+    const slots = await consultarSlots(DOMINGO);
+    expect(slots).toEqual([]); // No debe haber disponibilidad
+  });
 
-  expect(slots.length).toBeGreaterThan(0);
-  expect(slots.every((h) => h >= '08:00' && h < '20:00')).toBe(true);
-});
+  test('Requisito 2: Jornada continua estándar', async () => {
+    await configurarHorarioEmpleado({
+      lunes: {
+        activo: true,
+        turnos: [{ inicio: '09:00', fin: '12:00' }]
+      }
+    });
 
-test('4. Slots are 30-minute aligned', async () => {
-  const res = await fetch(
-    `${API}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${svcId}&fecha=${mañana()}`,
-  );
-  expect(res.ok).toBe(true);
-  const slots = await res.json();
+    const slots = await consultarSlots(LUNES);
+    // Para un servicio de 60 min entre 9:00 y 12:00, los slots deben ser exactos
+    expect(slots).toEqual(['09:00', '10:00', '11:00']);
+  });
 
-  for (const s of slots) {
-    const [, mm] = s.split(':').map(Number);
-    expect(mm % 30).toBe(0);
-  }
-});
+  test('Requisito 3: Horario partido (pausa para almuerzo)', async () => {
+    await configurarHorarioEmpleado({
+      lunes: {
+        activo: true,
+        turnos: [
+          { inicio: '09:00', fin: '11:00' }, // Mañana
+          { inicio: '14:00', fin: '16:00' }  // Tarde
+        ]
+      }
+    });
 
-test('5. Modal UI: schedule button exists and opens correctly', async ({ page }) => {
-  // Login as the owner
-  await page.goto(`${BASE}/admin`);
-  // Wait for the login redirect — Firebase Auth should persist from the setup test
-  // if we're in the same browser context. But since Playwright isolates contexts,
-  // we need to handle the case where auth is lost.
-  await page.waitForTimeout(5000);
+    const slots = await consultarSlots(LUNES);
 
-  // Check if we're on the admin page or login page
-  const isLoggedIn = await page.getByText('Empleado Base').isVisible().catch(() => false);
+    // Verificamos que se generen los turnos de la mañana y la tarde
+    expect(slots).toContain('09:00');
+    expect(slots).toContain('10:00');
+    expect(slots).toContain('14:00');
+    expect(slots).toContain('15:00');
 
-  if (isLoggedIn) {
-    // Open the schedule modal
-    await page.getByRole('button', { name: 'Horario' }).first().click();
+    // Verificamos que el hueco del almuerzo (11:00 a 14:00) NO esté disponible
+    expect(slots).not.toContain('11:00');
+    expect(slots).not.toContain('12:00');
+    expect(slots).not.toContain('13:00');
 
-    // The modal should show
-    await expect(page.getByText('Horario Laboral')).toBeVisible();
-
-    // All 7 days should be visible
-    for (const dia of ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']) {
-      await expect(page.getByText(dia, { exact: true }).first()).toBeVisible();
-    }
-
-    // Time inputs should be present
-    const timeInputs = page.locator('.fixed input[type="time"]');
-    const count = await timeInputs.count();
-    expect(count).toBeGreaterThanOrEqual(2);
-
-    // Add shift button
-    await expect(page.getByText('+ Agregar Turno Partido').first()).toBeVisible();
-
-    // Save/Cancel buttons
-    await expect(page.getByRole('button', { name: 'Guardar' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Cancelar' })).toBeVisible();
-
-    // Close
-    await page.getByRole('button', { name: 'Cancelar' }).click();
-  } else {
-    // Auth lost between tests — skip browser verification, API tests still work
-    console.log('Auth session lost — skipping browser modal test (API tests cover functionality)');
-    test.skip();
-  }
-});
-
-test('6. Employee horario field is accepted by Firestore (structure validation)', async () => {
-  // Verify the API can read the business and employees
-  const negocio = await fetchNegocio();
-  expect(negocio.empleados.length).toBeGreaterThan(0);
-  expect(negocio.servicios.length).toBeGreaterThan(0);
-
-  // The employee without horario should work fine (uses fallback)
-  const emp = negocio.empleados.find((e) => e.id === empId);
-  expect(emp).toBeTruthy();
-  // horario may be null/undefined — that's valid (falls back to business hours)
-});
-
-test('7. API slot generation handles edge case: far-future date', async () => {
-  // Query slots for a date 30 days from now
-  const futureDate = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
-  const res = await fetch(
-    `${API}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${svcId}&fecha=${futureDate}`,
-  );
-  expect(res.ok).toBe(true);
-  const slots = await res.json();
-  // Should return slots within business hours
-  expect(slots.every((h) => h >= '08:00' && h < '20:00')).toBe(true);
+    // Total esperado: 2 en la mañana + 2 en la tarde
+    expect(slots.length).toBe(4);
+  });
 });

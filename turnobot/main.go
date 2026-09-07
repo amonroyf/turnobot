@@ -863,7 +863,9 @@ func calendarServiceForEmployee(ctx context.Context, negocioID, empID string) (*
 	emp.ID = doc.Ref.ID
 
 	if emp.RefreshToken == "" {
-		return nil, nil, fmt.Errorf("el empleado no ha vinculado su google calendar")
+		// FIX: Retornar &emp.Employee en lugar de nil para que getFreeSlots
+		// pueda leer el Horario del empleado y generar los turnos partidos.
+		return nil, &emp.Employee, fmt.Errorf("el empleado no ha vinculado su google calendar")
 	}
 
 	token := &oauth2.Token{RefreshToken: emp.RefreshToken}
@@ -935,12 +937,15 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	// Determine the shift intervals: use per-employee schedule if available,
 	// otherwise fall back to the business-level workDayRange.
 	var shiftIntervals [][2]time.Time
-	if emp != nil && emp.Horario != nil {
+	hasEmployeeSchedule := emp != nil && emp.Horario != nil
+	if hasEmployeeSchedule {
 		if dia := employeeDayHorario(emp.Horario, day.Weekday()); dia != nil {
 			shiftIntervals = splitShiftIntervals(ctx, negocioID, dia, day)
 		}
 	}
-	if len(shiftIntervals) == 0 {
+	// Only fall back to business hours if the employee has NO schedule configured.
+	// If they have a schedule but the day is inactive, return empty slots.
+	if !hasEmployeeSchedule && len(shiftIntervals) == 0 {
 		startDay, endDay := workDayRange(ctx, negocioID, day)
 		shiftIntervals = [][2]time.Time{{startDay, endDay}}
 	}
@@ -954,7 +959,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 		// Mock mode: no Google Calendar linked. Generate slots within each shift.
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
 		for _, iv := range shiftIntervals {
-			for t := iv[0]; t.Add(slotDuration).Before(iv[1]); t = t.Add(slotDuration) {
+			for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
 				if t.After(time.Now()) {
 					slots = append(slots, t.Format("15:04"))
 				}
@@ -1037,7 +1042,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	}
 	booked := firestoreBookedIntervals(ctx, negocioID, empID, bookStart, bookEnd)
 	slotDur := time.Duration(durationMinutes) * time.Minute
-	filtered := slots[:0]
+	filtered := make([]string, 0)
 	for _, s := range slots {
 		t, _ := time.Parse("15:04", s)
 		candStart := time.Date(day.Year(), day.Month(), day.Day(), t.Hour(), t.Minute(), 0, 0, loc)
