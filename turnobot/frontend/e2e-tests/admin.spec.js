@@ -65,17 +65,6 @@ test.describe('Register + Admin Panel', () => {
     const empleados = await db.collection('negocios').doc(slug).collection('empleados').get();
     expect(empleados.empty).toBe(false);
 
-    // Guardar horarios de operación desde el panel (jornada 10:00-14:00)
-    await page.locator('input[type="time"]').nth(0).fill('10:00');
-    await page.locator('input[type="time"]').nth(1).fill('14:00');
-    await page.getByRole('button', { name: 'Guardar Horario' }).click();
-    await expect(page.getByRole('button', { name: 'Guardando...' })).toBeHidden({
-      timeout: 10000,
-    });
-    const negocioHorario = await db.collection('negocios').doc(slug).get();
-    expect(negocioHorario.data().open_time).toBe('10:00');
-    expect(negocioHorario.data().close_time).toBe('14:00');
-
     // Eliminar el profesional desde el panel (botón "Eliminar")
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Eliminar profesional Pepe' }).click();

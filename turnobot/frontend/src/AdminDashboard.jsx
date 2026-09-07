@@ -171,9 +171,6 @@ export default function AdminDashboard() {
     price: '',
   });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [openTime, setOpenTime] = useState('09:00');
-  const [closeTime, setCloseTime] = useState('18:00');
-  const [guardandoHorario, setGuardandoHorario] = useState(false);
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null); // null or {id, name, horario}
 
@@ -191,8 +188,6 @@ export default function AdminDashboard() {
         if (!qs.empty) {
           const docSnap = qs.docs[0];
           setNegocio({ id: docSnap.id, ...docSnap.data() });
-          setOpenTime(docSnap.data().open_time || '09:00');
-          setCloseTime(docSnap.data().close_time || '18:00');
 
           onSnapshot(
             collection(db, `negocios/${docSnap.id}/servicios`),
@@ -292,21 +287,6 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleGuardarHorario = async (e) => {
-    e.preventDefault();
-    if (!negocio) return;
-    setGuardandoHorario(true);
-    try {
-      await updateDoc(doc(db, 'negocios', negocio.id), {
-        open_time: openTime,
-        close_time: closeTime,
-      });
-    } catch (err) {
-      console.error('Error al guardar el horario:', err);
-      alert('Error al guardar el horario');
-    }
-    setGuardandoHorario(false);
-  };
 
   const handleEliminarServicio = async (servicio) => {
     if (!negocio || !user) return;
@@ -528,6 +508,12 @@ export default function AdminDashboard() {
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
           <h2 className="text-lg font-bold mb-4 text-gray-800">Profesionales</h2>
 
+          {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-xl">
+              ⚠️ Algunos profesionales no tienen horario individual configurado. Usarán el horario general del negocio como respaldo. Haz clic en ⏰ Horario para definir turnos por profesional.
+            </div>
+          )}
+
           <ul className="space-y-3 mb-6">
             {profesionales.length === 0 && (
               <p className="text-sm text-gray-500">
@@ -599,42 +585,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-2">
-        <h2 className="text-lg font-bold mb-1 text-gray-800">Horarios de Operación</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Los turnos disponibles solo se ofrecerán dentro de esta jornada, incluso si el
-          calendario de Google del barbero tiene bloques libres fuera de ella.
-        </p>
-        <form onSubmit={handleGuardarHorario} className="flex flex-wrap items-end gap-4">
-          <label className="text-sm">
-            <span className="block text-gray-700 font-medium mb-1">Apertura</span>
-            <input
-              type="time"
-              required
-              value={openTime}
-              onChange={(e) => setOpenTime(e.target.value)}
-              className="p-3 border border-gray-300 rounded-xl text-sm"
-            />
-          </label>
-          <label className="text-sm">
-            <span className="block text-gray-700 font-medium mb-1">Cierre</span>
-            <input
-              type="time"
-              required
-              value={closeTime}
-              onChange={(e) => setCloseTime(e.target.value)}
-              className="p-3 border border-gray-300 rounded-xl text-sm"
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={guardandoHorario}
-            className="py-3 px-5 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
-          >
-            {guardandoHorario ? 'Guardando...' : 'Guardar Horario'}
-          </button>
-        </form>
-      </div>
 
       <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-2">
         <h2 className="text-lg font-bold mb-4 text-gray-800">Próximas Reservas</h2>

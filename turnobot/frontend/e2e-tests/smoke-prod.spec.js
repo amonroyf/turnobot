@@ -34,14 +34,6 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
     timeout: 30000,
   });
 
-  // Guardar horarios de operación
-  await page.locator('input[type="time"]').nth(0).fill('10:00');
-  await page.locator('input[type="time"]').nth(1).fill('14:00');
-  await page.getByRole('button', { name: 'Guardar Horario' }).click();
-  await expect(page.getByRole('button', { name: 'Guardando...' })).toBeHidden({
-    timeout: 10000,
-  });
-
   // Crear servicio y profesional
   await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Smoke');
   await page.getByPlaceholder('Minutos').fill('60');
@@ -67,7 +59,7 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
     .get();
   const svcId = servicio.docs[0].id;
 
-  // Slots limitados a la jornada 10:00-14:00 (backend en prod)
+  // Slots dentro de la jornada por defecto del negocio (09:00-18:00)
   const manana = new Date(Date.now() + 86400000);
   const fecha = manana.toISOString().split('T')[0];
   const slotsRes = await fetch(
@@ -76,7 +68,7 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   expect(slotsRes.ok).toBe(true);
   const slots = await slotsRes.json();
   expect(slots.length).toBeGreaterThan(0);
-  expect(slots.every((h) => h >= '10:00' && h < '14:00')).toBe(true);
+  expect(slots.every((h) => h >= '09:00' && h < '18:00')).toBe(true);
 
   // Límite de una reserva por cliente al día (backend en prod, vía /book)
   const phone = '3220000000';

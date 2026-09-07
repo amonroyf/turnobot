@@ -2,11 +2,66 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Función de ayuda: Verifica si el usuario autenticado es dueño del negocio
+    // ──────────────────────────────────────────────────────────────────────
+    // Helper functions
+    // ──────────────────────────────────────────────────────────────────────
+
+    // Verifica si el usuario autenticado es dueño del negocio
     function isOwner(slug) {
       return request.auth != null &&
              request.auth.uid == get(/databases/$(database)/documents/negocios/$(slug)).data.owner_uid;
     }
+
+    // Valida que un string sea una hora formato "HH:MM" (00-23 : 00-59)
+    function isValidHHMM(h) {
+      return h is string && h.size() == 5 &&
+             h.substring(0, 2) in ['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23'] &&
+             h.substring(2, 3) == ':' &&
+             h.substring(3, 5) in ['00','05','10','15','20','25','30','35','40','45','50','55'];
+    }
+
+    // Valida la estructura de un turno (inicio/fin como HH:MM)
+    function isValidTurno(t) {
+      return t is map &&
+             t.keys().hasOnly(['inicio', 'fin']) &&
+             isValidHHMM(t.inicio) &&
+             isValidHHMM(t.fin);
+    }
+
+    // Valida la estructura de un día del horario (activo + turnos[])
+    function isValidDiaHorario(d) {
+      return d is map &&
+             d.keys().hasOnly(['activo', 'turnos']) &&
+             (d.activo == true || d.activo == false) &&
+             d.turnos is list &&
+             (!d.activo ||
+               (d.turnos.size() >= 1 && d.turnos.size() <= 4 &&
+                d.turnos.hasEvery(isValidTurno)));
+    }
+
+    // Valida la estructura completa del horario semanal
+    function isValidHorarioSemanal(h) {
+      return h is map &&
+             h.keys().hasOnly(['lunes','martes','miercoles','jueves','viernes','sabado','domingo']) &&
+             isValidDiaHorario(h.lunes) &&
+             isValidDiaHorario(h.martes) &&
+             isValidDiaHorario(h.miercoles) &&
+             isValidDiaHorario(h.jueves) &&
+             isValidDiaHorario(h.viernes) &&
+             isValidDiaHorario(h.sabado) &&
+             isValidDiaHorario(h.domingo);
+    }
+
+    // Si el request incluye el campo horario, debe ser válido (o nulo)
+    function horarioIsValid() {
+      return !request.resource.data.keys().hasAny(['horario']) ||
+             request.resource.data.horario == null ||
+             isValidHorarioSemanal(request.resource.data.horario);
+    }
+
+    // ──────────────────────────────────────────────────────────────────────
+    // Colecciones
+    // ──────────────────────────────────────────────────────────────────────
 
     // 1. Colección principal: NEGOCIOS
     match /negocios/{slug} {
@@ -27,7 +82,8 @@ service cloud.firestore {
 
       match /empleados/{empId} {
         allow read: if true;
-        allow write: if isOwner(slug);
+        // write: solo el dueño Y el horario (si se envía) debe ser válido
+        allow write: if isOwner(slug) && horarioIsValid();
       }
     }
 
