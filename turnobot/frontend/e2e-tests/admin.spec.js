@@ -23,10 +23,16 @@ test.describe('Register + Admin Panel', () => {
     const slug = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
 
     await page.goto('/register');
-    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
+    await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
     await page.locator('input[type="email"]').fill(email);
     await page.locator('input[type="password"]').fill('Clave.123');
-    await page.getByRole('button', { name: 'Crear mi cuenta gratis' }).click();
+    await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
+
+    // Paso 2: nombre del local (el slug se genera solo) y finalizar
+    await expect(page.getByPlaceholder('Ej. Barbería VIP')).toBeVisible();
+    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
+    await expect(page.locator('input[type="text"]').nth(1)).toHaveValue(slug);
+    await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
     // Redirige al panel y carga el negocio recién creado
     await expect(page).toHaveURL(/\/admin$/);
@@ -70,14 +76,16 @@ test.describe('Register + Admin Panel', () => {
   // Slug ya en uso: debe mostrar error y no navegar
   test('Registro con slug ya en uso muestra error', async ({ page }) => {
     await page.goto('/register');
-    const nombre = 'Barberia VIP Duplicada';
-    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
+    await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
     await page.locator('input[type="email"]').fill(`dupe${Date.now()}@turnobot.test`);
     await page.locator('input[type="password"]').fill('Clave.123');
+    await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
 
-    // Forzar un slug existente manualmente
+    // Paso 2: forzar un slug existente manualmente
+    const nombre = 'Barberia VIP Duplicada';
+    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
     await page.locator('input[type="text"]').nth(1).fill('barberia-vip');
-    await page.getByRole('button', { name: 'Crear mi cuenta gratis' }).click();
+    await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
     await expect(page.getByText('Este enlace ya está en uso. Por favor, elige otro.')).toBeVisible();
     await expect(page).toHaveURL(/\/register$/);

@@ -11,6 +11,7 @@ if (!admin.apps.length) {
 }
 
 export const db = admin.firestore();
+export const adminAuth = admin.auth();
 
 const SLUG_E2E = 'tienda-e2e';
 
@@ -74,4 +75,34 @@ export const crearReservaE2E = async ({ slug = SLUG_E2E, phone, name, service, e
     date_time: dateTime,
     created_at: admin.firestore.FieldValue.serverTimestamp(),
   });
+};
+
+// ---- Limpieza completa de entorno real (slug + usuario Auth de prueba) ----
+// Borra reservas, subcolecciones, el negocio y la cuenta de Firebase Auth del
+// usuario de prueba. Solo debe usarse con datos E2E (ambiente de staging).
+const borrarColeccion = async (ref) => {
+  const snapshot = await ref.get();
+  for (let i = 0; i < snapshot.docs.length; i += 400) {
+    const batch = db.batch();
+    snapshot.docs.slice(i, i + 400).forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
+  }
+};
+
+export const limpiarEntornoReal = async (slug, testEmail) => {
+  await borrarColeccion(db.collection('reservas').where('negocio_id', '==', slug));
+  await borrarColeccion(db.collection(`negocios/${slug}/empleados`));
+  await borrarColeccion(db.collection(`negocios/${slug}/servicios`));
+  await db.collection('negocios').doc(slug).delete().catch(() => {});
+
+  try {
+    const userRecord = await adminAuth.getUserByEmail(testEmail);
+    await adminAuth.deleteUser(userRecord.uid);
+  } catch (err) {
+    // Usuario no existente: OK. Errores por ADC sin quota project (identitytoolkit):
+    // no bloquean la limpieza del entorno, solo dejan el usuario de prueba en Auth.
+    if (err.code !== 'auth/user-not-found') {
+      console.warn('Limpieza de usuario Auth omitida:', err.code || err.message);
+    }
+  }
 };
