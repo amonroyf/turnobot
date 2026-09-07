@@ -96,6 +96,13 @@ export default function BookingApp() {
       const data = await res.json().catch(() => null);
       if (res.status === 409 && data?.message) {
         setError(data.message);
+        // Límite de una cita por cliente al día: solo se muestra el mensaje
+        // (cubre el caso de reservar para un familiar) sin recargar horarios.
+        if (data.error === 'max_per_day') {
+          setStep(4);
+          setLoading(false);
+          return;
+        }
         setStep(3);
         await fetchHorarios(booking.fecha, { preserveError: true });
         return;

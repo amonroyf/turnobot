@@ -78,15 +78,40 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   expect(slots.length).toBeGreaterThan(0);
   expect(slots.every((h) => h >= '10:00' && h < '14:00')).toBe(true);
 
+  // Límite de una reserva por cliente al día (backend en prod, vía /book)
+  const phone = '3220000000';
+  const book = (hora) =>
+    fetch(`${API}/api/v1/b/${slug}/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        servicioId: svcId,
+        empleadoId: empId,
+        fecha,
+        hora,
+        clienteNombre: 'Smoke Prod',
+        clienteTelefono: phone,
+      }),
+    });
+  expect((await book('10:00')).status).toBe(201);
+  const seg = await book('11:00');
+  expect(seg.status).toBe(409);
+  const segBody = await seg.json();
+  expect(segBody.error).toBe('max_per_day');
+
   // Eliminar el profesional desde el panel (cascada con token de dueño en prod)
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Eliminar profesional Smoky' }).click();
-  await expect(page.getByText('Smoky')).toBeHidden({ timeout: 15000 });
+  await expect(
+    page.getByRole('button', { name: 'Eliminar profesional Smoky' }),
+  ).toBeHidden({ timeout: 15000 });
 
   // Eliminar el servicio desde el panel
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }).click();
-  await expect(page.getByText('Corte Smoke')).toBeHidden({ timeout: 15000 });
+  await expect(
+    page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }),
+  ).toBeHidden({ timeout: 15000 });
 
   // Verifica en Firestore que ya no existen
   const empDoc = await db

@@ -317,6 +317,21 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, loc,
 	)
 
+	// 0. Límite estricto: un cliente (identificado por su teléfono) solo puede
+	// tener UNA cita por día en esta barbería. Si ya tiene una reserva para el
+	// mismo día natural, se rechaza la petición antes de tocar Calendar/Firestore.
+	if hasBookingOnDate(ctx, slug, req.ClienteTelefono, eventDateTime) {
+		log.Printf("Límite diario de %s: ya tiene cita el %s (%s) en %s", req.ClienteTelefono, req.Fecha, req.Hora, slug)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "max_per_day",
+			"message": "Ya tienes un turno agendado para este día. Si necesitas reservar para un amigo o familiar, por favor comunícate directamente con la barbería.",
+		})
+		return
+	}
+
 	// Resolver el nombre y la duración real del servicio a partir de su ID
 	serviceName, duration := resolveService(ctx, slug, req.ServicioID)
 
@@ -990,6 +1005,38 @@ func hasCustomerOverlap(ctx context.Context, negocioID, phone string, requested 
 			diff = -diff
 		}
 		if diff < 60*time.Minute {
+			return true
+		}
+	}
+	return false
+}
+
+// hasBookingOnDate verifica si el cliente ya tiene UNA reserva (o más) para el
+// mismo día natural del negocio. Es el filtro estricto de "una cita por cliente
+// al día": se consulta por teléfono y se compara el día en la zona horaria del
+// negocio (la fecha puede diferir entre UTC y la localidad del local).
+func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested time.Time) bool {
+	if phone == "" {
+		return false
+	}
+
+	docs, err := firestoreClient.Collection("reservas").
+		Where("user_phone", "==", phone).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
+		return false // No bloquear la reserva si hay error de Firestore
+	}
+
+	loc := shopLocation(ctx, negocioID)
+	day := requested.In(loc).Format("2006-01-02")
+	for _, d := range docs {
+		var b Booking
+		d.DataTo(&b)
+		if b.NegocioID != negocioID {
+			continue
+		}
+		if b.DateTime.In(loc).Format("2006-01-02") == day {
 			return true
 		}
 	}
