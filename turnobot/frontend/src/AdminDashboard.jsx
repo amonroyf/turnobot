@@ -173,6 +173,12 @@ export default function AdminDashboard() {
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null); // null or {id, name, horario}
+  const [whatsApp, setWhatsApp] = useState('');
+  const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
+
+  useEffect(() => {
+    if (negocio) setWhatsApp(negocio.whatsapp || '');
+  }, [negocio]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -370,6 +376,26 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleGuardarWhatsApp = async (e) => {
+    e.preventDefault();
+    if (!negocio) return;
+    const limpio = whatsApp.replace(/\D/g, '');
+    if (!limpio) {
+      alert('Ingresa el número de WhatsApp con código de país (ej. 573001234567)');
+      return;
+    }
+    setGuardandoWhatsApp(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), { whatsapp: limpio });
+      setNegocio({ ...negocio, whatsapp: limpio });
+      alert('WhatsApp actualizado');
+    } catch (err) {
+      console.error('Error guardando WhatsApp:', err);
+      alert('No se pudo actualizar el WhatsApp. Intenta nuevamente.');
+    }
+    setGuardandoWhatsApp(false);
+  };
+
   if (loading) return <div className="p-8 text-center">Cargando panel...</div>;
 
   if (!user) {
@@ -424,6 +450,33 @@ export default function AdminDashboard() {
           Cerrar Sesión
         </button>
       </header>
+
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8">
+        <h2 className="text-lg font-bold mb-1 text-gray-800">WhatsApp del negocio</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Número al que llegan las confirmaciones de citas y las consultas de tus clientes.
+          Con código de país, sin espacios ni el símbolo + (ej. 573001234567).
+        </p>
+        <form onSubmit={handleGuardarWhatsApp} className="flex gap-3">
+          <input
+            type="tel"
+            value={whatsApp}
+            onChange={(e) => setWhatsApp(e.target.value)}
+            placeholder="Ej. 573001234567"
+            className="flex-1 p-3 border border-gray-300 rounded-xl text-sm"
+          />
+          <button
+            type="submit"
+            disabled={guardandoWhatsApp}
+            className="px-6 py-3 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
+          >
+            {guardandoWhatsApp ? 'Guardando...' : 'Guardar'}
+          </button>
+        </form>
+        <p className="text-xs text-gray-400 mt-2">
+          Sin este número, la pantalla de confirmación por WhatsApp no aparece en tu página pública.
+        </p>
+      </div>
 
       <div className="grid md:grid-cols-2 gap-8">
         <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">

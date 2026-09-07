@@ -49,10 +49,10 @@ deploy_backend() {
     --concurrency 80 \
     --timeout 300 \
     --port 8080 \
-    --min-instances 1 \
+    --min-instances 0 \
     --max-instances 20 \
-    --no-cpu-throttling \
-    --cpu-boost \
+    --cpu-throttling \
+    --no-cpu-boost \
     --quiet
 }
 

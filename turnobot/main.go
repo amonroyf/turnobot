@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"firebase.google.com/go/v4/auth"
 
 	"cloud.google.com/go/firestore"
+	"github.com/nyaruka/phonenumbers"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
@@ -324,8 +324,8 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Sanitizar y validar teléfono
-	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono)
+	// Sanitizar y validar teléfono con libphonenumber (+E.164)
+	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono, defaultPhoneRegion)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -453,15 +453,26 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	ctx := r.Context()
-	// Consulta por teléfono únicamente (usa el índice automático de un solo campo)
-	// y se filtra/ordena en Go para no requerir un índice compuesto en Firestore.
-	docs, err := firestoreClient.Collection("reservas").
-		Where("user_phone", "==", telefono).
-		Documents(ctx).GetAll()
-	if err != nil {
-		log.Printf("Error consultando citas: %v", err)
-		http.Error(w, "Error consultando citas", http.StatusInternalServerError)
-		return
+	// Las reservas se almacenan en E.164 (+573001234567), pero se buscan
+	// también por el formato nacional en dígitos para cubrir reservas creadas
+	// antes de la normalización (user_phone = "3001234567").
+	docsByRef := map[string]*firestore.DocumentSnapshot{}
+	for _, key := range phoneQueryKeys(telefono) {
+		keyDocs, err := firestoreClient.Collection("reservas").
+			Where("user_phone", "==", key).
+			Documents(ctx).GetAll()
+		if err != nil {
+			log.Printf("Error consultando citas: %v", err)
+			http.Error(w, "Error consultando citas", http.StatusInternalServerError)
+			return
+		}
+		for _, d := range keyDocs {
+			docsByRef[d.Ref.ID] = d
+		}
+	}
+	docs := make([]*firestore.DocumentSnapshot, 0, len(docsByRef))
+	for _, d := range docsByRef {
+		docs = append(docs, d)
 	}
 
 	now := time.Now()
@@ -859,24 +870,61 @@ func parseClock(s string) (bool, int, int) {
 	return true, h, m
 }
 
-// sanitizePhone limpia el string y valida reglas estrictas de negocio.
-// Exige exactamente 10 dígitos y bloquea patrones basura.
-func sanitizePhone(phone string) (string, error) {
-	re := regexp.MustCompile(`\D`)
-	clean := re.ReplaceAllString(phone, "")
+// defaultPhoneRegion determina el país (ISO 3166-1 alpha-2) usado para
+// interpretar los números sin código de país. Por defecto Colombia.
+const defaultPhoneRegion = "CO"
 
-	if len(clean) != 10 {
-		return "", fmt.Errorf("el número debe tener exactamente 10 dígitos")
+// sanitizePhone valida la estructura real del número con libphonenumber
+// (reglas oficiales por operador/país) y lo normaliza a E.164 (ej. +573001234567).
+// Rechaza números matemáticamente imposibles o sin asignación en la región.
+func sanitizePhone(phone, defaultRegion string) (string, error) {
+	num, err := phonenumbers.Parse(phone, defaultRegion)
+	if err != nil {
+		return "", fmt.Errorf("formato de número inválido")
 	}
 
-	basura := []string{"0000000000", "1111111111", "1234567890", "0123456789", "9876543210"}
-	for _, b := range basura {
-		if clean == b {
-			return "", fmt.Errorf("el número ingresado no es válido")
+	// Verifica si el número es matemáticamente posible y está asignado en esa región
+	if !phonenumbers.IsValidNumber(num) {
+		return "", fmt.Errorf("el número ingresado no existe o no es válido para este operador")
+	}
+
+	// Normalizar al estándar internacional limpio (E.164: +573001234567)
+	return phonenumbers.Format(num, phonenumbers.E164), nil
+}
+
+// digitsOnly devuelve solo los dígitos de un string (quita espacios, +, etc.).
+func digitsOnly(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
 		}
 	}
+	return b.String()
+}
 
-	return clean, nil
+// phoneQueryKeys devuelve las variantes de búsqueda en Firestore para un
+// teléfono: el valor crudo enviado, la versión E.164 (formato nuevo) y la
+// nacional en dígitos (formato legado de reservas anteriores a +57...). Así
+// "Mis citas", el límite diario y la doble reserva siguen funcionando con
+// reservas creadas antes y después de la normalización.
+func phoneQueryKeys(phone string) []string {
+	keys := map[string]bool{}
+	add := func(p string) {
+		if p != "" && !keys[p] {
+			keys[p] = true
+		}
+	}
+	add(phone)
+	if num, err := phonenumbers.Parse(phone, defaultPhoneRegion); err == nil && phonenumbers.IsValidNumber(num) {
+		add(phonenumbers.Format(num, phonenumbers.E164))
+		add(digitsOnly(phonenumbers.Format(num, phonenumbers.NATIONAL)))
+	}
+	out := make([]string, 0, len(keys))
+	for k := range keys {
+		out = append(out, k)
+	}
+	return out
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,27 +1186,28 @@ func hasCustomerOverlap(ctx context.Context, negocioID, phone string, requested 
 		return false
 	}
 
-	docs, err := firestoreClient.Collection("reservas").
-		Where("user_phone", "==", phone).
-		Documents(ctx).GetAll()
-	if err != nil {
-		log.Printf("Aviso: error verificando overlap del cliente: %v", err)
-		return false // No bloquear la reserva si hay error de Firestore
-	}
-
-	for _, d := range docs {
-		var b Booking
-		d.DataTo(&b)
-		if b.NegocioID != negocioID {
-			continue
+	for _, key := range phoneQueryKeys(phone) {
+		docs, err := firestoreClient.Collection("reservas").
+			Where("user_phone", "==", key).
+			Documents(ctx).GetAll()
+		if err != nil {
+			log.Printf("Aviso: error verificando overlap del cliente: %v", err)
+			continue // No bloquear la reserva si hay error de Firestore
 		}
-		// Si la diferencia entre las dos citas es menor a 60 minutos, hay superposición
-		diff := b.DateTime.Sub(requested)
-		if diff < 0 {
-			diff = -diff
-		}
-		if diff < 60*time.Minute {
-			return true
+		for _, d := range docs {
+			var b Booking
+			d.DataTo(&b)
+			if b.NegocioID != negocioID {
+				continue
+			}
+			// Si la diferencia entre las dos citas es menor a 60 minutos, hay superposición
+			diff := b.DateTime.Sub(requested)
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff < 60*time.Minute {
+				return true
+			}
 		}
 	}
 	return false
@@ -1173,24 +1222,25 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 		return false
 	}
 
-	docs, err := firestoreClient.Collection("reservas").
-		Where("user_phone", "==", phone).
-		Documents(ctx).GetAll()
-	if err != nil {
-		log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
-		return false // No bloquear la reserva si hay error de Firestore
-	}
-
 	loc := shopLocation(ctx, negocioID)
 	day := requested.In(loc).Format("2006-01-02")
-	for _, d := range docs {
-		var b Booking
-		d.DataTo(&b)
-		if b.NegocioID != negocioID {
-			continue
+	for _, key := range phoneQueryKeys(phone) {
+		docs, err := firestoreClient.Collection("reservas").
+			Where("user_phone", "==", key).
+			Documents(ctx).GetAll()
+		if err != nil {
+			log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
+			continue // No bloquear la reserva si hay error de Firestore
 		}
-		if b.DateTime.In(loc).Format("2006-01-02") == day {
-			return true
+		for _, d := range docs {
+			var b Booking
+			d.DataTo(&b)
+			if b.NegocioID != negocioID {
+				continue
+			}
+			if b.DateTime.In(loc).Format("2006-01-02") == day {
+				return true
+			}
 		}
 	}
 	return false

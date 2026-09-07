@@ -51,10 +51,10 @@ test.describe('Turnobot E2E Suite', () => {
 
     await expect(page.getByText('¡Cita Confirmada!')).toBeVisible();
 
-    // Verificar que en Firestore el teléfono quedó saneado (sin espacios ni guiones)
+    // Verificar que en Firestore el teléfono quedó saneado (E.164: +573001234567)
     const snap = await db
       .collection('reservas')
-      .where('user_phone', '==', '3001234567')
+      .where('user_phone', '==', '+573001234567')
       .get();
     expect(snap.empty).toBe(false);
   });
@@ -76,7 +76,7 @@ test.describe('Turnobot E2E Suite', () => {
     await elegirPrimerSlot(p2);
 
     // Cliente 1 agenda y alcanza la pantalla de éxito
-    await llenarYConfirmar(p1, 'Cliente Rápido', '1111111111');
+    await llenarYConfirmar(p1, 'Cliente Rápido', '3111111111');
     await expect(p1.getByText('¡Cita Confirmada!')).toBeVisible();
 
     // Cliente 2 intenta el mismo slot: el backend debe responder 409
@@ -86,7 +86,7 @@ test.describe('Turnobot E2E Suite', () => {
       (r) => r.url().includes('/slots') && r.request().method() === 'GET',
       { timeout: 15000 },
     );
-    await llenarYConfirmar(p2, 'Cliente Lento', '2222222222');
+    await llenarYConfirmar(p2, 'Cliente Lento', '3222222222');
 
     await expect(p2.getByText(/acaba de ser reservado por alguien más/)).toBeVisible();
     await expect(p2.getByText(/Horarios para el/)).toBeVisible();
