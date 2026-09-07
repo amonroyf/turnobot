@@ -12,6 +12,8 @@ import {
   getDocs,
   onSnapshot,
   addDoc,
+  doc,
+  updateDoc,
 } from 'firebase/firestore';
 
 export default function AdminDashboard() {
@@ -29,6 +31,10 @@ export default function AdminDashboard() {
     price: '',
   });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
+  const [openTime, setOpenTime] = useState('09:00');
+  const [closeTime, setCloseTime] = useState('18:00');
+  const [guardandoHorario, setGuardandoHorario] = useState(false);
+  const [eliminando, setEliminando] = useState('');
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -44,6 +50,8 @@ export default function AdminDashboard() {
         if (!qs.empty) {
           const docSnap = qs.docs[0];
           setNegocio({ id: docSnap.id, ...docSnap.data() });
+          setOpenTime(docSnap.data().open_time || '09:00');
+          setCloseTime(docSnap.data().close_time || '18:00');
 
           onSnapshot(
             collection(db, `negocios/${docSnap.id}/servicios`),
@@ -143,6 +151,76 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleGuardarHorario = async (e) => {
+    e.preventDefault();
+    if (!negocio) return;
+    setGuardandoHorario(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), {
+        open_time: openTime,
+        close_time: closeTime,
+      });
+    } catch (err) {
+      console.error('Error al guardar el horario:', err);
+      alert('Error al guardar el horario');
+    }
+    setGuardandoHorario(false);
+  };
+
+  const handleEliminarServicio = async (servicio) => {
+    if (!negocio || !user) return;
+    if (
+      !confirm(
+        `¿Eliminar "${servicio.name}"? También se cancelarán sus citas futuras y se liberarán las agendas.`,
+      )
+    )
+      return;
+
+    setEliminando(servicio.id);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/servicios/${servicio.id}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!res.ok) throw new Error('Error al eliminar');
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo eliminar el servicio. Intenta nuevamente.');
+    }
+    setEliminando('');
+  };
+
+  const handleEliminarProfesional = async (profesional) => {
+    if (!negocio || !user) return;
+    if (
+      !confirm(
+        `¿Eliminar a "${profesional.name}"? También se cancelarán sus citas futuras y se liberará su agenda de Google Calendar.`,
+      )
+    )
+      return;
+
+    setEliminando(profesional.id);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/empleados/${profesional.id}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      if (!res.ok) throw new Error('Error al eliminar');
+    } catch (err) {
+      console.error(err);
+      alert('No se pudo eliminar el profesional. Intenta nuevamente.');
+    }
+    setEliminando('');
+  };
+
   const handleCancelarReserva = async (citaId) => {
     if (
       !confirm(
@@ -154,9 +232,13 @@ export default function AdminDashboard() {
     setCancelando(citaId);
 
     try {
+      const token = await user.getIdToken();
       const res = await fetch(
         `${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}`,
-        { method: 'DELETE' },
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
       );
 
       if (!res.ok) throw new Error('Error al cancelar');
@@ -238,7 +320,18 @@ export default function AdminDashboard() {
                 <span>
                   <strong className="text-gray-800">{s.name}</strong> ({s.duration_minutes} min)
                 </span>
-                <span className="font-semibold">${s.price}</span>
+                <span className="flex items-center gap-2">
+                  <span className="font-semibold">${s.price}</span>
+                  <button
+                    onClick={() => handleEliminarServicio(s)}
+                    disabled={eliminando === s.id}
+                    aria-label={`Eliminar servicio ${s.name}`}
+                    title="Eliminar servicio"
+                    className="text-red-400 hover:text-red-600 disabled:opacity-40"
+                  >
+                    {eliminando === s.id ? '…' : '🗑️'}
+                  </button>
+                </span>
               </li>
             ))}
           </ul>
@@ -306,18 +399,29 @@ export default function AdminDashboard() {
                 className="p-4 bg-gray-50 rounded-xl text-sm space-y-3"
               >
                 <p className="font-bold text-gray-800">{p.name}</p>
-                {p.calendar_id ? (
-                  <span className="inline-block px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                    ✅ Calendario Vinculado
-                  </span>
-                ) : (
-                  <a
-                    href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`}
-                    className="block text-center w-full py-2 bg-blue-600 text-white font-semibold rounded-lg text-xs"
+                <div className="flex items-center justify-between gap-2">
+                  {p.calendar_id ? (
+                    <span className="inline-block px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
+                      ✅ Calendario Vinculado
+                    </span>
+                  ) : (
+                    <a
+                      href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`}
+                      className="block text-center py-2 bg-blue-600 text-white font-semibold rounded-lg text-xs flex-1"
+                    >
+                      Vincular Google Calendar
+                    </a>
+                  )}
+                  <button
+                    onClick={() => handleEliminarProfesional(p)}
+                    disabled={eliminando === p.id}
+                    aria-label={`Eliminar profesional ${p.name}`}
+                    title="Eliminar profesional"
+                    className="px-3 py-2 bg-red-50 text-red-600 font-semibold rounded-lg text-xs disabled:opacity-40"
                   >
-                    Vincular Google Calendar
-                  </a>
-                )}
+                    {eliminando === p.id ? '…' : 'Eliminar'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
@@ -344,6 +448,43 @@ export default function AdminDashboard() {
             </button>
           </form>
         </div>
+      </div>
+
+      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-2">
+        <h2 className="text-lg font-bold mb-1 text-gray-800">Horarios de Operación</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Los turnos disponibles solo se ofrecerán dentro de esta jornada, incluso si el
+          calendario de Google del barbero tiene bloques libres fuera de ella.
+        </p>
+        <form onSubmit={handleGuardarHorario} className="flex flex-wrap items-end gap-4">
+          <label className="text-sm">
+            <span className="block text-gray-700 font-medium mb-1">Apertura</span>
+            <input
+              type="time"
+              required
+              value={openTime}
+              onChange={(e) => setOpenTime(e.target.value)}
+              className="p-3 border border-gray-300 rounded-xl text-sm"
+            />
+          </label>
+          <label className="text-sm">
+            <span className="block text-gray-700 font-medium mb-1">Cierre</span>
+            <input
+              type="time"
+              required
+              value={closeTime}
+              onChange={(e) => setCloseTime(e.target.value)}
+              className="p-3 border border-gray-300 rounded-xl text-sm"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={guardandoHorario}
+            className="py-3 px-5 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
+          >
+            {guardandoHorario ? 'Guardando...' : 'Guardar Horario'}
+          </button>
+        </form>
       </div>
 
       <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-2">

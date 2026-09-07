@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function MisCitas({ slug, API_URL, onVolver }) {
+export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
   const [telefono, setTelefono] = useState('');
   const [citas, setCitas] = useState(null); // null = aún no buscado
   const [loading, setLoading] = useState(false);
@@ -84,20 +84,49 @@ export default function MisCitas({ slug, API_URL, onVolver }) {
 
       {citas && citas.length > 0 && (
         <div className="space-y-3">
-          {citas.map(c => (
-            <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-1">
-              <p className="font-semibold text-gray-800">{c.servicio}</p>
-              <p className="text-sm text-gray-600">✂️ {c.emp_name || c.emp_id}</p>
-              <p className="text-sm text-gray-600">📅 {c.fecha} a las {c.hora}</p>
-              <button
-                onClick={() => cancelarCita(c.id)}
-                disabled={cancelando === c.id}
-                className="w-full mt-2 py-2.5 bg-red-50 text-red-600 font-semibold rounded-xl disabled:opacity-50"
-              >
-                {cancelando === c.id ? 'Cancelando...' : 'Cancelar cita'}
-              </button>
-            </div>
-          ))}
+          {citas.map(c => {
+            // Regla de negocio: no se puede cancelar por Internet a menos de 2h.
+            // Se evalúa en el navegador (hora actual vs fecha del turno) con
+            // respaldo al valor ya computado por el backend (c.cancelable).
+            const ahora = Date.now();
+            const fechaTurno = c.iso ? new Date(c.iso).getTime() : 0;
+            const menosDe2Horas = fechaTurno ? (fechaTurno - ahora) <= 2 * 60 * 60 * 1000 : false;
+            const cancelable = c.cancelable !== false && !menosDe2Horas;
+
+            return (
+              <div key={c.id} className="bg-white border border-gray-200 rounded-xl p-4 space-y-1">
+                <p className="font-semibold text-gray-800">{c.servicio}</p>
+                <p className="text-sm text-gray-600">✂️ {c.emp_name || c.emp_id}</p>
+                <p className="text-sm text-gray-600">📅 {c.fecha} a las {c.hora}</p>
+                {!cancelable ? (
+                  <div className="mt-2 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-xl space-y-2">
+                    <p>
+                      ⏰ Esta cita está a menos de 2 horas: ya no se puede cancelar por
+                      Internet. Comunícate directamente con el local.
+                    </p>
+                    {whatsapp && (
+                      <a
+                        href={`https://wa.me/${whatsapp}?text=${encodeURIComponent('Hola, necesito cancelar mi cita')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block text-center py-2 bg-green-500 text-white font-semibold rounded-lg"
+                      >
+                        💬 Escribir por WhatsApp
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => cancelarCita(c.id)}
+                    disabled={cancelando === c.id}
+                    className="w-full mt-2 py-2.5 bg-red-50 text-red-600 font-semibold rounded-xl disabled:opacity-50"
+                  >
+                    {cancelando === c.id ? 'Cancelando...' : 'Cancelar cita'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

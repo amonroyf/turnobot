@@ -8,8 +8,12 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
+
+	firebase "firebase.google.com/go/v4"
+	"firebase.google.com/go/v4/auth"
 
 	"cloud.google.com/go/firestore"
 	"golang.org/x/oauth2"
@@ -25,6 +29,7 @@ import (
 var (
 	firestoreClient *firestore.Client
 	googleOauthCfg  *oauth2.Config
+	firebaseAuth    *auth.Client
 )
 
 // ---------------------------------------------------------------------------
@@ -35,6 +40,7 @@ var (
 type Negocio struct {
 	ID           string     `json:"id"`
 	Name         string     `firestore:"name" json:"name"`
+	OwnerUID     string     `firestore:"owner_uid" json:"-"`
 	RefreshToken string     `firestore:"refresh_token" json:"-"` // Oculto en JSON
 	CalendarID   string     `firestore:"calendar_id" json:"-"`   // Oculto en JSON
 	Whatsapp     string     `firestore:"whatsapp" json:"whatsapp"`
@@ -42,6 +48,8 @@ type Negocio struct {
 	Horario      string     `firestore:"horario" json:"horario"`
 	Telefono     string     `firestore:"telefono" json:"telefono"`
 	TimeZone     string     `firestore:"timezone" json:"timezone"`
+	OpenTime     string     `firestore:"open_time" json:"open_time"`
+	CloseTime    string     `firestore:"close_time" json:"close_time"`
 	Servicios    []Service  `json:"servicios"`
 	Empleados    []Employee `json:"empleados"`
 }
@@ -103,6 +111,16 @@ func main() {
 		log.Fatalf("Error conectando a Firestore: %v", err)
 	}
 	defer firestoreClient.Close()
+
+	// 1b. Firebase Auth para verificar el token del dueño (operaciones de admin)
+	fbApp, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID})
+	if err != nil {
+		log.Fatalf("Error inicializando Firebase App: %v", err)
+	}
+	firebaseAuth, err = fbApp.Auth(ctx)
+	if err != nil {
+		log.Fatalf("Error inicializando Firebase Auth: %v", err)
+	}
 
 	// 2. OAuth2 Google Calendar config
 	googleOauthCfg = &oauth2.Config{
@@ -182,6 +200,16 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 3 && parts[1] == "citas" && r.Method == http.MethodDelete {
 		cancelCitaHandler(w, r, slug, parts[2])
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "servicios" && r.Method == http.MethodDelete {
+		deleteServicioHandler(w, r, slug, parts[2])
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "empleados" && r.Method == http.MethodDelete {
+		deleteEmpleadoHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -399,12 +427,14 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	})
 
 	type citaJSON struct {
-		ID       string `json:"id"`
-		Servicio string `json:"servicio"`
-		Fecha    string `json:"fecha"`
-		Hora     string `json:"hora"`
-		EmpID    string `json:"emp_id"`
-		EmpName  string `json:"emp_name"`
+		ID         string `json:"id"`
+		Servicio   string `json:"servicio"`
+		Fecha      string `json:"fecha"`
+		Hora       string `json:"hora"`
+		EmpID      string `json:"emp_id"`
+		EmpName    string `json:"emp_name"`
+		Cancelable bool   `json:"cancelable"`
+		Iso        string `json:"iso"`
 	}
 
 	// Firestore devuelve los timestamps en UTC; se formatean en la zona horaria
@@ -426,12 +456,14 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		var b Booking
 		d.DataTo(&b)
 		citas = append(citas, citaJSON{
-			ID:       d.Ref.ID,
-			Servicio: b.ServiceName,
-			Fecha:    b.DateTime.In(loc).Format("2006-01-02"),
-			Hora:     b.DateTime.In(loc).Format("15:04"),
-			EmpID:    b.EmpID,
-			EmpName:  empNames[b.EmpID],
+			ID:         d.Ref.ID,
+			Servicio:   b.ServiceName,
+			Fecha:      b.DateTime.In(loc).Format("2006-01-02"),
+			Hora:       b.DateTime.In(loc).Format("15:04"),
+			EmpID:      b.EmpID,
+			EmpName:    empNames[b.EmpID],
+			Cancelable: b.DateTime.Sub(now) >= 2*time.Hour,
+			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
 		})
 	}
 
@@ -456,6 +488,19 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
+	// Regla de negocio: un cliente no puede cancelar por Internet cuando faltan
+	// menos de 2 horas para el turno. El dueño (token verificado) siempre puede.
+	if !isOwnerRequest(r, slug) && b.DateTime.Sub(time.Now()) < 2*time.Hour {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "cancel_window",
+			"message": "Ya no puedes cancelar esta cita por Internet (faltan menos de 2 horas). Comunícate directamente con el local.",
+		})
+		return
+	}
+
 	// Borrar el evento de Google Calendar del empleado si existe
 	if b.CalendarEvt != "" && b.CalendarEvt != "mock_event_123" {
 		deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
@@ -474,6 +519,169 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		"success": true,
 		"message": "Cita cancelada exitosamente",
 	})
+}
+
+// isOwnerRequest verifica que el request traiga un ID token de Firebase válido
+// perteneciente al dueño del negocio (campo owner_uid). Se usa para las
+// operaciones privilegiadas del panel (eliminación en cascada, cancelación
+// interna del administrador).
+func isOwnerRequest(r *http.Request, slug string) bool {
+	if firebaseAuth == nil {
+		return false
+	}
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		return false
+	}
+	tok, err := firebaseAuth.VerifyIDToken(r.Context(), token)
+	if err != nil {
+		log.Printf("Aviso: token inválido para %s: %v", slug, err)
+		return false
+	}
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(r.Context())
+	if err != nil {
+		return false
+	}
+	var n Negocio
+	doc.DataTo(&n)
+	return tok.UID != "" && tok.UID == n.OwnerUID
+}
+
+// bearerToken extrae el token del header "Authorization: Bearer <token>".
+func bearerToken(header string) string {
+	const prefix = "Bearer "
+	if len(header) < len(prefix) || header[:len(prefix)] != prefix {
+		return ""
+	}
+	return header[len(prefix):]
+}
+
+// DELETE /api/v1/b/{slug}/servicios/{servicioID}
+// Elimina el servicio y, en cascada, todas sus reservas futuras: borra los
+// documentos con un Batch Write y libera los eventos en Google Calendar.
+func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servicioID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	servRef := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID)
+	servDoc, err := servRef.Get(ctx)
+	if err != nil {
+		http.Error(w, "Servicio no encontrado", http.StatusNotFound)
+		return
+	}
+	var svc Service
+	servDoc.DataTo(&svc)
+
+	deleted, affected := cascadeDeleteCitas(ctx, slug, "", svc.Name)
+
+	batch := firestoreClient.Batch()
+	batch.Delete(servRef)
+	for _, ref := range affected {
+		batch.Delete(ref)
+	}
+	if _, err := batch.Commit(ctx); err != nil {
+		log.Printf("Error borrando servicio %s en cascada: %v", servicioID, err)
+		http.Error(w, "Error eliminando el servicio", http.StatusInternalServerError)
+		return
+	}
+
+	deleteCitasCalendarEvents(ctx, slug, affected)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"message":        "Servicio eliminado",
+		"citas_borradas": deleted,
+	})
+}
+
+// DELETE /api/v1/b/{slug}/empleados/{empleadoID}
+// Elimina el profesional y, en cascada, todas sus reservas futuras: borra los
+// documentos con un Batch Write y libera los eventos en Google Calendar.
+func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	empRef := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID)
+	if _, err := empRef.Get(ctx); err != nil {
+		http.Error(w, "Profesional no encontrado", http.StatusNotFound)
+		return
+	}
+
+	deleted, affected := cascadeDeleteCitas(ctx, slug, empID, "")
+
+	batch := firestoreClient.Batch()
+	batch.Delete(empRef)
+	for _, ref := range affected {
+		batch.Delete(ref)
+	}
+	if _, err := batch.Commit(ctx); err != nil {
+		log.Printf("Error borrando empleado %s en cascada: %v", empID, err)
+		http.Error(w, "Error eliminando el profesional", http.StatusInternalServerError)
+		return
+	}
+
+	deleteCitasCalendarEvents(ctx, slug, affected)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":        true,
+		"message":        "Profesional eliminado",
+		"citas_borradas": deleted,
+	})
+}
+
+// cascadeDeleteCitas encuentra las reservas futuras que deben eliminarse en
+// cascada (por empleado y/o por nombre de servicio) y devuelve las citas
+// afectadas con su evento de calendario y sus referencias para el Batch Write.
+func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (int, []*firestore.DocumentRef) {
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: no se pudo consultar reservas para cascada de %s: %v", slug, err)
+		return 0, nil
+	}
+
+	now := time.Now()
+	var affected []*firestore.DocumentRef
+	for _, d := range docs {
+		var b Booking
+		d.DataTo(&b)
+		if !b.DateTime.After(now) {
+			continue
+		}
+		if empID != "" && b.EmpID != empID {
+			continue
+		}
+		if serviceName != "" && b.ServiceName != serviceName {
+			continue
+		}
+		affected = append(affected, d.Ref)
+	}
+	return len(affected), affected
+}
+
+// deleteCitasCalendarEvents libera en Google Calendar todos los eventos de las
+// reservas eliminadas. Se invoca después de confirmar el Batch Write.
+func deleteCitasCalendarEvents(ctx context.Context, slug string, citas []*firestore.DocumentRef) {
+	for _, ref := range citas {
+		doc, err := ref.Get(ctx)
+		if err != nil {
+			continue
+		}
+		var b Booking
+		doc.DataTo(&b)
+		if b.CalendarEvt != "" && b.CalendarEvt != "mock_event_123" {
+			deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
+		}
+	}
 }
 
 // deleteCalendarEvent borra un evento del Google Calendar personal del empleado.
@@ -549,6 +757,54 @@ func shopLocation(ctx context.Context, slug string) *time.Location {
 	return loc
 }
 
+// workDayRange devuelve el intervalo [apertura, cierre) de la jornada operativa
+// del negocio para un día concreto, leyendo open_time/close_time de Firestore.
+// Si no están configurados o son inválidos, cae en el horario base 09:00-18:00.
+func workDayRange(ctx context.Context, slug string, day time.Time) (time.Time, time.Time) {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	var openH, openM, closeH, closeM int
+	okOpen, okClose := false, false
+	if err == nil {
+		var n Negocio
+		doc.DataTo(&n)
+		okOpen, openH, openM = parseClock(n.OpenTime)
+		okClose, closeH, closeM = parseClock(n.CloseTime)
+	}
+
+	loc := shopLocation(ctx, slug)
+	start := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, loc)
+	end := start.Add(9 * time.Hour)
+
+	if okOpen {
+		start = time.Date(day.Year(), day.Month(), day.Day(), openH, openM, 0, 0, loc)
+	}
+	if okClose {
+		end = time.Date(day.Year(), day.Month(), day.Day(), closeH, closeM, 0, 0, loc)
+	}
+	// Guarda de integridad: nunca permitir jornada invertida o vacía
+	if !end.After(start) {
+		end = start.Add(9 * time.Hour)
+	}
+	return start, end
+}
+
+// parseClock interpreta un string "HH:MM" (ej. "09:00"). Devuelve ok, hora, minuto.
+func parseClock(s string) (bool, int, int) {
+	if s == "" {
+		return false, 0, 0
+	}
+	parts := strings.Split(s, ":")
+	if len(parts) != 2 {
+		return false, 0, 0
+	}
+	h, errH := strconv.Atoi(strings.TrimSpace(parts[0]))
+	m, errM := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if errH != nil || errM != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return false, 0, 0
+	}
+	return true, h, m
+}
+
 // ---------------------------------------------------------------------------
 // Google Calendar helpers (lógica centralizada)
 // ---------------------------------------------------------------------------
@@ -586,16 +842,23 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	// Usar la zona horaria del negocio, NO la del servidor local
 	loc := shopLocation(ctx, negocioID)
 
-	// Horario laboral base (9am a 6pm)
-	startDay := time.Date(day.Year(), day.Month(), day.Day(), 9, 0, 0, 0, loc)
-	endDay := startDay.Add(9 * time.Hour)
+	// Jornada operativa del negocio (open_time/close_time) con respaldo 09:00-18:00
+	startDay, endDay := workDayRange(ctx, negocioID, day)
 
 	var slots []string
 
 	if err != nil {
-		// Mock para desarrollo frontend si el calendario no está vinculado
+		// Mock para desarrollo frontend si el calendario no está vinculado.
+		// Se genera dentro de la jornada operativa en pasos de 30 minutos.
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
-		slots = []string{"09:00", "09:30", "10:00", "14:00", "15:00"}
+		for t := startDay; t.Before(endDay); t = t.Add(30 * time.Minute) {
+			if t.After(time.Now()) {
+				slots = append(slots, t.Format("15:04"))
+			}
+			if len(slots) >= 12 {
+				break
+			}
+		}
 	} else {
 		req := &calendar.FreeBusyRequest{
 			TimeMin: startDay.Format(time.RFC3339),

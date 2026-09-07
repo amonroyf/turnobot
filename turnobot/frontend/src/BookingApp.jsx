@@ -188,7 +188,7 @@ export default function BookingApp() {
 
           {/* CONSULTAR / CANCELAR CITAS */}
           {view === 'citas' && (
-            <MisCitas slug={slug} API_URL={API_URL} onVolver={volverAlMenu} />
+            <MisCitas slug={slug} API_URL={API_URL} onVolver={volverAlMenu} whatsapp={negocio?.whatsapp} />
           )}
 
           {/* INFORMACIÓN DEL LOCAL */}

@@ -127,6 +127,8 @@ export default function RegisterShop() {
         telefono: '',
         calendar_id: 'primary',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        open_time: '09:00',
+        close_time: '18:00',
         created_at: new Date(),
       });
 
