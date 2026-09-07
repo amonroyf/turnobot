@@ -19,7 +19,7 @@ REGION="us-central1"
 SERVICE="turnobot"
 SITE_O="turnobot-web"
 SA="850305350371-compute@developer.gserviceaccount.com"
-API_URL="https://turnobot-850305350371.us-central1.run.app"
+API_URL="https://turnobot-ehomyvoh6q-uc.a.run.app"
 
 ENV_FILE="${ENV_FILE:-/tmp/opencode/env_full.yaml}"
 MODE="${1:-both}"
