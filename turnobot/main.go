@@ -54,12 +54,36 @@ type Negocio struct {
 	Empleados    []Employee `json:"empleados"`
 }
 
+// Turno represents a single work shift within a day.
+type Turno struct {
+	Inicio string `json:"inicio" firestore:"inicio"` // "09:00"
+	Fin    string `json:"fin" firestore:"fin"`       // "13:00"
+}
+
+// DiaHorario defines whether an employee works on a given day and their shifts.
+type DiaHorario struct {
+	Activo bool    `json:"activo" firestore:"activo"`
+	Turnos []Turno `json:"turnos" firestore:"turnos"`
+}
+
+// HorarioSemanal stores the full weekly schedule for an employee with split shifts.
+type HorarioSemanal struct {
+	Lunes     DiaHorario `json:"lunes" firestore:"lunes"`
+	Martes    DiaHorario `json:"martes" firestore:"martes"`
+	Miercoles DiaHorario `json:"miercoles" firestore:"miercoles"`
+	Jueves    DiaHorario `json:"jueves" firestore:"jueves"`
+	Viernes   DiaHorario `json:"viernes" firestore:"viernes"`
+	Sabado    DiaHorario `json:"sabado" firestore:"sabado"`
+	Domingo   DiaHorario `json:"domingo" firestore:"domingo"`
+}
+
 // Employee sub-document under a negocio.
 type Employee struct {
-	ID         string `json:"id"`
-	Name       string `firestore:"name" json:"name"`
-	CalendarID string `firestore:"calendar_id" json:"-"`
-	Phone      string `firestore:"phone" json:"-"`
+	ID         string          `json:"id"`
+	Name       string          `firestore:"name" json:"name"`
+	CalendarID string          `firestore:"calendar_id" json:"-"`
+	Phone      string          `firestore:"phone" json:"-"`
+	Horario    *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
 }
 
 // Service offered by a business.
@@ -849,6 +873,57 @@ func calendarServiceForEmployee(ctx context.Context, negocioID, empID string) (*
 	return svc, &emp.Employee, err
 }
 
+// employeeDayHorario extracts the DiaHorario for a given weekday from the
+// employee's HorarioSemanal, or nil if the employee has no per-employee schedule
+// configured (which means the business-level workDayRange is used instead).
+func employeeDayHorario(h *HorarioSemanal, day time.Weekday) *DiaHorario {
+	if h == nil {
+		return nil
+	}
+	switch day {
+	case time.Monday:
+		return &h.Lunes
+	case time.Tuesday:
+		return &h.Martes
+	case time.Wednesday:
+		return &h.Miercoles
+	case time.Thursday:
+		return &h.Jueves
+	case time.Friday:
+		return &h.Viernes
+	case time.Saturday:
+		return &h.Sabado
+	case time.Sunday:
+		return &h.Domingo
+	}
+	return nil
+}
+
+// splitShiftIntervals converts the employee's turnos for a given day into
+// [start, end) intervals in the correct timezone. If the employee has no
+// schedule or no active turnos, it returns nil (caller falls back to
+// workDayRange).
+func splitShiftIntervals(ctx context.Context, slug string, dia *DiaHorario, day time.Time) [][2]time.Time {
+	if dia == nil || !dia.Activo || len(dia.Turnos) == 0 {
+		return nil
+	}
+	loc := shopLocation(ctx, slug)
+	var intervals [][2]time.Time
+	for _, t := range dia.Turnos {
+		okO, oh, om := parseClock(t.Inicio)
+		okC, ch, cm := parseClock(t.Fin)
+		if !okO || !okC {
+			continue
+		}
+		start := time.Date(day.Year(), day.Month(), day.Day(), oh, om, 0, 0, loc)
+		end := time.Date(day.Year(), day.Month(), day.Day(), ch, cm, 0, 0, loc)
+		if end.After(start) {
+			intervals = append(intervals, [2]time.Time{start, end})
+		}
+	}
+	return intervals
+}
+
 // getFreeSlots devuelve los horarios libres de un empleado para un día concreto,
 // dividiendo el día en bloques de la duración real del servicio.
 func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, durationMinutes int) ([]string, error) {
@@ -857,35 +932,60 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	// Usar la zona horaria del negocio, NO la del servidor local
 	loc := shopLocation(ctx, negocioID)
 
-	// Jornada operativa del negocio (open_time/close_time) con respaldo 09:00-18:00
-	startDay, endDay := workDayRange(ctx, negocioID, day)
+	// Determine the shift intervals: use per-employee schedule if available,
+	// otherwise fall back to the business-level workDayRange.
+	var shiftIntervals [][2]time.Time
+	if emp != nil && emp.Horario != nil {
+		if dia := employeeDayHorario(emp.Horario, day.Weekday()); dia != nil {
+			shiftIntervals = splitShiftIntervals(ctx, negocioID, dia, day)
+		}
+	}
+	if len(shiftIntervals) == 0 {
+		startDay, endDay := workDayRange(ctx, negocioID, day)
+		shiftIntervals = [][2]time.Time{{startDay, endDay}}
+	}
 
 	var slots []string
+	slotDuration := time.Duration(durationMinutes) * time.Minute
 
+	// Collect busy periods from Google Calendar for all shift intervals
+	var busyPeriods [][2]time.Time
 	if err != nil {
-		// Mock para desarrollo frontend si el calendario no está vinculado.
-		// Se genera dentro de la jornada operativa en pasos de 30 minutos.
+		// Mock mode: no Google Calendar linked. Generate slots within each shift.
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
-		for t := startDay; t.Before(endDay); t = t.Add(30 * time.Minute) {
-			if t.After(time.Now()) {
-				slots = append(slots, t.Format("15:04"))
+		for _, iv := range shiftIntervals {
+			for t := iv[0]; t.Add(slotDuration).Before(iv[1]); t = t.Add(slotDuration) {
+				if t.After(time.Now()) {
+					slots = append(slots, t.Format("15:04"))
+				}
+				if len(slots) >= 12 {
+					break
+				}
 			}
 			if len(slots) >= 12 {
 				break
 			}
 		}
 	} else {
+		// Query Google Calendar FreeBusy for the full span of all shifts
+		var earliestStart, latestEnd time.Time
+		for i, iv := range shiftIntervals {
+			if i == 0 || iv[0].Before(earliestStart) {
+				earliestStart = iv[0]
+			}
+			if i == 0 || iv[1].After(latestEnd) {
+				latestEnd = iv[1]
+			}
+		}
 		req := &calendar.FreeBusyRequest{
-			TimeMin: startDay.Format(time.RFC3339),
-			TimeMax: endDay.Format(time.RFC3339),
+			TimeMin: earliestStart.Format(time.RFC3339),
+			TimeMax: latestEnd.Format(time.RFC3339),
 			Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
 		}
 		result, err := svc.Freebusy.Query(req).Context(ctx).Do()
 		if err != nil {
 			return nil, err
 		}
-
-		var busyPeriods [][2]time.Time
 		for _, cal := range result.Calendars {
 			for _, period := range cal.Busy {
 				tStart, _ := time.Parse(time.RFC3339, period.Start)
@@ -894,35 +994,48 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 			}
 		}
 
-		slotDuration := time.Duration(durationMinutes) * time.Minute
-		currentTime := startDay
-
-		// Evaluar espacios iterando en saltos iguales a la duración del servicio
-		for currentTime.Before(endDay) {
-			slotEnd := currentTime.Add(slotDuration)
-			if slotEnd.After(endDay) {
-				break
-			}
-
-			free := true
-			for _, bp := range busyPeriods {
-				if currentTime.Before(bp[1]) && slotEnd.After(bp[0]) {
-					free = false
+		// Generate candidate slots within each shift interval
+		for _, iv := range shiftIntervals {
+			currentTime := iv[0]
+			for currentTime.Before(iv[1]) {
+				slotEnd := currentTime.Add(slotDuration)
+				if slotEnd.After(iv[1]) {
 					break
 				}
+				free := true
+				for _, bp := range busyPeriods {
+					if currentTime.Before(bp[1]) && slotEnd.After(bp[0]) {
+						free = false
+						break
+					}
+				}
+				if free && currentTime.After(time.Now()) {
+					slots = append(slots, currentTime.Format("15:04"))
+				}
+				currentTime = currentTime.Add(slotDuration)
 			}
-
-			if free && currentTime.After(time.Now()) {
-				slots = append(slots, currentTime.Format("15:04"))
-			}
-			currentTime = currentTime.Add(slotDuration)
 		}
 	}
 
 	// Excluir los horarios ya reservados en Firestore (fuente de verdad local).
 	// Esto protege contra la doble reserva del mismo slot aunque el empleado no
 	// tenga Google Calendar vinculado (modo mock) o hay latencia en el freebusy.
-	booked := firestoreBookedIntervals(ctx, negocioID, empID, startDay, endDay)
+	var bookStart, bookEnd time.Time
+	if len(shiftIntervals) > 0 {
+		bookStart = shiftIntervals[0][0]
+		bookEnd = shiftIntervals[0][1]
+		for _, iv := range shiftIntervals[1:] {
+			if iv[0].Before(bookStart) {
+				bookStart = iv[0]
+			}
+			if iv[1].After(bookEnd) {
+				bookEnd = iv[1]
+			}
+		}
+	} else {
+		bookStart, bookEnd = day, day.Add(24*time.Hour)
+	}
+	booked := firestoreBookedIntervals(ctx, negocioID, empID, bookStart, bookEnd)
 	slotDur := time.Duration(durationMinutes) * time.Minute
 	filtered := slots[:0]
 	for _, s := range slots {

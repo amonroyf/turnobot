@@ -16,6 +16,146 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 
+const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+
+const defaultHorario = {
+  lunes:     { activo: true,  turnos: [{ inicio: '09:00', fin: '13:00' }, { inicio: '14:00', fin: '18:00' }] },
+  martes:    { activo: true,  turnos: [{ inicio: '09:00', fin: '18:00' }] },
+  miercoles: { activo: true,  turnos: [{ inicio: '09:00', fin: '18:00' }] },
+  jueves:    { activo: true,  turnos: [{ inicio: '09:00', fin: '18:00' }] },
+  viernes:   { activo: true,  turnos: [{ inicio: '09:00', fin: '18:00' }] },
+  sabado:    { activo: true,  turnos: [{ inicio: '09:00', fin: '14:00' }] },
+  domingo:   { activo: false, turnos: [] },
+};
+
+export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
+  const [horario, setHorario] = useState(empleado.horario || defaultHorario);
+  const [guardando, setGuardando] = useState(false);
+
+  const toggleDia = (dia) => {
+    setHorario({
+      ...horario,
+      [dia]: { ...horario[dia], activo: !horario[dia].activo },
+    });
+  };
+
+  const handleTurnoChange = (dia, index, field, value) => {
+    const nuevosTurnos = [...horario[dia].turnos];
+    nuevosTurnos[index] = { ...nuevosTurnos[index], [field]: value };
+    setHorario({
+      ...horario,
+      [dia]: { ...horario[dia], turnos: nuevosTurnos },
+    });
+  };
+
+  const agregarTurno = (dia) => {
+    setHorario({
+      ...horario,
+      [dia]: {
+        ...horario[dia],
+        turnos: [...horario[dia].turnos, { inicio: '14:00', fin: '18:00' }],
+      },
+    });
+  };
+
+  const eliminarTurno = (dia, index) => {
+    const nuevosTurnos = horario[dia].turnos.filter((_, i) => i !== index);
+    setHorario({
+      ...horario,
+      [dia]: { ...horario[dia], turnos: nuevosTurnos },
+    });
+  };
+
+  const guardarHorario = async () => {
+    setGuardando(true);
+    try {
+      const empRef = doc(db, `negocios/${negocioId}/empleados`, empleado.id);
+      await updateDoc(empRef, { horario });
+      alert(`Horario de ${empleado.name} actualizado`);
+      onClose();
+    } catch (err) {
+      console.error('Error guardando horario:', err);
+      alert('Error al guardar el horario');
+    }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <h3 className="text-lg font-bold mb-1">Horario Laboral</h3>
+        <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
+
+        <div className="space-y-4">
+          {DIAS_SEMANA.map((dia) => (
+            <div key={dia} className="border-b pb-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="capitalize font-semibold">{dia}</span>
+                <input
+                  type="checkbox"
+                  checked={horario[dia]?.activo ?? false}
+                  onChange={() => toggleDia(dia)}
+                  className="w-5 h-5 accent-black"
+                />
+              </div>
+
+              {horario[dia]?.activo && (
+                <div className="space-y-2 pl-2">
+                  {horario[dia].turnos.map((t, idx) => (
+                    <div key={idx} className="flex gap-2 items-center">
+                      <input
+                        type="time"
+                        value={t.inicio}
+                        onChange={(e) => handleTurnoChange(dia, idx, 'inicio', e.target.value)}
+                        className="border p-1 rounded text-sm"
+                      />
+                      <span className="text-gray-400">a</span>
+                      <input
+                        type="time"
+                        value={t.fin}
+                        onChange={(e) => handleTurnoChange(dia, idx, 'fin', e.target.value)}
+                        className="border p-1 rounded text-sm"
+                      />
+                      {horario[dia].turnos.length > 1 && (
+                        <button
+                          onClick={() => eliminarTurno(dia, idx)}
+                          className="text-red-400 hover:text-red-600 text-xs"
+                          title="Eliminar turno"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    onClick={() => agregarTurno(dia)}
+                    className="text-xs text-blue-600 font-bold hover:underline"
+                  >
+                    + Agregar Turno Partido
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-2 justify-end mt-6">
+          <button onClick={onClose} className="px-4 py-2 border rounded-xl font-bold text-sm">
+            Cancelar
+          </button>
+          <button
+            onClick={guardarHorario}
+            disabled={guardando}
+            className="px-4 py-2 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50"
+          >
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
@@ -35,6 +175,7 @@ export default function AdminDashboard() {
   const [closeTime, setCloseTime] = useState('18:00');
   const [guardandoHorario, setGuardandoHorario] = useState(false);
   const [eliminando, setEliminando] = useState('');
+  const [horarioModal, setHorarioModal] = useState(null); // null or {id, name, horario}
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -412,6 +553,14 @@ export default function AdminDashboard() {
                       Vincular Google Calendar
                     </a>
                   )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setHorarioModal(p)}
+                    className="px-3 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg text-xs hover:bg-gray-200"
+                  >
+                    ⏰ Horario
+                  </button>
                   <button
                     onClick={() => handleEliminarProfesional(p)}
                     disabled={eliminando === p.id}
@@ -570,6 +719,14 @@ export default function AdminDashboard() {
           </div>
         )}
       </div>
+
+      {horarioModal && (
+        <HorarioEmpleadoModal
+          negocioId={negocio.id}
+          empleado={horarioModal}
+          onClose={() => setHorarioModal(null)}
+        />
+      )}
     </div>
   );
 }
