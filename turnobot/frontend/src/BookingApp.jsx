@@ -6,6 +6,18 @@ import MisCitas from './MisCitas.jsx';
 // Si está vacío, usa rutas relativas (el proxy de Vite en dev, o mismo dominio en prod).
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
+// Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
+const formatPhoneNumber = (value) => {
+  const cleaned = ('' + value).replace(/\D/g, '');
+  const match = cleaned.substring(0, 10).match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+  if (match) {
+    return !match[2]
+      ? match[1]
+      : `${match[1]} ${match[2]}${match[3] ? ` ${match[3]}` : ''}`;
+  }
+  return value;
+};
+
 export default function BookingApp() {
   const { slug } = useParams();
   const [view, setView] = useState('menu');
@@ -331,9 +343,9 @@ export default function BookingApp() {
                     className="w-full p-4 border border-gray-200 rounded-xl"
                   />
                   <input
-                    type="tel" required placeholder="Tu WhatsApp (Ej. 3001234567)"
+                    type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
                     value={booking.clienteTelefono}
-                    onChange={e => setBooking({ ...booking, clienteTelefono: e.target.value })}
+                    onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
                     className="w-full p-4 border border-gray-200 rounded-xl"
                   />
 

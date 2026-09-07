@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -322,6 +323,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
 		return
 	}
+
+	// Sanitizar y validar teléfono
+	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid_phone",
+			"message": err.Error(),
+		})
+		return
+	}
+	req.ClienteTelefono = telefonoLimpio
 
 	ctx := context.Background()
 	parsedDate, err := time.Parse("2006-01-02", req.Fecha)
@@ -842,6 +857,26 @@ func parseClock(s string) (bool, int, int) {
 		return false, 0, 0
 	}
 	return true, h, m
+}
+
+// sanitizePhone limpia el string y valida reglas estrictas de negocio.
+// Exige exactamente 10 dígitos y bloquea patrones basura.
+func sanitizePhone(phone string) (string, error) {
+	re := regexp.MustCompile(`\D`)
+	clean := re.ReplaceAllString(phone, "")
+
+	if len(clean) != 10 {
+		return "", fmt.Errorf("el número debe tener exactamente 10 dígitos")
+	}
+
+	basura := []string{"0000000000", "1111111111", "1234567890", "0123456789", "9876543210"}
+	for _, b := range basura {
+		if clean == b {
+			return "", fmt.Errorf("el número ingresado no es válido")
+		}
+	}
+
+	return clean, nil
 }
 
 // ---------------------------------------------------------------------------

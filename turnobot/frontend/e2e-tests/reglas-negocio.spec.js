@@ -225,3 +225,52 @@ test('4. Eliminación en cascada de profesional con citas futuras', async () => 
   const reservaDoc = await db.collection('reservas').doc(reservaId).get();
   expect(reservaDoc.exists).toBe(false);
 });
+
+test('5. Validación estricta de teléfono (Longitud, Sanitización y Patrones Basura)', async () => {
+  const payloadBase = {
+    servicioId: 'svc1',
+    empleadoId: 'emp1',
+    fecha: mafana(),
+    clienteNombre: 'Validador de Teléfonos',
+  };
+
+  const bookRequest = (phone, hora) =>
+    fetch(`${API}/api/v1/b/${slug}/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payloadBase, hora, clienteTelefono: phone }),
+    });
+
+  // Escenario A: Número muy corto (< 10 dígitos)
+  const resCorto = await bookRequest('12345', '16:00');
+  expect(resCorto.status).toBe(400);
+  const bodyCorto = await resCorto.json();
+  expect(bodyCorto.error).toBe('invalid_phone');
+  expect(bodyCorto.message).toContain('10 dígitos');
+
+  // Escenario B: Número muy largo (> 10 dígitos)
+  const resLargo = await bookRequest('3001234567899', '16:00');
+  expect(resLargo.status).toBe(400);
+  const bodyLargo = await resLargo.json();
+  expect(bodyLargo.error).toBe('invalid_phone');
+
+  // Escenario C: Patrón "basura" bloqueado
+  const resBasura = await bookRequest('0000000000', '16:00');
+  expect(resBasura.status).toBe(400);
+  const bodyBasura = await resBasura.json();
+  expect(bodyBasura.message).toContain('no es válido');
+
+  // Escenario D: Número válido con caracteres extraños (el backend limpia a 10 dígitos)
+  const phoneD = `31${Date.now().toString().slice(-8)}`; // único por ejecución
+  const phoneDRaw = `(${phoneD.slice(0,3)}) ${phoneD.slice(3,6)}-${phoneD.slice(6)}`;
+  const resSaneado = await bookRequest(phoneDRaw, '12:00');
+  expect(resSaneado.status).toBe(201);
+
+  // Verificación en Firestore de que se guardó limpio
+  const checkDb = await db
+    .collection('reservas')
+    .where('negocio_id', '==', slug)
+    .where('user_phone', '==', phoneD)
+    .get();
+  expect(checkDb.empty).toBe(false);
+});

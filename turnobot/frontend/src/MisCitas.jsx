@@ -1,5 +1,17 @@
 import { useState } from 'react';
 
+// Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
+const formatPhoneNumber = (value) => {
+  const cleaned = ('' + value).replace(/\D/g, '');
+  const match = cleaned.substring(0, 10).match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+  if (match) {
+    return !match[2]
+      ? match[1]
+      : `${match[1]} ${match[2]}${match[3] ? ` ${match[3]}` : ''}`;
+  }
+  return value;
+};
+
 export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
   const [telefono, setTelefono] = useState('');
   const [citas, setCitas] = useState(null); // null = aún no buscado
@@ -55,9 +67,9 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
 
       <form onSubmit={buscarCitas} className="space-y-3">
         <input
-          type="tel" required placeholder="Tu WhatsApp (Ej. 3001234567)"
+          type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
           value={telefono}
-          onChange={e => setTelefono(e.target.value)}
+          onChange={e => setTelefono(formatPhoneNumber(e.target.value))}
           className="w-full p-4 border border-gray-200 rounded-xl bg-white"
         />
         <button
