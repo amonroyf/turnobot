@@ -36,9 +36,11 @@ service cloud.firestore {
       // Público: Cualquiera puede CREAR una reserva
       allow create: if true;
 
-      // Privado: Solo el dueño del negocio puede leer, editar o eliminar sus reservas
+      // Privado: Solo el dueño del negocio puede leer, editar o eliminar sus reservas.
+      // En read/get/list Firestore evalúa la regla por documento devuelto: comparamos el
+      // negocio de la reserva contra el dueño autenticado vía get().
       allow read, update, delete: if request.auth != null &&
-             request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid;
+        (request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid);
     }
   }
 }

@@ -65,15 +65,34 @@ export default function AdminDashboard() {
             collection(db, 'reservas'),
             where('negocio_id', '==', docSnap.id),
           );
-          onSnapshot(qReservas, (snapshot) => {
-            const citas = snapshot.docs
-              .map((d) => ({ id: d.id, ...d.data() }))
-              .sort(
-                (a, b) =>
-                  (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0),
-              );
-            setReservas(citas);
-          });
+          const intentosReservas = { n: 0 };
+          const suscribirReservas = () => {
+            onSnapshot(
+              qReservas,
+              (snapshot) => {
+                intentosReservas.n = 0;
+                const citas = snapshot.docs
+                  .map((d) => ({ id: d.id, ...d.data() }))
+                  .sort(
+                    (a, b) =>
+                      (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0),
+                  );
+                setReservas(citas);
+              },
+              (err) => {
+                // Consistencia eventual de reglas: el get() sobre el negocio
+                // recién creado puede fallar en el primer subscribe. Se reintenta
+                // con backoff; la suscripción nueva entrega el estado actual.
+                if (intentosReservas.n < 5 && err?.code === 'permission-denied') {
+                  intentosReservas.n += 1;
+                  setTimeout(suscribirReservas, 2000 * intentosReservas.n);
+                } else {
+                  console.error('Error en listener de reservas:', err);
+                }
+              },
+            );
+          };
+          suscribirReservas();
         }
       }
 
