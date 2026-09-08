@@ -18,6 +18,7 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cancelando, setCancelando] = useState('');
+  const [citaCancelada, setCitaCancelada] = useState(null);
 
   const buscarCitas = async (e) => {
     e.preventDefault();
@@ -44,16 +45,17 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
     setLoading(false);
   };
 
-  const cancelarCita = async (citaId) => {
+  const cancelarCita = async (cita) => {
     if (!window.confirm('¿Seguro que deseas cancelar esta cita?')) return;
-    setCancelando(citaId);
+    setCancelando(cita.id);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}`, {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${cita.id}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Error del servidor');
-      setCitas(prev => prev.filter(c => c.id !== citaId));
+      setCitaCancelada(cita);
+      setCitas(prev => prev.filter(c => c.id !== cita.id));
     } catch (err) {
       setError("No pudimos cancelar la cita. Intenta de nuevo.");
     }
@@ -87,7 +89,41 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
         </div>
       )}
 
-      {citas && citas.length === 0 && (
+      {citaCancelada && (
+        <div className="text-center p-6 bg-white border border-gray-200 rounded-2xl mt-4 shadow-sm">
+          <div className="text-4xl mb-3">🗑️</div>
+          <h2 className="text-xl font-bold text-gray-800 mb-1">Cita cancelada</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            El espacio en la agenda ha sido liberado.
+          </p>
+
+          {whatsapp && (
+            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+              <p className="text-sm text-amber-800 mb-3 font-medium">
+                Por favor, avísale al local para que puedan asignarle el turno a otra persona.
+              </p>
+              <a
+                href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola, acabo de cancelar mi cita de ${citaCancelada.servicio} con ${citaCancelada.emp_name} para el ${citaCancelada.fecha} a las ${citaCancelada.hora}. ¡Gracias!`)}`}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => setCitaCancelada(null)}
+                className="block w-full py-3 bg-amber-500 text-white font-bold rounded-xl text-center shadow hover:bg-amber-600 transition-colors"
+              >
+                📲 Avisar al local por WhatsApp
+              </a>
+            </div>
+          )}
+
+          <button
+            onClick={() => setCitaCancelada(null)}
+            className="mt-4 text-sm text-gray-500 underline"
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
+
+      {citas && citas.length === 0 && !citaCancelada && (
         <div className="text-center p-8 bg-white border border-gray-200 rounded-2xl">
           <div className="text-3xl mb-3">📭</div>
           <p className="text-gray-600">No tienes citas pendientes registradas con este número.</p>
@@ -129,7 +165,7 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
                   </div>
                 ) : (
                   <button
-                    onClick={() => cancelarCita(c.id)}
+                    onClick={() => cancelarCita(c)}
                     disabled={cancelando === c.id}
                     className="w-full mt-2 py-2.5 bg-red-50 text-red-600 font-semibold rounded-xl disabled:opacity-50"
                   >
