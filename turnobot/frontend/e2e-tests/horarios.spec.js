@@ -7,9 +7,18 @@ const SLUG = `tienda-horarios-${ts}`;
 const EMP_ID = 'emp_test';
 const SVC_ID = 'svc_test';
 
-// Fechas fijas conocidas para las pruebas (Septiembre 2026)
-const LUNES = '2026-09-07';
-const DOMINGO = '2026-09-13';
+// Fechas dinámicas: próximo lunes y domingo futuros (el backend en modo mock
+// filtra los slots pasados con t.After(time.Now()), así que fechas fijas
+// quedan obsoletas en cuanto pasa el día).
+const fmtFecha = (d) => d.toISOString().slice(0, 10);
+function proximoDia(getDay) {
+  const d = new Date();
+  d.setDate(d.getDate() + 1); // empezar mañana para garantizar futuro
+  while (d.getDay() !== getDay) d.setDate(d.getDate() + 1);
+  return fmtFecha(d);
+}
+const LUNES = proximoDia(1);
+const DOMINGO = proximoDia(0);
 
 test.describe('Arnés de Pruebas: Motor de Horarios por Empleado', () => {
   test.beforeAll(async () => {

@@ -226,7 +226,18 @@ test('4. Eliminación en cascada de profesional con citas futuras', async () => 
   expect(reservaDoc.exists).toBe(false);
 });
 
-test('5. Validación estricta de teléfono (Longitud, Sanitización y Patrones Basura)', async () => {
+test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () => {
+  // Los tests 3 y 4 eliminan svc1/emp1 en cascada: recrearlos para aislar este test.
+  await db.collection('negocios').doc(slug).collection('servicios').doc('svc1').set({
+    name: 'Corte',
+    duration_minutes: 60,
+    price: '30000',
+  });
+  await db.collection('negocios').doc(slug).collection('empleados').doc('emp1').set({
+    name: 'Sandra',
+    calendar_id: '',
+  });
+
   const payloadBase = {
     servicioId: 'svc1',
     empleadoId: 'emp1',
@@ -241,36 +252,36 @@ test('5. Validación estricta de teléfono (Longitud, Sanitización y Patrones B
       body: JSON.stringify({ ...payloadBase, hora, clienteTelefono: phone }),
     });
 
-  // Escenario A: Número muy corto (< 10 dígitos)
+  // Escenario A: Número muy corto (imposible en libphonenumber)
   const resCorto = await bookRequest('12345', '16:00');
   expect(resCorto.status).toBe(400);
   const bodyCorto = await resCorto.json();
   expect(bodyCorto.error).toBe('invalid_phone');
-  expect(bodyCorto.message).toContain('10 dígitos');
 
-  // Escenario B: Número muy largo (> 10 dígitos)
+  // Escenario B: Número muy largo (imposible en libphonenumber)
   const resLargo = await bookRequest('3001234567899', '16:00');
   expect(resLargo.status).toBe(400);
   const bodyLargo = await resLargo.json();
   expect(bodyLargo.error).toBe('invalid_phone');
 
-  // Escenario C: Patrón "basura" bloqueado
+  // Escenario C: Patrón "basura" (sin asignación en la región CO)
   const resBasura = await bookRequest('0000000000', '16:00');
   expect(resBasura.status).toBe(400);
   const bodyBasura = await resBasura.json();
+  expect(bodyBasura.error).toBe('invalid_phone');
   expect(bodyBasura.message).toContain('no es válido');
 
-  // Escenario D: Número válido con caracteres extraños (el backend limpia a 10 dígitos)
+  // Escenario D: Número válido con formato (el backend normaliza a E.164)
   const phoneD = `31${Date.now().toString().slice(-8)}`; // único por ejecución
   const phoneDRaw = `(${phoneD.slice(0,3)}) ${phoneD.slice(3,6)}-${phoneD.slice(6)}`;
   const resSaneado = await bookRequest(phoneDRaw, '12:00');
   expect(resSaneado.status).toBe(201);
 
-  // Verificación en Firestore de que se guardó limpio
+  // Verificación en Firestore de que se guardó normalizado a E.164 (+57...)
   const checkDb = await db
     .collection('reservas')
     .where('negocio_id', '==', slug)
-    .where('user_phone', '==', phoneD)
+    .where('user_phone', '==', `+57${phoneD}`)
     .get();
   expect(checkDb.empty).toBe(false);
 });
