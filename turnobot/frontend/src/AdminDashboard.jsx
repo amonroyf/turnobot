@@ -162,6 +162,7 @@ export default function AdminDashboard() {
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
   const [reservas, setReservas] = useState([]);
+  const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [cancelando, setCancelando] = useState('');
 
@@ -243,6 +244,14 @@ export default function AdminDashboard() {
             );
           };
           suscribirReservas();
+
+          onSnapshot(
+            query(collection(db, 'clientes'), where('negocio_id', '==', docSnap.id)),
+            (snapshot) =>
+              setClientes(
+                snapshot.docs.map((d) => ({ id: d.id, ...d.data() })),
+              ),
+          );
         }
       }
 
@@ -396,6 +405,23 @@ export default function AdminDashboard() {
     setGuardandoWhatsApp(false);
   };
 
+  // --- LÓGICA CRM (Cerrojo SaaS) ---
+  // Los clientes viven en la colección clientes (mantenida por el backend).
+  // Ordenamos por número de visitas (los más leales primero).
+  const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+  const ultimaVisita = (ts) => {
+    if (!ts) return 'N/A';
+    const ms = ts.seconds ? ts.seconds * 1000 : ts instanceof Date ? ts.getTime() : NaN;
+    if (!ms) return 'N/A';
+    const diffDias = Math.floor((Date.now() - ms) / 86400000);
+    if (diffDias < 1) return 'Hoy';
+    if (diffDias === 1) return 'Ayer';
+    return `Hace ${diffDias} días`;
+  };
+  const clientesCRM = [...clientes].sort(
+    (a, b) => (b.visits || 0) - (a.visits || 0),
+  );
+
   if (loading) return <div className="p-8 text-center">Cargando panel...</div>;
 
   if (!user) {
@@ -417,13 +443,13 @@ export default function AdminDashboard() {
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
         <h1 className="text-3xl font-bold mb-4 text-gray-800">Turnobot Admin</h1>
         <p className="text-gray-600 mb-6">
-          Aún no has creado tu barbería.
+          Aún no has configurado tu negocio.
         </p>
         <a
           href="/register"
           className="p-4 bg-black text-white font-bold rounded-xl w-full max-w-xs text-center"
         >
-          Crear mi barbería
+          Crear mi negocio
         </a>
       </div>
     );
@@ -717,6 +743,69 @@ export default function AdminDashboard() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* MÓDULO CRM: DIRECTORIO DE CLIENTES */}
+      <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-8 mb-8">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-bold text-gray-800">Directorio de Clientes (CRM)</h2>
+          <span className="px-3 py-1 bg-black text-white text-xs font-bold rounded-full">
+            {clientesCRM.length} Clientes Totales
+          </span>
+        </div>
+        <p className="text-sm text-gray-500 mb-4">
+          Conoce a tus clientes más leales y cuánto han gastado en tu negocio. Usa estos datos para enviarles recordatorios o promociones por WhatsApp.
+        </p>
+
+        {clientesCRM.length === 0 ? (
+          <p className="text-sm text-gray-500 text-center py-8">
+            Aún no hay clientes registrados. Aparecerán automáticamente cuando agenden una cita.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
+                <tr>
+                  <th className="p-3 rounded-tl-lg">Cliente</th>
+                  <th className="p-3">WhatsApp</th>
+                  <th className="p-3 text-center">LTV (Total Gastado)</th>
+                  <th className="p-3 text-center">Visitas</th>
+                  <th className="p-3 text-right rounded-tr-lg">Última Visita</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {clientesCRM.map((c) => (
+                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="p-3 font-medium text-gray-900">{c.client_name}</td>
+                    <td className="p-3">
+                      <a
+                        href={`https://wa.me/${c.cliente_phone}?text=${encodeURIComponent('¡Hola ' + c.client_name + '! Queremos saber cómo te fue en tu última visita.')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-green-600 hover:underline flex items-center gap-1"
+                      >
+                        💬 {c.cliente_phone}
+                      </a>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className="inline-block px-2 py-1 bg-green-50 text-green-700 font-bold rounded-lg">
+                        {formatDinero(c.total_spent)}
+                      </span>
+                    </td>
+                    <td className="p-3 text-center">
+                      <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg">
+                        {c.visits || 0}
+                      </span>
+                    </td>
+                    <td className="p-3 text-right text-gray-500">
+                      {ultimaVisita(c.last_seen)}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

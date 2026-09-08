@@ -98,5 +98,13 @@ service cloud.firestore {
       allow read, update, delete: if request.auth != null &&
         (request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid);
     }
+
+    // 3. Colección principal: CLIENTES (CRM / Cerrojo SaaS)
+    // Los documentos los mantiene el backend (Admin SDK, ignora las reglas).
+    // Solo el dueño del negocio puede leer el directorio de sus clientes.
+    match /clientes/{clienteId} {
+      allow read: if request.auth != null &&
+        (request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid);
+    }
   }
 }

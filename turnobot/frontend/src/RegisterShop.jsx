@@ -144,7 +144,7 @@ export default function RegisterShop() {
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <h2 className="text-3xl font-extrabold text-gray-900">
-          {step === 1 ? 'Crea tu Barbería' : 'Configura tu Tienda'}
+          {step === 1 ? 'Crea tu Cuenta' : 'Configura tu Negocio'}
         </h2>
         <p className="mt-2 text-sm text-gray-600">
           {step === 1
@@ -231,7 +231,7 @@ export default function RegisterShop() {
           {step === 2 && (
             <form className="space-y-5" onSubmit={handleCompleteRegistration}>
               <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg text-center">
-                Sesión iniciada. Solo falta configurar tu barbería.
+                Sesión iniciada. Solo falta configurar tu negocio.
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">
@@ -240,7 +240,7 @@ export default function RegisterShop() {
                 <input
                   type="text"
                   required
-                  placeholder="Ej. Barbería VIP"
+                  placeholder="Ej. Clínica Wellness / Auto Detailing"
                   value={formData.name}
                   onChange={handleNameChange}
                   className="mt-1 w-full p-3 border border-gray-300 rounded-xl focus:ring-black focus:border-black"

@@ -113,6 +113,7 @@ type Booking struct {
 	ClientName     string    `firestore:"client_name"`
 	ServiceName    string    `firestore:"service_name"`
 	DurationMinute int       `firestore:"duration_minutes,omitempty"`
+	Price          int       `firestore:"price"`
 	DateTime       time.Time `firestore:"date_time"`
 	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
 	CreatedAt      time.Time `firestore:"created_at"`
@@ -303,7 +304,7 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Agrega la lectura del servicio para calcular saltos según su duración real
-	_, duration := resolveService(r.Context(), slug, servicioID)
+	_, duration, _ := resolveService(r.Context(), slug, servicioID)
 
 	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
@@ -372,7 +373,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Resolver el nombre y la duración real del servicio a partir de su ID
-	serviceName, duration := resolveService(ctx, slug, req.ServicioID)
+	serviceName, duration, precioServicio := resolveService(ctx, slug, req.ServicioID)
 
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
 	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
@@ -426,6 +427,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		ClientName:     req.ClienteNombre,
 		ServiceName:    serviceName,
 		DurationMinute: duration,
+		Price:          precioServicio,
 		DateTime:       eventDateTime,
 		CalendarEvt:    eventID,
 		CreatedAt:      time.Now(),
@@ -434,6 +436,9 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		http.Error(w, "Error guardando la reserva", http.StatusInternalServerError)
 		return
 	}
+
+	// CRM: actualizar (upsert) el cliente en el directorio del negocio
+	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -579,11 +584,60 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
+	// CRM: reflejar la cancelación en el directorio de clientes
+	decrementCliente(ctx, slug, b.UserPhone, b.Price)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Cita cancelada exitosamente",
 	})
+}
+
+// clienteDocID genera el ID estable del documento de cliente a partir del
+// negocio y el teléfono (E.164). Así un mismo cliente puede existir en varias
+// tiendas sin colisionar, y el upsert siempre apunta al mismo documento.
+func clienteDocID(slug, phone string) string {
+	return slug + "__" + phone
+}
+
+// upsertCliente escribe (o actualiza) el cliente en la colección clientes del
+// negocio cada vez que agenda una cita. Invalida las reglas de Firestore
+// porque el backend usa el Admin SDK (service account).
+func upsertCliente(ctx context.Context, slug, phone, name string, price int, dateTime time.Time) {
+	if slug == "" || phone == "" {
+		return
+	}
+	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
+	_, err := ref.Set(ctx, map[string]interface{}{
+		"negocio_id":    slug,
+		"cliente_phone": phone,
+		"client_name":   name,
+		"visits":        firestore.Increment(1),
+		"total_spent":   firestore.Increment(price),
+		"last_seen":     dateTime,
+		"updated_at":    time.Now(),
+	}, firestore.MergeAll)
+	if err != nil {
+		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
+	}
+}
+
+// decrementCliente refleja una cancelación en el directorio de clientes
+// (resta una visita y el valor del servicio cancelado).
+func decrementCliente(ctx context.Context, slug, phone string, price int) {
+	if slug == "" || phone == "" {
+		return
+	}
+	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
+	_, err := ref.Update(ctx, []firestore.Update{
+		{Path: "visits", Value: firestore.Increment(-1)},
+		{Path: "total_spent", Value: firestore.Increment(-price)},
+		{Path: "updated_at", Value: time.Now()},
+	})
+	if err != nil {
+		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
+	}
 }
 
 // isOwnerRequest verifica que el request traiga un ID token de Firebase válido
@@ -767,10 +821,10 @@ func deleteCalendarEvent(ctx context.Context, negocioID, empID, eventID string) 
 }
 
 // resolveService busca el nombre y la duración real del servicio en Firestore.
-func resolveService(ctx context.Context, slug, servicioID string) (string, int) {
+func resolveService(ctx context.Context, slug, servicioID string) (string, int, int) {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID).Get(ctx)
 	if err != nil {
-		return servicioID, 60 // Fallback: 60 minutos por defecto
+		return servicioID, 60, 0 // Fallback: 60 minutos por defecto
 	}
 	var svc Service
 	doc.DataTo(&svc)
@@ -783,7 +837,21 @@ func resolveService(ctx context.Context, slug, servicioID string) (string, int) 
 	if name == "" {
 		name = servicioID
 	}
-	return name, duration
+	return name, duration, parsePriceVal(svc.Price)
+}
+
+// parsePriceVal convierte un precio almacenado como string ("15.000", "$20000")
+// a su valor numérico en la moneda local. Devuelve 0 si no hay número válido.
+func parsePriceVal(s string) int {
+	d := digitsOnly(s)
+	if d == "" {
+		return 0
+	}
+	n, err := strconv.Atoi(d)
+	if err != nil {
+		return 0
+	}
+	return n
 }
 
 // bogotaLocation devuelve la zona horaria de Colombia. En el contenedor de

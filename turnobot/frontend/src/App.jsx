@@ -12,7 +12,7 @@ export default function App() {
         {/* Ruta para clientes: extrae dinámicamente el slug del local */}
         <Route path="/shop/:slug" element={<BookingApp />} />
 
-        {/* Ruta privada para los dueños de barberías */}
+        {/* Ruta privada para los dueños de negocios */}
         <Route path="/admin" element={<AdminDashboard />} />
 
         {/* Registro de primer dueño */}

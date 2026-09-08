@@ -149,7 +149,7 @@ export default function BookingApp() {
     setView('menu');
   };
 
-  if (!negocio && !error) return <div className="p-8 text-center">Cargando barbería...</div>;
+  if (!negocio && !error) return <div className="p-8 text-center">Cargando negocio...</div>;
 
   return (
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen p-4 font-sans">
@@ -177,7 +177,7 @@ export default function BookingApp() {
                 <span>
                   Agendar cita
                   <br />
-                  <span className="text-xs font-normal opacity-75">Elige servicio, barbero, día y hora</span>
+                  <span className="text-xs font-normal opacity-75">Elige servicio, profesional, día y hora</span>
                 </span>
               </button>
 
@@ -247,7 +247,7 @@ export default function BookingApp() {
                 <button onClick={volverAlMenu} className="text-sm text-gray-500 mb-4">← Volver al inicio</button>
               )}
 
-              {/* PASO 1: Elegir Servicio y Barbero */}
+              {/* PASO 1: Elegir Servicio y Profesional */}
               {step === 1 && (
                 <div className="space-y-6">
                   <div>
@@ -268,7 +268,7 @@ export default function BookingApp() {
 
                   {booking.servicioId && (
                     <div>
-                      <h2 className="font-semibold text-gray-700 mb-3">2. Elige tu barbero</h2>
+                      <h2 className="font-semibold text-gray-700 mb-3">2. Elige el profesional</h2>
                       <div className="grid grid-cols-2 gap-3">
                         {negocio.empleados.map(e => (
                           <button
@@ -334,7 +334,7 @@ export default function BookingApp() {
 
                   <div className="bg-white border border-gray-200 rounded-xl p-4 text-sm text-gray-700 space-y-1">
                     <p>💈 Servicio: <strong>{servicioElegido?.name}</strong> (${servicioElegido?.price})</p>
-                    <p>✂️ Barbero: <strong>{empleadoElegido?.name}</strong></p>
+                    <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name}</p>
                     <p>📅 Fecha: <strong>{booking.fecha}</strong> a las <strong>{booking.hora}</strong></p>
                   </div>
 
@@ -374,7 +374,7 @@ export default function BookingApp() {
 
                       <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
                         <p>💈 <strong>Servicio:</strong> {servicioElegido?.name || booking.servicioId}</p>
-                        <p>✂️ <strong>Barbero:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
+                        <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
                         <p>📅 <strong>Fecha:</strong> {booking.fecha}</p>
                         <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
                       </div>
@@ -409,7 +409,7 @@ export default function BookingApp() {
 
                       <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
                         <p>💈 <strong>Servicio:</strong> {servicioElegido?.name || booking.servicioId}</p>
-                        <p>✂️ <strong>Barbero:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
+                        <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
                         <p>📅 <strong>Fecha:</strong> {booking.fecha}</p>
                         <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
                       </div>
