@@ -40,6 +40,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
         visits: 3,
         total_spent: 90000,
         last_seen: haceTresDias,
+        last_date_str: '2026-09-01',
       });
       await db.collection('clientes').doc(`${slug}__573002222222`).set({
         negocio_id: slug,
@@ -48,6 +49,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
         visits: 1,
         total_spent: 45000,
         last_seen: hoy,
+        last_date_str: '2026-09-04',
       });
       await db.collection('clientes').doc(`${slug}__573003333333`).set({
         negocio_id: slug,
@@ -56,6 +58,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
         visits: 0,
         total_spent: 0,
         last_seen: null,
+        last_date_str: '',
       });
 
       // 3. El panel el directorio CRM en vivo
@@ -64,17 +67,22 @@ test.describe('Directorio de Clientes (CRM)', () => {
       // Contador de clientes totales (3 docs sembrados)
       await expect(page.getByText('3 Clientes Totales')).toBeVisible();
 
-      // Pepito: 3 visitas y LTV $90.000 (es-CO => 90.000), su última visita hace 3 días
+      // Pepito: 3 visitas, LTV $90.000 (es-CO => 90.000) y la fecha de su turno
+      // más reciente viene del respaldo legible en zona del negocio (last_date_str)
       const filaPepito = page.locator('tbody tr', { hasText: 'Pepito Prueba' });
       await expect(filaPepito).toBeVisible();
       await expect(filaPepito).toContainText('$90.000');
       await expect(filaPepito).toContainText('3');
-      await expect(filaPepito).toContainText('Hace 3 días');
+      await expect(filaPepito).toContainText(/1 sept?\.?\s*2026/);
 
-      // Juanita: 1 visita y LTV $45.000, última visita hoy
+      // Juanita: 1 visita, LTV $45.000 y su fecha también viene de last_date_str
       const filaJuanita = page.locator('tbody tr', { hasText: 'Juanita Prueba' });
       await expect(filaJuanita).toContainText('$45.000');
-      await expect(filaJuanita).toContainText('Hoy');
+      await expect(filaJuanita).toContainText(/4 sept?\.?\s*2026/);
+
+      // Sin last_seen ni last_date_str -> "N/A"
+      const filaSinVisitas = page.locator('tbody tr', { hasText: 'Sin Visitas' });
+      await expect(filaSinVisitas).toContainText('N/A');
 
       // Orden: el más leal (más visitas) aparece primero en la tabla
       await expect(page.locator('tbody tr').first()).toContainText('Pepito Prueba');

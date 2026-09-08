@@ -18,6 +18,93 @@ const formatPhoneNumber = (value) => {
   return value;
 };
 
+const DIAS_SEMANA_ABREV = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
+const MESES_ES = [
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+];
+
+// Calendario en cuadrícula en pantalla (sin el selector nativo del móvil).
+// Muestra el mes actual con navegación anterior/siguiente; los días pasados
+// quedan deshabilitados. Al tocar un día se solicita la fecha YYYY-MM-DD.
+function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const [anioMes, setAnioMes] = useState(() => ({
+    y: hoy.getFullYear(),
+    m: hoy.getMonth(),
+  }));
+  const { y, m } = anioMes;
+
+  const primerDia = new Date(y, m, 1);
+  const diasEnMes = new Date(y, m + 1, 0).getDate();
+  const offset = primerDia.getDay();
+
+  const fmt = (d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+
+  const navegar = (delta) => {
+    const fecha = new Date(y, m + delta, 1);
+    if (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), 1)) return;
+    setAnioMes({ y: fecha.getFullYear(), m: fecha.getMonth() });
+  };
+
+  const celdas = [];
+  for (let i = 0; i < offset; i++) celdas.push(null);
+  for (let d = 1; d <= diasEnMes; d++) {
+    celdas.push(new Date(y, m, d) < hoy ? null : d);
+  }
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4">
+      <div className="flex justify-between items-center mb-3">
+        <button
+          type="button"
+          onClick={() => navegar(-1)}
+          disabled={y === hoy.getFullYear() && m === hoy.getMonth()}
+          aria-label="Mes anterior"
+          className="w-8 h-8 rounded-full hover:bg-gray-100 disabled:opacity-30 font-bold"
+        >
+          ←
+        </button>
+        <span className="font-semibold capitalize text-gray-700">{MESES_ES[m]} {y}</span>
+        <button
+          type="button"
+          onClick={() => navegar(1)}
+          aria-label="Mes siguiente"
+          className="w-8 h-8 rounded-full hover:bg-gray-100 font-bold"
+        >
+          →
+        </button>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-xs text-gray-500 mb-1">
+        {DIAS_SEMANA_ABREV.map((dn) => (
+          <span key={dn} className="py-1">{dn}</span>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {celdas.map((d, i) => {
+          if (d === null) return <span key={i} />;
+          const fechaStr = fmt(d);
+          const activo = fechaSeleccionada === fechaStr;
+          return (
+            <button
+              key={i}
+              type="button"
+              onClick={() => onSeleccionar(fechaStr)}
+              aria-label={`Elegir ${fechaStr}`}
+              className={`h-10 rounded-lg text-sm font-medium ${
+                activo ? 'bg-black text-white' : 'text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function BookingApp() {
   const { slug } = useParams();
   const [view, setView] = useState('menu');
@@ -277,9 +364,12 @@ export default function BookingApp() {
                               setBooking({ ...booking, empleadoId: e.id });
                               setStep(2);
                             }}
-                            className="p-3 bg-white border border-gray-200 rounded-xl font-medium active:bg-gray-100"
+                            className="p-3 bg-white border border-gray-200 rounded-xl font-medium flex items-center gap-3 active:bg-gray-100"
                           >
-                            {e.name}
+                            <span className="w-8 h-8 rounded-full bg-gray-200 text-gray-600 flex items-center justify-center font-bold shrink-0">
+                              {e.name.charAt(0)}
+                            </span>
+                            <span className="leading-tight">{e.name}</span>
                           </button>
                         ))}
                       </div>
@@ -290,15 +380,16 @@ export default function BookingApp() {
 
               {/* PASO 2: Elegir Fecha */}
               {step === 2 && (
-                <div>
+                <div className="space-y-3">
                   <h2 className="font-semibold text-gray-700 mb-3">3. ¿Qué día vienes?</h2>
-                  <input
-                    type="date"
-                    min={new Date().toISOString().split('T')[0]}
-                    onChange={(e) => fetchHorarios(e.target.value)}
-                    className="w-full p-4 border border-gray-200 rounded-xl bg-white"
+                  <CalendarioGrid
+                    fechaSeleccionada={booking.fecha}
+                    onSeleccionar={fetchHorarios}
                   />
-                  {loading && <p className="mt-4 text-center text-sm text-gray-500">Buscando espacios libres...</p>}
+                  <p className="text-xs text-gray-400 text-center">
+                    Toca un día para ver los horarios disponibles
+                  </p>
+                  {loading && <p className="text-center text-sm text-gray-500">Buscando espacios libres...</p>}
                 </div>
               )}
 
@@ -367,9 +458,9 @@ export default function BookingApp() {
                   {!waConfirmado ? (
                     <>
                       <div className="text-4xl mb-3">⏳</div>
-                      <h2 className="text-xl font-bold text-gray-800 mb-1">¡Tu cita está casi lista!</h2>
+                      <h2 className="text-xl font-bold text-gray-800 mb-1">¡Cita reservada con éxito!</h2>
                       <p className="text-sm text-gray-500 mb-4">
-                        Tu turno quedó apartado. Solo se confirma cuando envíes el mensaje por WhatsApp.
+                        Tu turno ya está en nuestra agenda. Para agilizar tu atención al llegar, envíanos este mensaje rápido por WhatsApp.
                       </p>
 
                       <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
@@ -379,12 +470,12 @@ export default function BookingApp() {
                         <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
                       </div>
 
-                      {/* Bloque de validación humana obligatoria */}
+                      {/* Bloque de validación humana por WhatsApp */}
                       {negocio.whatsapp && (
                         <div className="mt-6 p-5 bg-green-50 border border-green-200 rounded-xl">
-                          <h3 className="font-bold text-green-900 mb-2">Último paso obligatorio</h3>
+                          <h3 className="font-bold text-green-900 mb-2">Envíanos tu mensaje</h3>
                           <p className="text-sm text-green-800 mb-4">
-                            Para evitar reservas falsas, requerimos que confirmes esta cita desde tu WhatsApp real.
+                            Con tu mensaje nos confirmas tu asistencia y te damos el visto bueno al instante.
                           </p>
 
                           <a
@@ -394,7 +485,7 @@ export default function BookingApp() {
                             onClick={() => setWaConfirmado(true)}
                             className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center shadow hover:bg-green-600 transition-colors"
                           >
-                            ✅ Confirmar mi cita por WhatsApp
+                            💬 Enviar mensaje por WhatsApp
                           </a>
                         </div>
                       )}

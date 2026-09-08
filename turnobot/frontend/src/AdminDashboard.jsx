@@ -175,7 +175,9 @@ export default function AdminDashboard() {
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null); // null or {id, name, horario}
   const [whatsApp, setWhatsApp] = useState('');
+  const [codigoPais, setCodigoPais] = useState('57');
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
+  const [enlaceCopiado, setEnlaceCopiado] = useState(false);
 
   useEffect(() => {
     if (negocio) setWhatsApp(negocio.whatsapp || '');
@@ -280,6 +282,17 @@ export default function AdminDashboard() {
   }, []);
 
   const logout = () => signOut(auth);
+
+  const copiarEnlace = async () => {
+    const url = `${window.location.origin}/shop/${negocio.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setEnlaceCopiado(true);
+      setTimeout(() => setEnlaceCopiado(false), 2000);
+    } catch {
+      prompt('Copia tu enlace de reservas:', url);
+    }
+  };
 
   const handleAddServicio = async (e) => {
     e.preventDefault();
@@ -406,9 +419,10 @@ export default function AdminDashboard() {
   const handleGuardarWhatsApp = async (e) => {
     e.preventDefault();
     if (!negocio) return;
-    const limpio = whatsApp.replace(/\D/g, '');
-    if (!limpio) {
-      alert('Ingresa el número de WhatsApp con código de país (ej. 573001234567)');
+    const digitos = whatsApp.replace(/\D/g, '');
+    const limpio = digitos.startsWith(codigoPais) ? digitos : codigoPais + digitos;
+    if (limpio.length < 10) {
+      alert('Ingresa el número local del WhatsApp (ej. 3001234567)');
       return;
     }
     setGuardandoWhatsApp(true);
@@ -427,14 +441,35 @@ export default function AdminDashboard() {
   // Los clientes viven en la colección clientes (mantenida por el backend).
   // Ordenamos por número de visitas (los más leales primero).
   const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
-  const ultimaVisita = (ts) => {
-    if (!ts) return 'N/A';
-    const ms = ts.seconds ? ts.seconds * 1000 : ts instanceof Date ? ts.getTime() : NaN;
-    if (!ms) return 'N/A';
-    const diffDias = Math.floor((Date.now() - ms) / 86400000);
-    if (diffDias < 1) return 'Hoy';
-    if (diffDias === 1) return 'Ayer';
-    return `Hace ${diffDias} días`;
+  // Fecha de la última cita: primero el respaldo YYYY-MM-DD en zona del negocio
+  // (evita desfases por zona horaria del navegador); si no existe, cae al
+  // Timestamp de Firestore; si tampoco, "N/A".
+  const fechaUltimaVisita = (c) => {
+    if (c.last_date_str) {
+      const [year, month, day] = c.last_date_str.split('-').map(Number);
+      if (year && month && day) {
+        return new Date(year, month - 1, day).toLocaleDateString('es-ES', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    }
+    if (c.last_seen) {
+      const ms = c.last_seen.seconds
+        ? c.last_seen.seconds * 1000
+        : c.last_seen instanceof Date
+          ? c.last_seen.getTime()
+          : NaN;
+      if (ms) {
+        return new Date(ms).toLocaleDateString('es-ES', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    }
+    return 'N/A';
   };
   const clientesCRM = [...clientes].sort(
     (a, b) => (b.visits || 0) - (a.visits || 0),
@@ -475,39 +510,55 @@ export default function AdminDashboard() {
 
   return (
     <div className="max-w-4xl mx-auto p-6 font-sans">
-      <header className="flex justify-between items-center mb-8 border-b pb-4">
-        <div>
+      <header className="mb-8 border-b pb-4">
+        <div className="flex justify-between items-center gap-4">
           <h1 className="text-2xl font-bold text-gray-800">{negocio.name}</h1>
-          <a
-            href={`/shop/${negocio.id}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-sm text-blue-600 hover:underline"
+          <button
+            onClick={logout}
+            className="text-sm text-red-500 font-semibold px-4 py-2 bg-red-50 rounded-lg"
           >
-            Ver mi página pública
-          </a>
+            Cerrar Sesión
+          </button>
         </div>
         <button
-          onClick={logout}
-          className="text-sm text-red-500 font-semibold px-4 py-2 bg-red-50 rounded-lg"
+          onClick={copiarEnlace}
+          className="mt-4 w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm shadow-sm hover:bg-blue-700 transition-colors"
         >
-          Cerrar Sesión
+          {enlaceCopiado ? '✅ ¡Enlace de reservas copiado!' : '📋 Copiar enlace de reservas'}
         </button>
+        <p className="text-xs text-gray-400 mt-2 text-center">
+          Compártelo en tu Instagram o WhatsApp para que tus clientes reserven.
+        </p>
       </header>
 
       <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8">
         <h2 className="text-lg font-bold mb-1 text-gray-800">WhatsApp del negocio</h2>
         <p className="text-sm text-gray-500 mb-4">
           Número al que llegan las confirmaciones de citas y las consultas de tus clientes.
-          Con código de país, sin espacios ni el símbolo + (ej. 573001234567).
         </p>
-        <form onSubmit={handleGuardarWhatsApp} className="flex gap-3">
+        <form onSubmit={handleGuardarWhatsApp} className="flex flex-wrap gap-2">
+          <select
+            value={codigoPais}
+            onChange={(e) => setCodigoPais(e.target.value)}
+            className="p-3 border border-gray-300 rounded-xl text-sm bg-white"
+          >
+            <option value="57">🇨🇴 +57 Colombia</option>
+            <option value="52">🇲🇽 +52 México</option>
+            <option value="51">🇵🇪 +51 Perú</option>
+            <option value="56">🇨🇱 +56 Chile</option>
+            <option value="54">🇦🇷 +54 Argentina</option>
+            <option value="58">🇻🇪 +58 Venezuela</option>
+            <option value="593">🇪🇨 +593 Ecuador</option>
+            <option value="55">🇧🇷 +55 Brasil</option>
+            <option value="34">🇪🇸 +34 España</option>
+            <option value="1">🇺🇸 +1 EE. UU./Canadá</option>
+          </select>
           <input
             type="tel"
             value={whatsApp}
             onChange={(e) => setWhatsApp(e.target.value)}
-            placeholder="Ej. 573001234567"
-            className="flex-1 p-3 border border-gray-300 rounded-xl text-sm"
+            placeholder="Ej. 3001234567"
+            className="flex-1 min-w-[180px] p-3 border border-gray-300 rounded-xl text-sm"
           />
           <button
             type="submit"
@@ -518,6 +569,9 @@ export default function AdminDashboard() {
           </button>
         </form>
         <p className="text-xs text-gray-400 mt-2">
+          Escribe solo los 10 dígitos locales (sin 0 inicial ni espacios). Cambia el indicativo si tu WhatsApp es de otro país.
+        </p>
+        <p className="text-xs text-gray-400 mt-1">
           Sin este número, la pantalla de confirmación por WhatsApp no aparece en tu página pública.
         </p>
       </div>
@@ -528,7 +582,18 @@ export default function AdminDashboard() {
 
           <ul className="space-y-3 mb-6">
             {servicios.length === 0 && (
-              <p className="text-sm text-gray-500">No has agregado servicios.</p>
+              <div className="text-center py-6">
+                <div className="text-4xl mb-2">🛠️</div>
+                <p className="text-sm text-gray-500 mb-4">
+                  Aún no tienes servicios. Agrega el primero para empezar a recibir reservas.
+                </p>
+                <button
+                  onClick={() => document.getElementById('inp-nuevo-servicio').focus()}
+                  className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
+                >
+                  Crea tu primer servicio
+                </button>
+              </div>
             )}
             {servicios.map((s) => (
               <li
@@ -559,6 +624,7 @@ export default function AdminDashboard() {
               Agregar nuevo servicio
             </h3>
             <input
+              id="inp-nuevo-servicio"
               type="text"
               required
               placeholder="Nombre (ej. Corte clásico)"
@@ -613,9 +679,18 @@ export default function AdminDashboard() {
 
           <ul className="space-y-3 mb-6">
             {profesionales.length === 0 && (
-              <p className="text-sm text-gray-500">
-                No has agregado profesionales.
-              </p>
+              <div className="text-center py-6">
+                <div className="text-4xl mb-2">👥</div>
+                <p className="text-sm text-gray-500 mb-4">
+                  Aún no tienes profesionales. Agrega la primera persona que atenderá tus turnos.
+                </p>
+                <button
+                  onClick={() => document.getElementById('inp-nuevo-profesional').focus()}
+                  className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
+                >
+                  Crea tu primer profesional ahora
+                </button>
+              </div>
             )}
             {profesionales.map((p) => (
               <li
@@ -663,6 +738,7 @@ export default function AdminDashboard() {
               Agregar profesional
             </h3>
             <input
+              id="inp-nuevo-profesional"
               type="text"
               required
               placeholder="Nombre del profesional"
@@ -820,7 +896,7 @@ export default function AdminDashboard() {
                       </span>
                     </td>
                     <td className="p-3 text-right text-gray-500">
-                      {ultimaVisita(c.last_seen)}
+                      {fechaUltimaVisita(c)}
                     </td>
                   </tr>
                 ))}

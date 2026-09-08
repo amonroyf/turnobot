@@ -615,7 +615,8 @@ func upsertCliente(ctx context.Context, slug, phone, name string, price int, dat
 		"client_name":   name,
 		"visits":        firestore.Increment(1),
 		"total_spent":   firestore.Increment(price),
-		"last_seen":     dateTime,
+		"last_seen":     dateTime,                      // Fecha/Hora exacta del turno agendado
+		"last_date_str": dateTime.Format("2006-01-02"), // Respaldo legible en zona del negocio
 		"updated_at":    time.Now(),
 	}, firestore.MergeAll)
 	if err != nil {

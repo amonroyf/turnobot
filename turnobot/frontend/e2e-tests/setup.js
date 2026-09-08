@@ -77,6 +77,18 @@ export const crearReservaE2E = async ({ slug = SLUG_E2E, phone, name, service, e
   });
 };
 
+// Selecciona una fecha en el calendario en pantalla de BookingApp (paso 2).
+// Navega al mes destino si hace falta y toca el botón del día.
+export const elegirDiaEnCalendario = async (page, yyyymmdd) => {
+  const [y, m, d] = yyyymmdd.split('-').map(Number);
+  const hoy = new Date();
+  const saltosMes = (y - hoy.getFullYear()) * 12 + (m - 1 - hoy.getMonth());
+  for (let i = 0; i < saltosMes; i++) {
+    await page.getByRole('button', { name: 'Mes siguiente' }).click();
+  }
+  await page.getByRole('button', { name: `Elegir ${yyyymmdd}` }).click();
+};
+
 // ---- Limpieza completa de entorno real (slug + usuario Auth de prueba) ----
 // Borra reservas, subcolecciones, el negocio y la cuenta de Firebase Auth del
 // usuario de prueba. Solo debe usarse con datos E2E (ambiente de staging).

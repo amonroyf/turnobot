@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { limpiarReservasE2E, crearReservaE2E, db } from './setup.js';
+import { limpiarReservasE2E, crearReservaE2E, elegirDiaEnCalendario, db } from './setup.js';
 
 const SLUG = 'tienda-e2e';
 
@@ -21,21 +21,21 @@ async function llegarAConfirmacion(page) {
   await expect(page.getByText('Alejandro').first()).toBeVisible();
   await page.getByText('Alejandro', { exact: true }).click();
 
-  await expect(page.locator('input[type="date"]')).toBeVisible();
-  await page.fill('input[type="date"]', mañana());
+  await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeVisible();
+  await elegirDiaEnCalendario(page, mañana());
 
   // Paso 3: los slots se cargan en un grid de botones
-  await expect(page.locator('.grid button').first()).toBeVisible();
+  await expect(page.locator('div.grid-cols-3 button').first()).toBeVisible();
 }
 
 async function elegirPrimerSlot(page) {
-  await page.locator('.grid button').first().click();
+  await page.locator('div.grid-cols-3 button').first().click();
   await expect(page.getByPlaceholder('Tu Nombre')).toBeVisible();
 }
 
 async function llenarYConfirmar(page, nombre, telefono) {
   await page.getByPlaceholder('Tu Nombre').fill(nombre);
-  await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill(telefono);
+  await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefono);
   await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
 }
 
@@ -49,7 +49,7 @@ test.describe('Turnobot E2E Suite', () => {
     await elegirPrimerSlot(page);
     await llenarYConfirmar(page, 'Juan E2E', '300 123 4567'); // con espacios -> 3001234567
 
-    await expect(page.getByText('¡Tu cita está casi lista!')).toBeVisible();
+    await expect(page.getByText('¡Cita reservada con éxito!')).toBeVisible();
 
     // Verificar que en Firestore el teléfono quedó saneado (E.164: +573001234567)
     const snap = await db
@@ -77,7 +77,7 @@ test.describe('Turnobot E2E Suite', () => {
 
     // Cliente 1 agenda y alcanza la pantalla de éxito
     await llenarYConfirmar(p1, 'Cliente Rápido', '3111111111');
-    await expect(p1.getByText('¡Tu cita está casi lista!')).toBeVisible();
+    await expect(p1.getByText('¡Cita reservada con éxito!')).toBeVisible();
 
     // Cliente 2 intenta el mismo slot: el backend debe responder 409
     // y el frontend debe recargar los horarios (refetch). Esperamos la
@@ -114,7 +114,7 @@ test.describe('Turnobot E2E Suite', () => {
     await page.goto(`/shop/${SLUG}`);
     await page.getByText('Mis citas', { exact: false }).click();
 
-    await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill(phone);
+    await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(phone);
     await page.getByRole('button', { name: 'Ver mis citas' }).click();
 
     await expect(page.getByText('Corte y Barba').first()).toBeVisible();
@@ -122,7 +122,9 @@ test.describe('Turnobot E2E Suite', () => {
     page.on('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Cancelar cita' }).click();
 
-    await expect(page.getByText(/No tienes citas pendientes/)).toBeVisible();
+    // Tras cancelar se muestra el aviso de confirmación (la agenda quedó liberada)
+    await expect(page.getByText('Cita cancelada')).toBeVisible();
+    await expect(page.getByText('El espacio en la agenda ha sido liberado.')).toBeVisible();
 
     // Verificar que Firestore ya no tiene la reserva
     const snap = await db.collection('reservas').where('user_phone', '==', phone).get();

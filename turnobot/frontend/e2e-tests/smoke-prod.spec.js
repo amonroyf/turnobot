@@ -24,8 +24,8 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   await page.locator('input[type="password"]').fill('Clave.123');
   await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
 
-  await expect(page.getByPlaceholder('Ej. Barbería VIP')).toBeVisible();
-  await page.getByPlaceholder('Ej. Barbería VIP').fill(`Smoke Prod ${ts}`);
+  await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
+  await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(`Smoke Prod ${ts}`);
   await page.locator('input[type="text"]').nth(1).fill(slug);
   await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
