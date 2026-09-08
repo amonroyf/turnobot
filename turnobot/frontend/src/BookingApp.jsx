@@ -53,7 +53,8 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
           type="button"
           onClick={() => navegar(-1)}
           disabled={y === hoy.getFullYear() && m === hoy.getMonth()}
-          className="w-10 h-10 rounded-full hover:bg-gray-100 disabled:opacity-30 font-bold flex items-center justify-center text-lg"
+          aria-label="Mes anterior"
+          className="w-10 h-10 rounded-full hover:bg-gray-100 active:scale-95 disabled:opacity-30 font-bold flex items-center justify-center text-lg transition-transform"
         >
           ‹
         </button>
@@ -61,7 +62,8 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
         <button
           type="button"
           onClick={() => navegar(1)}
-          className="w-10 h-10 rounded-full hover:bg-gray-100 font-bold flex items-center justify-center text-lg"
+          aria-label="Mes siguiente"
+          className="w-10 h-10 rounded-full hover:bg-gray-100 active:scale-95 font-bold flex items-center justify-center text-lg transition-transform"
         >
           ›
         </button>
@@ -81,7 +83,8 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
               key={i}
               type="button"
               onClick={() => onSeleccionar(fechaStr)}
-              className={`h-11 rounded-xl text-sm font-semibold transition-all flex items-center justify-center ${
+              aria-label={`Elegir ${fechaStr}`}
+              className={`h-11 rounded-xl text-sm font-semibold transition-all flex items-center justify-center active:scale-95 ${
                 activo ? 'bg-black text-white shadow-md scale-105' : 'text-gray-700 bg-gray-50 active:bg-gray-200'
               }`}
             >
@@ -190,6 +193,14 @@ export default function BookingApp() {
     setView('agendar');
   };
 
+  // Agrupación dinámica por franja horaria para pantallas móviles
+  const slotsManana = slots.filter(h => parseInt(h.split(':')[0], 10) < 12);
+  const slotsTarde = slots.filter(h => {
+    const hNum = parseInt(h.split(':')[0], 10);
+    return hNum >= 12 && hNum < 17;
+  });
+  const slotsNoche = slots.filter(h => parseInt(h.split(':')[0], 10) >= 17);
+
   if (!negocio && !error) return <div className="p-8 text-center font-medium text-gray-500">Cargando negocio...</div>;
 
   return (
@@ -226,7 +237,7 @@ export default function BookingApp() {
                       href={`https://wa.me/${negocio.whatsapp}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center shadow-md active:scale-98 transition-transform"
+                      className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center shadow-md active:scale-95 transition-transform"
                     >
                       💬 Escríbenos por WhatsApp
                     </a>
@@ -252,7 +263,7 @@ export default function BookingApp() {
                           <button
                             key={s.id}
                             onClick={() => setBooking({ ...booking, servicioId: s.id })}
-                            className={`p-4 rounded-2xl border text-left flex justify-between items-center transition-all ${
+                            className={`p-4 rounded-2xl border text-left flex justify-between items-center transition-all active:scale-95 ${
                               booking.servicioId === s.id ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
                             }`}
                           >
@@ -277,7 +288,7 @@ export default function BookingApp() {
                                 setBooking({ ...booking, empleadoId: e.id });
                                 setStep(2);
                               }}
-                              className="p-3.5 bg-white border border-gray-200 rounded-2xl font-bold text-sm flex items-center gap-3 active:bg-gray-100 shadow-2xs"
+                              className="p-3.5 bg-white border border-gray-200 rounded-2xl font-bold text-sm flex items-center gap-3 active:bg-gray-100 active:scale-95 transition-all shadow-2xs"
                             >
                               <span className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-black shrink-0 border border-gray-200">
                                 {e.name.charAt(0)}
@@ -307,19 +318,66 @@ export default function BookingApp() {
                         <p className="text-red-500 font-semibold">No hay espacios disponibles este día.</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-3 gap-2.5">
-                        {slots.map(hora => (
-                          <button
-                            key={hora}
-                            onClick={() => {
-                              setBooking({ ...booking, hora });
-                              setStep(4);
-                            }}
-                            className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white transition-colors shadow-2xs"
-                          >
-                            {hora}
-                          </button>
-                        ))}
+                      <div className="space-y-4">
+                        {slotsManana.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Mañana</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              {slotsManana.map(hora => (
+                                <button
+                                  key={hora}
+                                  onClick={() => {
+                                    setBooking({ ...booking, hora });
+                                    setStep(4);
+                                  }}
+                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                >
+                                  {hora}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {slotsTarde.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Tarde</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              {slotsTarde.map(hora => (
+                                <button
+                                  key={hora}
+                                  onClick={() => {
+                                    setBooking({ ...booking, hora });
+                                    setStep(4);
+                                  }}
+                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                >
+                                  {hora}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {slotsNoche.length > 0 && (
+                          <div>
+                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Noche</p>
+                            <div className="grid grid-cols-3 gap-2">
+                              {slotsNoche.map(hora => (
+                                <button
+                                  key={hora}
+                                  onClick={() => {
+                                    setBooking({ ...booking, hora });
+                                    setStep(4);
+                                  }}
+                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                >
+                                  {hora}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -335,12 +393,15 @@ export default function BookingApp() {
                     </div>
                     <input
                       type="text" required placeholder="Tu Nombre completo"
+                      autoComplete="name"
                       value={booking.clienteNombre}
                       onChange={e => setBooking({ ...booking, clienteNombre: e.target.value })}
                       className="w-full p-4 border border-gray-200 rounded-xl bg-white text-base focus:outline-none focus:border-black"
                     />
                     <input
                       type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+                      inputMode="tel"
+                      autoComplete="tel"
                       value={booking.clienteTelefono}
                       onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
                       className="w-full p-4 border border-gray-200 rounded-xl bg-white text-base focus:outline-none focus:border-black"
@@ -348,7 +409,7 @@ export default function BookingApp() {
                     <button
                       type="submit"
                       disabled={loading}
-                      className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-4 disabled:opacity-50 active:scale-98 transition-transform text-base shadow-md"
+                      className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-4 disabled:opacity-50 active:scale-95 transition-transform text-base shadow-md"
                     >
                       {loading ? 'Agendando...' : 'Confirmar Reserva'}
                     </button>
@@ -375,7 +436,7 @@ export default function BookingApp() {
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setWaConfirmado(true)}
-                            className="block w-full py-4 bg-green-500 text-white font-bold rounded-2xl text-center shadow-md active:scale-98 transition-transform"
+                            className="block w-full py-4 bg-green-500 text-white font-bold rounded-2xl text-center shadow-md active:scale-95 transition-transform"
                           >
                             💬 Enviar mensaje por WhatsApp
                           </a>

@@ -12,8 +12,8 @@ const mañana = () => {
 // eligiendo automáticamente servicio, barbero, fecha y dejando los slots cargados.
 async function llegarAConfirmacion(page) {
   await page.goto(`/shop/${SLUG}`);
-  await expect(page.getByText('Agendar cita').first()).toBeVisible();
-  await page.getByText('Agendar cita', { exact: false }).first().click();
+  await expect(page.getByRole('button', { name: /Agendar/ })).toBeVisible();
+  await page.getByRole('button', { name: /Agendar/ }).click();
 
   await expect(page.getByText('Corte y Barba').first()).toBeVisible();
   await page.getByText('Corte y Barba').first().click();
@@ -30,11 +30,11 @@ async function llegarAConfirmacion(page) {
 
 async function elegirPrimerSlot(page) {
   await page.locator('div.grid-cols-3 button').first().click();
-  await expect(page.getByPlaceholder('Tu Nombre')).toBeVisible();
+  await expect(page.getByPlaceholder('Tu Nombre completo')).toBeVisible();
 }
 
 async function llenarYConfirmar(page, nombre, telefono) {
-  await page.getByPlaceholder('Tu Nombre').fill(nombre);
+  await page.getByPlaceholder('Tu Nombre completo').fill(nombre);
   await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefono);
   await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
 }

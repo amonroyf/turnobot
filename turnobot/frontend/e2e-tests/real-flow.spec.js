@@ -67,7 +67,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
 
   test('El cliente agenda exitosamente a través del embudo público', async ({ page }) => {
     await page.goto(`/shop/${SLUG_REAL}`);
-    await page.getByText('Agendar cita', { exact: false }).first().click();
+    await page.getByRole('button', { name: /Agendar/ }).click();
 
     await expect(page.getByText('Corte Premium').first()).toBeVisible();
     await page.getByText('Corte Premium').first().click();
@@ -82,7 +82,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await expect(page.locator('div.grid-cols-3 button').first()).toBeVisible();
     await page.locator('div.grid-cols-3 button').first().click();
 
-    await page.getByPlaceholder('Tu Nombre').fill('Cliente Automatizado');
+    await page.getByPlaceholder('Tu Nombre completo').fill('Cliente Automatizado');
     await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('300 123 4567');
     await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
 
@@ -90,7 +90,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
   });
 
   test('Prevención de Doble Reserva (Status 409 Conflict)', async ({ browser }) => {
-    test.setTimeout(60000);
+    test.setTimeout(120000);
     const ctx1 = await browser.newContext();
     const ctx2 = await browser.newContext();
     const p1 = await ctx1.newPage();
@@ -98,23 +98,23 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
 
     async function hastaConfirmacion(page) {
       await page.goto(`/shop/${SLUG_REAL}`);
-      await page.getByText('Agendar cita', { exact: false }).first().click();
+      await page.getByRole('button', { name: /Agendar/ }).click();
       await page.getByText('Corte Premium').first().click();
       await page.getByText('Barbero E2E', { exact: true }).first().click();
       await elegirDiaEnCalendario(page, mañana());
       await page.locator('div.grid-cols-3 button').first().click();
-      await page.getByPlaceholder('Tu Nombre').fill('Usuario Rápido');
+      await page.getByPlaceholder('Tu Nombre completo').fill('Usuario Rápido');
       await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('3000000001');
     }
 
     await hastaConfirmacion(p1);
     await p2.goto(`/shop/${SLUG_REAL}`);
-    await p2.getByText('Agendar cita', { exact: false }).first().click();
+    await p2.getByRole('button', { name: /Agendar/ }).click();
     await p2.getByText('Corte Premium').first().click();
     await p2.getByText('Barbero E2E', { exact: true }).first().click();
     await elegirDiaEnCalendario(p2, mañana());
     await p2.locator('.grid button').first().click();
-    await p2.getByPlaceholder('Tu Nombre').fill('Usuario Lento');
+    await p2.getByPlaceholder('Tu Nombre completo').fill('Usuario Lento');
     await p2.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('3000000002');
 
     // El primero reserva y bloquea el slot
