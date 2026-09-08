@@ -260,6 +260,11 @@ func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	doc.DataTo(&negocio)
 	negocio.ID = doc.Ref.ID
 
+	// Asegurar que los arrays nunca sean null en el JSON (la UI hace .map
+	// directo; un negocio sin servicios/empleados debe entregar []).
+	negocio.Servicios = []Service{}
+	negocio.Empleados = []Employee{}
+
 	svcsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Documents(ctx).GetAll()
 	if err != nil {
 		log.Printf("Error cargando servicios de %s: %v", slug, err)

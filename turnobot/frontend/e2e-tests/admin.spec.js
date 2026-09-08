@@ -59,11 +59,22 @@ test.describe('Register + Admin Panel', () => {
     await page.getByRole('button', { name: 'Añadir Profesional' }).click();
     await expect(page.getByText('Pepe')).toBeVisible({ timeout: 20000 });
 
-    // Verificar en Firestore las subcolecciones
+    // Verificar en Firestore las subcolecciones (con poll: la lectura inmediata
+    // puede ver el doc aún no consolidado por consistencia eventual de Firestore)
+    await expect
+      .poll(
+        async () =>
+          (await db.collection('negocios').doc(slug).collection('servicios').get()).empty,
+      )
+      .toBe(false);
     const servicios = await db.collection('negocios').doc(slug).collection('servicios').get();
-    expect(servicios.empty).toBe(false);
+    await expect
+      .poll(
+        async () =>
+          (await db.collection('negocios').doc(slug).collection('empleados').get()).empty,
+      )
+      .toBe(false);
     const empleados = await db.collection('negocios').doc(slug).collection('empleados').get();
-    expect(empleados.empty).toBe(false);
 
     // Eliminar el profesional desde el panel (botón "Eliminar")
     page.once('dialog', (d) => d.accept());

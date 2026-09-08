@@ -7,13 +7,19 @@ test.setTimeout(120_000);
 // HARNESS del módulo CRM ("Directorio de Clientes")
 // ─────────────────────────────────────────────────────────────────────────────
 // Verifica que el panel del dueño lea la colección clientes (mantenida por el
-// backend) y muestre: nombre, WhatsApp, LTV, visitas y última visita relativa.
+// backend) y muestre en tarjetas móviles: nombre, WhatsApp, LTV, visitas y
+// última visita (respaldada en last_date_str, en zona del negocio).
 test.describe('Directorio de Clientes (CRM)', () => {
   test('Muestra el historial de clientes con LTV y última visita', async ({ page }) => {
     const ts = Date.now();
     const nombre = `Cliente QA ${ts}`;
     const email = `crm${ts}@turnobot.test`;
     const slug = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
+
+    // Las tarjetas de clientes (CRM) se distinguen de las de reservas por el
+    // marcador "LTV" y viven dentro de una tajeta blanca contenedora.
+    const tarjetaCliente = (nombreCliente) =>
+      page.locator('div.rounded-2xl', { hasText: 'LTV' }).filter({ hasText: nombreCliente });
 
     try {
       // 1. Registro del local (crea el negocio y la sesión del dueño en el navegador)
@@ -61,36 +67,38 @@ test.describe('Directorio de Clientes (CRM)', () => {
         last_date_str: '',
       });
 
-      // 3. El panel el directorio CRM en vivo
-      await expect(page.getByText('Directorio de Clientes (CRM)')).toBeVisible({ timeout: 15000 });
-
-      // Contador de clientes totales (3 docs sembrados)
-      await expect(page.getByText('3 Clientes Totales')).toBeVisible();
+      // 3. El panel muestra el directorio CRM en vivo (contador = 3 clientes)
+      await expect(
+        page.getByRole('heading', { name: /Directorio de Clientes \(3\)/ }),
+      ).toBeVisible({ timeout: 15000 });
 
       // Pepito: 3 visitas, LTV $90.000 (es-CO => 90.000) y la fecha de su turno
       // más reciente viene del respaldo legible en zona del negocio (last_date_str)
-      const filaPepito = page.locator('tbody tr', { hasText: 'Pepito Prueba' });
-      await expect(filaPepito).toBeVisible();
-      await expect(filaPepito).toContainText('$90.000');
-      await expect(filaPepito).toContainText('3');
-      await expect(filaPepito).toContainText(/1 sept?\.?\s*2026/);
+      const tarjetaPepito = tarjetaCliente('Pepito Prueba');
+      await expect(tarjetaPepito).toBeVisible();
+      await expect(tarjetaPepito).toContainText('$90.000');
+      await expect(tarjetaPepito).toContainText('3 visitas');
+      await expect(tarjetaPepito).toContainText(/1 sept?\.?\s*2026/);
 
       // Juanita: 1 visita, LTV $45.000 y su fecha también viene de last_date_str
-      const filaJuanita = page.locator('tbody tr', { hasText: 'Juanita Prueba' });
-      await expect(filaJuanita).toContainText('$45.000');
-      await expect(filaJuanita).toContainText(/4 sept?\.?\s*2026/);
+      const tarjetaJuanita = tarjetaCliente('Juanita Prueba');
+      await expect(tarjetaJuanita).toContainText('$45.000');
+      await expect(tarjetaJuanita).toContainText('1 visitas');
+      await expect(tarjetaJuanita).toContainText(/4 sept?\.?\s*2026/);
 
       // Sin last_seen ni last_date_str -> "N/A"
-      const filaSinVisitas = page.locator('tbody tr', { hasText: 'Sin Visitas' });
-      await expect(filaSinVisitas).toContainText('N/A');
+      const tarjetaSinVisitas = tarjetaCliente('Sin Visitas');
+      await expect(tarjetaSinVisitas).toContainText('N/A');
 
-      // Orden: el más leal (más visitas) aparece primero en la tabla
-      await expect(page.locator('tbody tr').first()).toContainText('Pepito Prueba');
+      // Orden: el más leal (más visitas) aparece primero en las tarjetas
+      await expect(page.locator('div.rounded-2xl', { hasText: 'LTV' }).first()).toContainText(
+        'Pepito Prueba',
+      );
 
       // Los enlaces de WhatsApp apuntan al número E.164 de cada cliente
-      const linkPepito = filaPepito.locator('a[href]').first();
+      const linkPepito = tarjetaPepito.locator('a[href]').first();
       await expect(linkPepito).toHaveAttribute('href', /wa\.me\/.*573001111111/);
-      await expect(filaJuanita.locator('a[href]').first()).toHaveAttribute(
+      await expect(tarjetaJuanita.locator('a[href]').first()).toHaveAttribute(
         'href',
         /wa\.me\/.*573002222222/,
       );

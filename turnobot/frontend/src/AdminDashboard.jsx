@@ -333,7 +333,6 @@ export default function AdminDashboard() {
     }
   };
 
-
   const handleEliminarServicio = async (servicio) => {
     if (!negocio || !user) return;
     if (
@@ -509,401 +508,340 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 font-sans">
-      <header className="mb-8 border-b pb-4">
-        <div className="flex justify-between items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-800">{negocio.name}</h1>
-          <button
-            onClick={logout}
-            className="text-sm text-red-500 font-semibold px-4 py-2 bg-red-50 rounded-lg"
-          >
-            Cerrar Sesión
-          </button>
+    <div className="max-w-2xl mx-auto p-4 font-sans antialiased pb-28">
+      {/* CABECERA MÓVIL */}
+      <header className="mb-6 flex justify-between items-center border-b border-gray-200 pb-4">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">{negocio.name}</h1>
+          <p className="text-xs text-gray-400">Panel de Administración</p>
         </div>
         <button
-          onClick={copiarEnlace}
-          className="mt-4 w-full py-3 bg-blue-600 text-white font-bold rounded-xl text-sm shadow-sm hover:bg-blue-700 transition-colors"
+          onClick={logout}
+          className="text-xs font-bold text-red-500 px-3 py-2 bg-red-50 rounded-xl"
         >
-          {enlaceCopiado ? '✅ ¡Enlace de reservas copiado!' : '📋 Copiar enlace de reservas'}
+          Cerrar Sesión
         </button>
-        <p className="text-xs text-gray-400 mt-2 text-center">
-          Compártelo en tu Instagram o WhatsApp para que tus clientes reserven.
-        </p>
       </header>
 
-      <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mb-8">
-        <h2 className="text-lg font-bold mb-1 text-gray-800">WhatsApp del negocio</h2>
-        <p className="text-sm text-gray-500 mb-4">
+      {/* WHATSAPP DEL NEGOCIO */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-800 mb-1">WhatsApp del local</h2>
+        <p className="text-xs text-gray-500 mb-3">
           Número al que llegan las confirmaciones de citas y las consultas de tus clientes.
         </p>
-        <form onSubmit={handleGuardarWhatsApp} className="flex flex-wrap gap-2">
-          <select
-            value={codigoPais}
-            onChange={(e) => setCodigoPais(e.target.value)}
-            className="p-3 border border-gray-300 rounded-xl text-sm bg-white"
-          >
-            <option value="57">🇨🇴 +57 Colombia</option>
-            <option value="52">🇲🇽 +52 México</option>
-            <option value="51">🇵🇪 +51 Perú</option>
-            <option value="56">🇨🇱 +56 Chile</option>
-            <option value="54">🇦🇷 +54 Argentina</option>
-            <option value="58">🇻🇪 +58 Venezuela</option>
-            <option value="593">🇪🇨 +593 Ecuador</option>
-            <option value="55">🇧🇷 +55 Brasil</option>
-            <option value="34">🇪🇸 +34 España</option>
-            <option value="1">🇺🇸 +1 EE. UU./Canadá</option>
-          </select>
-          <input
-            type="tel"
-            value={whatsApp}
-            onChange={(e) => setWhatsApp(e.target.value)}
-            placeholder="Ej. 3001234567"
-            className="flex-1 min-w-[180px] p-3 border border-gray-300 rounded-xl text-sm"
-          />
+        <form onSubmit={handleGuardarWhatsApp} className="space-y-2">
+          <div className="flex gap-2">
+            <select
+              value={codigoPais}
+              onChange={(e) => setCodigoPais(e.target.value)}
+              className="p-3 border border-gray-200 rounded-xl text-sm bg-white font-semibold"
+            >
+              <option value="57">🇨🇴 +57</option>
+              <option value="52">🇲🇽 +52</option>
+              <option value="51">🇵🇪 +51</option>
+              <option value="56">🇨🇱 +56</option>
+              <option value="54">🇦🇷 +54</option>
+              <option value="58">🇻🇪 +58</option>
+              <option value="593">🇪🇨 +593</option>
+              <option value="55">🇧🇷 +55</option>
+              <option value="34">🇪🇸 +34</option>
+              <option value="1">🇺🇸 +1</option>
+            </select>
+            <input
+              type="tel"
+              value={whatsApp}
+              onChange={(e) => setWhatsApp(e.target.value)}
+              placeholder="Ej. 3001234567"
+              className="flex-1 min-w-[160px] p-3 border border-gray-200 rounded-xl text-sm"
+            />
+          </div>
           <button
             type="submit"
             disabled={guardandoWhatsApp}
-            className="px-6 py-3 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
+            className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
           >
-            {guardandoWhatsApp ? 'Guardando...' : 'Guardar'}
+            {guardandoWhatsApp ? 'Guardando...' : 'Guardar WhatsApp'}
           </button>
+          <p className="text-xs text-gray-400">
+            Escribe solo los 10 dígitos locales (sin 0 inicial ni espacios). Cambia el indicativo si tu WhatsApp es de otro país.
+          </p>
         </form>
-        <p className="text-xs text-gray-400 mt-2">
-          Escribe solo los 10 dígitos locales (sin 0 inicial ni espacios). Cambia el indicativo si tu WhatsApp es de otro país.
-        </p>
-        <p className="text-xs text-gray-400 mt-1">
-          Sin este número, la pantalla de confirmación por WhatsApp no aparece en tu página pública.
-        </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-8">
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-          <h2 className="text-lg font-bold mb-4 text-gray-800">Servicios</h2>
-
-          <ul className="space-y-3 mb-6">
-            {servicios.length === 0 && (
-              <div className="text-center py-6">
-                <div className="text-4xl mb-2">🛠️</div>
-                <p className="text-sm text-gray-500 mb-4">
-                  Aún no tienes servicios. Agrega el primero para empezar a recibir reservas.
-                </p>
-                <button
-                  onClick={() => document.getElementById('inp-nuevo-servicio').focus()}
-                  className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
-                >
-                  Crea tu primer servicio
-                </button>
-              </div>
-            )}
-            {servicios.map((s) => (
-              <li
-                key={s.id}
-                className="flex justify-between items-center p-3 bg-gray-50 rounded-xl text-sm"
+      {/* GESTIÓN DE SERVICIOS */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-900 mb-3">Servicios</h2>
+        <ul className="space-y-2.5 mb-4">
+          {servicios.length === 0 && (
+            <div className="text-center py-6">
+              <div className="text-4xl mb-2">🛠️</div>
+              <p className="text-sm text-gray-500 mb-4">
+                Aún no tienes servicios. Agrega el primero para empezar a recibir reservas.
+              </p>
+              <button
+                onClick={() => document.getElementById('inp-nuevo-servicio').focus()}
+                className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
               >
-                <span>
-                  <strong className="text-gray-800">{s.name}</strong> ({s.duration_minutes} min)
-                </span>
-                <span className="flex items-center gap-2">
-                  <span className="font-semibold">${s.price}</span>
-                  <button
-                    onClick={() => handleEliminarServicio(s)}
-                    disabled={eliminando === s.id}
-                    aria-label={`Eliminar servicio ${s.name}`}
-                    title="Eliminar servicio"
-                    className="text-red-400 hover:text-red-600 disabled:opacity-40"
-                  >
-                    {eliminando === s.id ? '…' : '🗑️'}
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          <form onSubmit={handleAddServicio} className="space-y-3 border-t pt-4">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Agregar nuevo servicio
-            </h3>
-            <input
-              id="inp-nuevo-servicio"
-              type="text"
-              required
-              placeholder="Nombre (ej. Corte clásico)"
-              value={nuevoServicio.name}
-              onChange={(e) =>
-                setNuevoServicio({ ...nuevoServicio, name: e.target.value })
-              }
-              className="w-full p-3 border border-gray-300 rounded-xl text-sm"
-            />
-            <div className="flex gap-3">
-              <input
-                type="number"
-                required
-                placeholder="Minutos"
-                value={nuevoServicio.duration_minutes}
-                onChange={(e) =>
-                  setNuevoServicio({
-                    ...nuevoServicio,
-                    duration_minutes: e.target.value,
-                  })
-                }
-                className="w-1/2 p-3 border border-gray-300 rounded-xl text-sm"
-              />
-              <input
-                type="text"
-                required
-                placeholder="Precio"
-                value={nuevoServicio.price}
-                onChange={(e) =>
-                  setNuevoServicio({ ...nuevoServicio, price: e.target.value })
-                }
-                className="w-1/2 p-3 border border-gray-300 rounded-xl text-sm"
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm"
-            >
-              Guardar Servicio
-            </button>
-          </form>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-          <h2 className="text-lg font-bold mb-4 text-gray-800">Profesionales</h2>
-
-          {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
-            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-xl">
-              ⚠️ Algunos profesionales no tienen horario individual configurado. Usarán el horario general del negocio como respaldo. Haz clic en ⏰ Horario para definir turnos por profesional.
+                Crea tu primer servicio
+              </button>
             </div>
           )}
-
-          <ul className="space-y-3 mb-6">
-            {profesionales.length === 0 && (
-              <div className="text-center py-6">
-                <div className="text-4xl mb-2">👥</div>
-                <p className="text-sm text-gray-500 mb-4">
-                  Aún no tienes profesionales. Agrega la primera persona que atenderá tus turnos.
-                </p>
+          {servicios.map((s) => (
+            <li
+              key={s.id}
+              className="flex justify-between items-center p-3 bg-gray-50 rounded-xl text-sm border border-gray-100"
+            >
+              <div>
+                <p className="font-bold text-gray-800">{s.name}</p>
+                <p className="text-xs text-gray-400">{s.duration_minutes} min</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="font-semibold">${s.price}</span>
                 <button
-                  onClick={() => document.getElementById('inp-nuevo-profesional').focus()}
-                  className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
+                  onClick={() => handleEliminarServicio(s)}
+                  disabled={eliminando === s.id}
+                  aria-label={`Eliminar servicio ${s.name}`}
+                  title="Eliminar servicio"
+                  className="text-red-400 hover:text-red-600 disabled:opacity-40"
                 >
-                  Crea tu primer profesional ahora
+                  {eliminando === s.id ? '…' : '🗑️'}
                 </button>
               </div>
-            )}
-            {profesionales.map((p) => (
-              <li
-                key={p.id}
-                className="p-4 bg-gray-50 rounded-xl text-sm space-y-3"
-              >
-                <p className="font-bold text-gray-800">{p.name}</p>
-                <div className="flex items-center justify-between gap-2">
-                  {p.calendar_id ? (
-                    <span className="inline-block px-3 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
-                      ✅ Calendario Vinculado
-                    </span>
-                  ) : (
-                    <a
-                      href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`}
-                      className="block text-center py-2 bg-blue-600 text-white font-semibold rounded-lg text-xs flex-1"
-                    >
-                      Vincular Google Calendar
-                    </a>
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setHorarioModal(p)}
-                    className="px-3 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg text-xs hover:bg-gray-200"
-                  >
-                    ⏰ Horario
-                  </button>
-                  <button
-                    onClick={() => handleEliminarProfesional(p)}
-                    disabled={eliminando === p.id}
-                    aria-label={`Eliminar profesional ${p.name}`}
-                    title="Eliminar profesional"
-                    className="px-3 py-2 bg-red-50 text-red-600 font-semibold rounded-lg text-xs disabled:opacity-40"
-                  >
-                    {eliminando === p.id ? '…' : 'Eliminar'}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-
-          <form onSubmit={handleAddProfesional} className="space-y-3 border-t pt-4">
-            <h3 className="text-sm font-semibold text-gray-700">
-              Agregar profesional
-            </h3>
+            </li>
+          ))}
+        </ul>
+        <form onSubmit={handleAddServicio} className="space-y-2.5 pt-3 border-t border-gray-100">
+          <input
+            id="inp-nuevo-servicio"
+            type="text"
+            required
+            placeholder="Nombre (ej. Corte clásico)"
+            value={nuevoServicio.name}
+            onChange={(e) =>
+              setNuevoServicio({ ...nuevoServicio, name: e.target.value })
+            }
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <div className="flex gap-2">
             <input
-              id="inp-nuevo-profesional"
+              type="number"
+              required
+              placeholder="Minutos"
+              value={nuevoServicio.duration_minutes}
+              onChange={(e) =>
+                setNuevoServicio({
+                  ...nuevoServicio,
+                  duration_minutes: e.target.value,
+                })
+              }
+              className="w-1/2 p-3 border border-gray-200 rounded-xl text-sm"
+            />
+            <input
               type="text"
               required
-              placeholder="Nombre del profesional"
-              value={nuevoProfesional.name}
+              placeholder="Precio"
+              value={nuevoServicio.price}
               onChange={(e) =>
-                setNuevoProfesional({ name: e.target.value })
+                setNuevoServicio({ ...nuevoServicio, price: e.target.value })
               }
-              className="w-full p-3 border border-gray-300 rounded-xl text-sm"
+              className="w-1/2 p-3 border border-gray-200 rounded-xl text-sm"
             />
-            <button
-              type="submit"
-              className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm"
-            >
-              Añadir Profesional
-            </button>
-          </form>
-        </div>
+          </div>
+          <button
+            type="submit"
+            className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm"
+          >
+            Guardar Servicio
+          </button>
+        </form>
       </div>
 
+      {/* GESTIÓN DE PROFESIONALES */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-900 mb-3">Profesionales</h2>
+        <ul className="space-y-3 mb-4">
+          {profesionales.length === 0 && (
+            <div className="text-center py-6">
+              <div className="text-4xl mb-2">👥</div>
+              <p className="text-sm text-gray-500 mb-4">
+                Aún no tienes profesionales. Agrega la primera persona que atenderá tus turnos.
+              </p>
+              <button
+                onClick={() => document.getElementById('inp-nuevo-profesional').focus()}
+                className="px-4 py-2 bg-black text-white font-bold rounded-xl text-sm"
+              >
+                Crea tu primer profesional ahora
+              </button>
+            </div>
+          )}
+          {profesionales.map((p) => (
+            <li key={p.id} className="p-3.5 bg-gray-50 rounded-xl text-sm border border-gray-100 space-y-2">
+              <div className="flex justify-between items-center">
+                <p className="font-bold text-gray-800">{p.name}</p>
+                <button
+                  onClick={() => handleEliminarProfesional(p)}
+                  disabled={eliminando === p.id}
+                  aria-label={`Eliminar profesional ${p.name}`}
+                  title="Eliminar profesional"
+                  className="px-3 py-2 bg-red-50 text-red-600 font-semibold rounded-lg text-xs disabled:opacity-40"
+                >
+                  {eliminando === p.id ? '…' : 'Eliminar'}
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                {p.calendar_id ? (
+                  <span className="inline-block px-2.5 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-lg">
+                    ✅ Calendario Vinculado
+                  </span>
+                ) : (
+                  <a
+                    href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`}
+                    className="block text-center py-2 bg-blue-600 text-white font-bold rounded-lg text-xs flex-1"
+                  >
+                    🔗 Vincular Google Calendar
+                  </a>
+                )}
+                <button
+                  onClick={() => setHorarioModal(p)}
+                  className="px-3 py-2 bg-gray-100 text-gray-700 font-semibold rounded-lg text-xs hover:bg-gray-200"
+                >
+                  ⏰ Horario
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+        {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
+          <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-700 text-xs rounded-xl">
+            ⚠️ Algunos profesionales no tienen horario individual configurado. Usarán el horario general del negocio como respaldo. Haz clic en ⏰ Horario para definir turnos por profesional.
+          </div>
+        )}
+        <form onSubmit={handleAddProfesional} className="space-y-2.5 pt-3 border-t border-gray-100">
+          <input
+            id="inp-nuevo-profesional"
+            type="text"
+            required
+            placeholder="Nombre del profesional"
+            value={nuevoProfesional.name}
+            onChange={(e) =>
+              setNuevoProfesional({ name: e.target.value })
+            }
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <button
+            type="submit"
+            className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm"
+          >
+            Añadir Profesional
+          </button>
+        </form>
+      </div>
 
-      <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-2">
-        <h2 className="text-lg font-bold mb-4 text-gray-800">Próximas Reservas</h2>
-
+      {/* PRÓXIMAS RESERVAS (TARJETAS MÓVILES) */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-900 mb-4">Próximas Reservas ({reservas.length})</h2>
         {reservas.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-8">
-            Aún no tienes citas agendadas.
-          </p>
+          <p className="text-xs text-gray-400 text-center py-6">No hay citas agendadas aún.</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
-                <tr>
-                  <th className="p-3 rounded-tl-lg">Fecha y Hora</th>
-                  <th className="p-3">Cliente</th>
-                  <th className="p-3">Contacto</th>
-                  <th className="p-3">Servicio</th>
-                  <th className="p-3">Profesional</th>
-                  <th className="p-3 text-right rounded-tr-lg">Acción</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {reservas.map((r) => {
-                  const fechaObj =
-                    r.date_time ? new Date(r.date_time.seconds * 1000) : null;
-                  const fechaFormateada = fechaObj
-                    ? fechaObj.toLocaleDateString('es-ES', {
-                        weekday: 'short',
-                        day: 'numeric',
-                        month: 'short',
-                      })
-                    : 'N/A';
-                  const horaFormateada = fechaObj
-                    ? fechaObj.toLocaleTimeString('es-ES', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
-                    : 'N/A';
+          <div className="space-y-3">
+            {reservas.map((r) => {
+              const fechaObj = r.date_time ? new Date(r.date_time.seconds * 1000) : null;
+              const fechaFormateada = fechaObj
+                ? fechaObj.toLocaleDateString('es-ES', {
+                    weekday: 'short',
+                    day: 'numeric',
+                    month: 'short',
+                  })
+                : 'N/A';
+              const horaFormateada = fechaObj
+                ? fechaObj.toLocaleTimeString('es-ES', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })
+                : 'N/A';
+              const profesional = profesionales.find((p) => p.id === r.emp_id);
 
-                  const profesional = profesionales.find((p) => p.id === r.emp_id);
-
-                  return (
-                    <tr
-                      key={r.id}
-                      className="hover:bg-gray-50 transition-colors"
+              return (
+                <div key={r.id} className="p-4 bg-gray-50 border border-gray-100 rounded-2xl space-y-2">
+                  <div className="flex justify-between items-start gap-3">
+                    <div>
+                      <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
+                      <p className="text-xs text-gray-500">{r.service_name} • {profesional?.name || 'Profesional'}</p>
+                      <p className="text-xs text-gray-500 capitalize">{fechaFormateada} · {horaFormateada}</p>
+                    </div>
+                    <a
+                      href={`https://wa.me/${r.user_phone}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs text-green-600 font-bold whitespace-nowrap"
                     >
-                      <td className="p-3 font-medium text-gray-900 capitalize">
-                        {fechaFormateada}{' '}
-                        <span className="text-gray-500 font-normal ml-1">
-                          {horaFormateada}
-                        </span>
-                      </td>
-                      <td className="p-3">{r.client_name}</td>
-                      <td className="p-3">
-                        <a
-                          href={`https://wa.me/${r.user_phone}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-green-600 hover:underline"
-                        >
-                          {r.user_phone}
-                        </a>
-                      </td>
-                      <td className="p-3">{r.service_name}</td>
-                      <td className="p-3">
-                        {profesional?.name || 'Desconocido'}
-                      </td>
-                      <td className="p-3 text-right">
-                        <button
-                          onClick={() => handleCancelarReserva(r.id)}
-                          disabled={cancelando === r.id}
-                          className="text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
-                        >
-                          {cancelando === r.id ? 'Cancelando...' : 'Cancelar'}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                      💬 WhatsApp
+                    </a>
+                  </div>
+                  <div className="flex justify-end pt-2 border-t border-gray-200/60">
+                    <button
+                      onClick={() => handleCancelarReserva(r.id)}
+                      disabled={cancelando === r.id}
+                      className="text-xs text-red-500 font-bold disabled:opacity-50"
+                    >
+                      {cancelando === r.id ? 'Cancelando...' : 'Cancelar'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
-      {/* MÓDULO CRM: DIRECTORIO DE CLIENTES */}
-      <div className="md:col-span-2 bg-white p-6 rounded-2xl border border-gray-200 shadow-sm mt-8 mb-8">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold text-gray-800">Directorio de Clientes (CRM)</h2>
-          <span className="px-3 py-1 bg-black text-white text-xs font-bold rounded-full">
-            {clientesCRM.length} Clientes Totales
-          </span>
-        </div>
-        <p className="text-sm text-gray-500 mb-4">
-          Conoce a tus clientes más leales y cuánto han gastado en tu negocio. Usa estos datos para enviarles recordatorios o promociones por WhatsApp.
+      {/* CRM: DIRECTORIO DE CLIENTES (TARJETAS MÓVILES) */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-900 mb-3">Directorio de Clientes ({clientesCRM.length})</h2>
+        <p className="text-xs text-gray-500 mb-4">
+          LTV, visitas y última visita de tus clientes más leales. Úsalos para enviarles promociones por WhatsApp.
         </p>
-
         {clientesCRM.length === 0 ? (
-          <p className="text-sm text-gray-500 text-center py-8">
-            Aún no hay clientes registrados. Aparecerán automáticamente cuando agenden una cita.
+          <p className="text-xs text-gray-400 text-center py-6">
+            Los clientes aparecerán automáticamente al agendar una cita.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead className="bg-gray-50 text-gray-600 font-semibold border-b">
-                <tr>
-                  <th className="p-3 rounded-tl-lg">Cliente</th>
-                  <th className="p-3">WhatsApp</th>
-                  <th className="p-3 text-center">LTV (Total Gastado)</th>
-                  <th className="p-3 text-center">Visitas</th>
-                  <th className="p-3 text-right rounded-tr-lg">Última Visita</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {clientesCRM.map((c) => (
-                  <tr key={c.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="p-3 font-medium text-gray-900">{c.client_name}</td>
-                    <td className="p-3">
-                      <a
-                        href={`https://wa.me/${c.cliente_phone}?text=${encodeURIComponent('¡Hola ' + c.client_name + '! Queremos saber cómo te fue en tu última visita.')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-green-600 hover:underline flex items-center gap-1"
-                      >
-                        💬 {c.cliente_phone}
-                      </a>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className="inline-block px-2 py-1 bg-green-50 text-green-700 font-bold rounded-lg">
-                        {formatDinero(c.total_spent)}
-                      </span>
-                    </td>
-                    <td className="p-3 text-center">
-                      <span className="inline-block px-2 py-1 bg-blue-50 text-blue-700 font-bold rounded-lg">
-                        {c.visits || 0}
-                      </span>
-                    </td>
-                    <td className="p-3 text-right text-gray-500">
-                      {fechaUltimaVisita(c)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="space-y-3">
+            {clientesCRM.map((c) => (
+              <div key={c.id} className="p-4 bg-gray-50 border border-gray-100 rounded-2xl flex justify-between items-center gap-3">
+                <div>
+                  <p className="font-bold text-gray-900 text-sm">{c.client_name}</p>
+                  <a
+                    href={`https://wa.me/${c.cliente_phone}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-green-600 font-semibold"
+                  >
+                    💬 {c.cliente_phone}
+                  </a>
+                  <p className="text-[10px] text-gray-400 font-semibold mt-1">
+                    {c.visits || 0} visitas · Última: {fechaUltimaVisita(c)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <span className="block text-sm font-black text-green-700 bg-green-50 px-2 py-0.5 rounded-md">
+                    {formatDinero(c.total_spent)}
+                  </span>
+                  <span className="text-[10px] text-gray-400 font-semibold">LTV</span>
+                </div>
+              </div>
+            ))}
           </div>
         )}
+      </div>
+
+      {/* BARRA DE ACCIÓN FIJA: COMPARTIR ENLACE */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-gray-200 z-50">
+        <button
+          onClick={copiarEnlace}
+          className="w-full max-w-2xl mx-auto py-3.5 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm"
+        >
+          {enlaceCopiado ? '✅ ¡Enlace copiado!' : '🔗 Copiar mi Enlace de Reservas'}
+        </button>
       </div>
 
       {horarioModal && (
