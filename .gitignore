@@ -1,12 +1,17 @@
 # Node modules del frontend
-turnobot/frontend/node_modules/
+frontend/node_modules/
 
 # Build artifacts del frontend
-turnobot/frontend/dist/
-turnobot/frontend/.vite/
+frontend/dist/
+frontend/.vite/
+frontend/.firebase/
+
+# Reportes de tests E2E
+frontend/test-results/
+frontend/playwright-report/
 
 # Build artifacts del backend (si se compila localmente)
-turnobot/turnobot
+backend/turnobot
 
 # Archivos de entorno
 .env
@@ -24,6 +29,9 @@ Thumbs.DB
 # IDE
 .vscode/
 .idea/
+
+# Frontend package-lock (se genera localmente)
+frontend/package-lock.json
 
 # Archivos temporales
 /tmp/

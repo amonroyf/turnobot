@@ -14,6 +14,8 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$DIR/backend"
+FRONTEND_DIR="$DIR/frontend"
 PROJECT="stalwart-coast-439901-d0"
 REGION="us-central1"
 SERVICE="turnobot"
@@ -38,7 +40,7 @@ fi
 deploy_backend() {
   echo "== Cloud Run: $SERVICE =="
   gcloud run deploy "$SERVICE" \
-    --source "$DIR" \
+    --source "$BACKEND_DIR" \
     --region "$REGION" \
     --platform managed \
     --service-account "$SA" \
@@ -58,7 +60,7 @@ deploy_backend() {
 
 deploy_frontend() {
   echo "== Build frontend =="
-  (cd "$DIR/frontend" && VITE_API_URL="$API_URL" npm run build)
+  (cd "$FRONTEND_DIR" && VITE_API_URL="$API_URL" npm run build)
 
   echo "== Firebase Hosting: $SITE_O =="
   export TOKEN="$(gcloud auth print-access-token)"
