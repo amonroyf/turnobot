@@ -86,7 +86,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill('300 123 4567');
     await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
 
-    await expect(page.getByText('¡Cita Confirmada!')).toBeVisible({ timeout: 15000 });
+    await expect(page.getByText('¡Tu cita está casi lista!')).toBeVisible({ timeout: 15000 });
   });
 
   test('Prevención de Doble Reserva (Status 409 Conflict)', async ({ browser }) => {
@@ -119,7 +119,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
 
     // El primero reserva y bloquea el slot
     await p1.getByRole('button', { name: 'Confirmar Reserva' }).click();
-    await expect(p1.getByText('¡Cita Confirmada!')).toBeVisible();
+    await expect(p1.getByText('¡Tu cita está casi lista!')).toBeVisible();
 
     // El segundo recibe 409: error en DOM y recarga de horarios (sin alert)
     const refetch = p2.waitForResponse(

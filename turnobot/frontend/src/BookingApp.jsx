@@ -30,6 +30,7 @@ export default function BookingApp() {
   const [negocio, setNegocio] = useState(null);
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
+  const [waConfirmado, setWaConfirmado] = useState(false);
 
   // Elecciones del cliente
   const [booking, setBooking] = useState({
@@ -99,6 +100,7 @@ export default function BookingApp() {
       });
 
       if (res.ok) {
+        setWaConfirmado(false);
         setStep(5); // Pantalla de éxito
         return;
       }
@@ -359,33 +361,70 @@ export default function BookingApp() {
                 </form>
               )}
 
-              {/* PASO 5: Éxito (Confirmación Detallada) */}
+              {/* PASO 5: Éxito (Confirmación Inversa por WhatsApp) */}
               {step === 5 && (
-                <div className="text-center p-8 bg-white border border-gray-200 rounded-2xl mt-10">
-                  <div className="text-4xl mb-4">✅</div>
-                  <h2 className="text-xl font-bold text-gray-800 mb-2">¡Cita Confirmada!</h2>
-                  <div className="text-left bg-gray-50 rounded-xl p-4 mt-4 space-y-2 text-sm text-gray-700">
-                    <p>💈 <strong>Servicio:</strong> {servicioElegido?.name || booking.servicioId}</p>
-                    <p>✂️ <strong>Barbero:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
-                    <p>📅 <strong>Fecha:</strong> {booking.fecha}</p>
-                    <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
-                    <p>👤 <strong>Cliente:</strong> {booking.clienteNombre} ({booking.clienteTelefono})</p>
-                  </div>
-                  <p className="mt-4 text-sm text-gray-500">
-                    💡 Llega <strong>5 minutos antes</strong> de tu cita. Te esperamos en {negocio.direccion || 'nuestro local'}.
-                  </p>
-                  <div className="flex gap-3 mt-6">
-                    <button
-                      onClick={iniciarAgendamiento}
-                      className="flex-1 py-3 px-4 bg-black text-white font-semibold rounded-xl"
-                    >
-                      Agendar otra cita
-                    </button>
+                <div className="text-center p-6 bg-white border border-gray-200 rounded-2xl mt-8 shadow-sm">
+                  {!waConfirmado ? (
+                    <>
+                      <div className="text-4xl mb-3">⏳</div>
+                      <h2 className="text-xl font-bold text-gray-800 mb-1">¡Tu cita está casi lista!</h2>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Tu turno quedó apartado. Solo se confirma cuando envíes el mensaje por WhatsApp.
+                      </p>
+
+                      <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
+                        <p>💈 <strong>Servicio:</strong> {servicioElegido?.name || booking.servicioId}</p>
+                        <p>✂️ <strong>Barbero:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
+                        <p>📅 <strong>Fecha:</strong> {booking.fecha}</p>
+                        <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
+                      </div>
+
+                      {/* Bloque de validación humana obligatoria */}
+                      {negocio.whatsapp && (
+                        <div className="mt-6 p-5 bg-green-50 border border-green-200 rounded-xl">
+                          <h3 className="font-bold text-green-900 mb-2">Último paso obligatorio</h3>
+                          <p className="text-sm text-green-800 mb-4">
+                            Para evitar reservas falsas, requerimos que confirmes esta cita desde tu WhatsApp real.
+                          </p>
+
+                          <a
+                            href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(`Hola, soy ${booking.clienteNombre}. Acabo de agendar un turno de ${servicioElegido?.name || booking.servicioId} con ${empleadoElegido?.name || booking.empleadoId} para el ${booking.fecha} a las ${booking.hora}. ¡Confirmo mi asistencia!`)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={() => setWaConfirmado(true)}
+                            className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center shadow hover:bg-green-600 transition-colors"
+                          >
+                            ✅ Confirmar mi cita por WhatsApp
+                          </a>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-4xl mb-3">✅</div>
+                      <h2 className="text-xl font-bold text-gray-800 mb-1">¡Cita confirmada!</h2>
+                      <p className="text-sm text-gray-500 mb-4">
+                        Tu mensaje fue enviado por WhatsApp. Te esperamos el {booking.fecha} a las {booking.hora}.
+                      </p>
+
+                      <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
+                        <p>💈 <strong>Servicio:</strong> {servicioElegido?.name || booking.servicioId}</p>
+                        <p>✂️ <strong>Barbero:</strong> {empleadoElegido?.name || booking.empleadoId}</p>
+                        <p>📅 <strong>Fecha:</strong> {booking.fecha}</p>
+                        <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
+                      </div>
+                      <p className="mt-4 text-sm text-gray-500">
+                        💡 Llega <strong>5 minutos antes</strong> de tu cita.
+                      </p>
+                    </>
+                  )}
+
+                  <div className="mt-6 flex justify-center">
                     <button
                       onClick={volverAlMenu}
-                      className="flex-1 py-3 px-4 bg-white border border-gray-200 font-semibold rounded-xl"
+                      className="text-sm text-gray-500 font-medium hover:text-gray-700 underline"
                     >
-                      Inicio
+                      Volver al inicio
                     </button>
                   </div>
                 </div>

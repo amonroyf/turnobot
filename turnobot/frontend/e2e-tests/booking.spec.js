@@ -49,7 +49,7 @@ test.describe('Turnobot E2E Suite', () => {
     await elegirPrimerSlot(page);
     await llenarYConfirmar(page, 'Juan E2E', '300 123 4567'); // con espacios -> 3001234567
 
-    await expect(page.getByText('¡Cita Confirmada!')).toBeVisible();
+    await expect(page.getByText('¡Tu cita está casi lista!')).toBeVisible();
 
     // Verificar que en Firestore el teléfono quedó saneado (E.164: +573001234567)
     const snap = await db
@@ -77,7 +77,7 @@ test.describe('Turnobot E2E Suite', () => {
 
     // Cliente 1 agenda y alcanza la pantalla de éxito
     await llenarYConfirmar(p1, 'Cliente Rápido', '3111111111');
-    await expect(p1.getByText('¡Cita Confirmada!')).toBeVisible();
+    await expect(p1.getByText('¡Tu cita está casi lista!')).toBeVisible();
 
     // Cliente 2 intenta el mismo slot: el backend debe responder 409
     // y el frontend debe recargar los horarios (refetch). Esperamos la
