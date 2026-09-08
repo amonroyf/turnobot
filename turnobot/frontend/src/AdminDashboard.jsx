@@ -245,13 +245,31 @@ export default function AdminDashboard() {
           };
           suscribirReservas();
 
-          onSnapshot(
-            query(collection(db, 'clientes'), where('negocio_id', '==', docSnap.id)),
-            (snapshot) =>
-              setClientes(
-                snapshot.docs.map((d) => ({ id: d.id, ...d.data() })),
-              ),
+          const qClientes = query(
+            collection(db, 'clientes'),
+            where('negocio_id', '==', docSnap.id),
           );
+          const intentosClientes = { n: 0 };
+          const suscribirClientes = () => {
+            onSnapshot(
+              qClientes,
+              (snapshot) => {
+                intentosClientes.n = 0;
+                setClientes(
+                  snapshot.docs.map((d) => ({ id: d.id, ...d.data() })),
+                );
+              },
+              (err) => {
+                if (intentosClientes.n < 5 && err?.code === 'permission-denied') {
+                  intentosClientes.n += 1;
+                  setTimeout(suscribirClientes, 2000 * intentosClientes.n);
+                } else {
+                  console.error('Error en listener de clientes:', err);
+                }
+              },
+            );
+          };
+          suscribirClientes();
         }
       }
 

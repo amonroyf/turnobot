@@ -35,3 +35,23 @@ func TestSanitizePhone(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePriceVal(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"45000", 45000},
+		{"45.000", 45000},
+		{"$45.000", 45000},
+		{"$ 45.000", 45000},
+		{"", 0},
+		{"sin-precio", 0},
+		{"abc", 0},
+	}
+	for _, c := range cases {
+		if got := parsePriceVal(c.in); got != c.want {
+			t.Errorf("parsePriceVal(%q) = %d, esperaba %d", c.in, got, c.want)
+		}
+	}
+}

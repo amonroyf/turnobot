@@ -29,8 +29,8 @@ test.describe('Register + Admin Panel', () => {
     await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
 
     // Paso 2: nombre del local (el slug se genera solo) y finalizar
-    await expect(page.getByPlaceholder('Ej. Barbería VIP')).toBeVisible();
-    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
+    await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
+    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
     await expect(page.locator('input[type="text"]').nth(1)).toHaveValue(slug);
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
@@ -93,7 +93,7 @@ test.describe('Register + Admin Panel', () => {
 
     // Paso 2: forzar un slug existente manualmente
     const nombre = 'Barberia VIP Duplicada';
-    await page.getByPlaceholder('Ej. Barbería VIP').fill(nombre);
+    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
     await page.locator('input[type="text"]').nth(1).fill('barberia-vip');
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
