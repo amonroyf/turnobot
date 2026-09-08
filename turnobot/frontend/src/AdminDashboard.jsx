@@ -29,18 +29,33 @@ const defaultHorario = {
 };
 
 export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
-  const [horario, setHorario] = useState(empleado.horario || defaultHorario);
+  // Normalizar: empleados antiguos pueden tener un horario parcial (solo
+  // algunos días). Se rellena con el horario por defecto para que el guardado
+  // siempre envíe la semana completa que exigen las reglas de Firestore.
+  const [horario, setHorario] = useState(() => {
+    const base = empleado.horario || {};
+    const completo = {};
+    for (const d of DIAS_SEMANA) {
+      const dia = base[d] || defaultHorario[d];
+      completo[d] = {
+        activo: dia.activo ?? false,
+        turnos: Array.isArray(dia.turnos) && dia.turnos.length > 0 ? dia.turnos : [],
+      };
+    }
+    return completo;
+  });
   const [guardando, setGuardando] = useState(false);
 
   const toggleDia = (dia) => {
+    const actual = horario[dia] || { activo: false, turnos: [] };
     setHorario({
       ...horario,
-      [dia]: { ...horario[dia], activo: !horario[dia].activo },
+      [dia]: { ...actual, activo: !actual.activo },
     });
   };
 
   const handleTurnoChange = (dia, index, field, value) => {
-    const nuevosTurnos = [...horario[dia].turnos];
+    const nuevosTurnos = [...(horario[dia]?.turnos || [])];
     nuevosTurnos[index] = { ...nuevosTurnos[index], [field]: value };
     setHorario({
       ...horario,
@@ -49,17 +64,23 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   };
 
   const agregarTurno = (dia) => {
+    const actuales = horario[dia]?.turnos || [];
+    // Las reglas de Firestore permiten máximo 4 turnos por día.
+    if (actuales.length >= 4) {
+      alert('Máximo 4 turnos por día');
+      return;
+    }
     setHorario({
       ...horario,
       [dia]: {
         ...horario[dia],
-        turnos: [...horario[dia].turnos, { inicio: '14:00', fin: '18:00' }],
+        turnos: [...actuales, { inicio: '14:00', fin: '18:00' }],
       },
     });
   };
 
   const eliminarTurno = (dia, index) => {
-    const nuevosTurnos = horario[dia].turnos.filter((_, i) => i !== index);
+    const nuevosTurnos = (horario[dia]?.turnos || []).filter((_, i) => i !== index);
     setHorario({
       ...horario,
       [dia]: { ...horario[dia], turnos: nuevosTurnos },
@@ -75,7 +96,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
       onClose();
     } catch (err) {
       console.error('Error guardando horario:', err);
-      alert('Error al guardar el horario');
+      alert(`Error al guardar el horario (${err?.code || 'desconocido'}). Revisa que cada turno tenga hora válida y máximo 4 turnos por día.`);
     }
     setGuardando(false);
   };
@@ -101,7 +122,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
 
               {horario[dia]?.activo && (
                 <div className="space-y-2 pl-2">
-                  {horario[dia].turnos.map((t, idx) => (
+                  {(horario[dia].turnos || []).map((t, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
                       <input
                         type="time"
@@ -116,7 +137,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
                         onChange={(e) => handleTurnoChange(dia, idx, 'fin', e.target.value)}
                         className="border p-1 rounded text-sm"
                       />
-                      {horario[dia].turnos.length > 1 && (
+                      {(horario[dia].turnos || []).length > 1 && (
                         <button
                           onClick={() => eliminarTurno(dia, idx)}
                           className="text-red-400 hover:text-red-600 text-xs"

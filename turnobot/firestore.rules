@@ -12,12 +12,11 @@ service cloud.firestore {
              request.auth.uid == get(/databases/$(database)/documents/negocios/$(slug)).data.owner_uid;
     }
 
-    // Valida que un string sea una hora formato "HH:MM" (00-23 : 00-59)
+    // Valida que un string sea una hora formato "HH:MM" (00-23 : 00-59).
+    // Se acepta cualquier minuto válido: el <input type="time"> del panel
+    // permite elegir minutos libres (ej. 09:03) y el backend los entiende.
     function isValidHHMM(h) {
-      return h is string && h.size() == 5 &&
-             h.substring(0, 2) in ['00','01','02','03','04','05','06','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23'] &&
-             h.substring(2, 3) == ':' &&
-             h.substring(3, 5) in ['00','05','10','15','20','25','30','35','40','45','50','55'];
+      return h is string && h.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
     }
 
     // Valida la estructura de un turno (inicio/fin como HH:MM)
@@ -28,15 +27,24 @@ service cloud.firestore {
              isValidHHMM(t.fin);
     }
 
+    // Valida los turnos de un día (1-4 turnos válidos). Se desenrolla por
+    // índice con cortocircuito porque las reglas no tienen hasEvery
+    // (usar una función inexistente niega el permiso con error).
+    function turnosValidos(turnos) {
+      return turnos.size() >= 1 && turnos.size() <= 4 &&
+             isValidTurno(turnos[0]) &&
+             (turnos.size() < 2 || isValidTurno(turnos[1])) &&
+             (turnos.size() < 3 || isValidTurno(turnos[2])) &&
+             (turnos.size() < 4 || isValidTurno(turnos[3]));
+    }
+
     // Valida la estructura de un día del horario (activo + turnos[])
     function isValidDiaHorario(d) {
       return d is map &&
              d.keys().hasOnly(['activo', 'turnos']) &&
              (d.activo == true || d.activo == false) &&
              d.turnos is list &&
-             (!d.activo ||
-               (d.turnos.size() >= 1 && d.turnos.size() <= 4 &&
-                d.turnos.hasEvery(isValidTurno)));
+             (!d.activo || turnosValidos(d.turnos));
     }
 
     // Valida la estructura completa del horario semanal
