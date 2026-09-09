@@ -108,6 +108,7 @@ type BookingRequest struct {
 // Booking is a confirmed appointment.
 type Booking struct {
 	NegocioID      string    `firestore:"negocio_id"`
+	OwnerUID       string    `firestore:"owner_uid"`
 	EmpID          string    `firestore:"emp_id"`
 	UserPhone      string    `firestore:"user_phone"`
 	ClientName     string    `firestore:"client_name"`
@@ -404,6 +405,15 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Obtener el owner_uid del negocio para desnormalizarlo (Seguridad y ahorro de costos)
+	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		http.Error(w, "Error consultando el negocio", http.StatusInternalServerError)
+		return
+	}
+	var negocioInfo Negocio
+	negDoc.DataTo(&negocioInfo)
+
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
 	// con la duración real del servicio.
 	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime)
@@ -411,6 +421,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Guardar la reserva en Firestore
 	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
 		NegocioID:      slug,
+		OwnerUID:       negocioInfo.OwnerUID,
 		EmpID:          req.EmpleadoID,
 		UserPhone:      req.ClienteTelefono,
 		ClientName:     req.ClienteNombre,
@@ -427,7 +438,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// CRM: actualizar (upsert) el cliente en el directorio del negocio
-	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime)
+	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime, negocioInfo.OwnerUID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -607,19 +618,20 @@ func clienteDocID(slug, phone string) string {
 // upsertCliente escribe (o actualiza) el cliente en la colección clientes del
 // negocio cada vez que agenda una cita. Invalida las reglas de Firestore
 // porque el backend usa el Admin SDK (service account).
-func upsertCliente(ctx context.Context, slug, phone, name string, price int, dateTime time.Time) {
+func upsertCliente(ctx context.Context, slug, phone, name string, price int, dateTime time.Time, ownerUID string) {
 	if slug == "" || phone == "" {
 		return
 	}
 	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
 	_, err := ref.Set(ctx, map[string]interface{}{
 		"negocio_id":    slug,
+		"owner_uid":     ownerUID,
 		"cliente_phone": phone,
 		"client_name":   name,
 		"visits":        firestore.Increment(1),
 		"total_spent":   firestore.Increment(price),
-		"last_seen":     dateTime,                      // Fecha/Hora exacta del turno agendado
-		"last_date_str": dateTime.Format("2006-01-02"), // Respaldo legible en zona del negocio
+		"last_seen":     dateTime,
+		"last_date_str": dateTime.Format("2006-01-02"),
 		"updated_at":    time.Now(),
 	}, firestore.MergeAll)
 	if err != nil {

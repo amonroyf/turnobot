@@ -3,33 +3,21 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // ──────────────────────────────────────────────────────────────────────
-    // Helper functions
+    // Funciones de validación
     // ──────────────────────────────────────────────────────────────────────
-
-    // Verifica si el usuario autenticado es dueño del negocio
     function isOwner(slug) {
       return request.auth != null &&
              request.auth.uid == get(/databases/$(database)/documents/negocios/$(slug)).data.owner_uid;
     }
 
-    // Valida que un string sea una hora formato "HH:MM" (00-23 : 00-59).
-    // Se acepta cualquier minuto válido: el <input type="time"> del panel
-    // permite elegir minutos libres (ej. 09:03) y el backend los entiende.
     function isValidHHMM(h) {
       return h is string && h.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$');
     }
 
-    // Valida la estructura de un turno (inicio/fin como HH:MM)
     function isValidTurno(t) {
-      return t is map &&
-             t.keys().hasOnly(['inicio', 'fin']) &&
-             isValidHHMM(t.inicio) &&
-             isValidHHMM(t.fin);
+      return t is map && t.keys().hasOnly(['inicio', 'fin']) && isValidHHMM(t.inicio) && isValidHHMM(t.fin);
     }
 
-    // Valida los turnos de un día (1-4 turnos válidos). Se desenrolla por
-    // índice con cortocircuito porque las reglas no tienen hasEvery
-    // (usar una función inexistente niega el permiso con error).
     function turnosValidos(turnos) {
       return turnos.size() >= 1 && turnos.size() <= 4 &&
              isValidTurno(turnos[0]) &&
@@ -38,29 +26,19 @@ service cloud.firestore {
              (turnos.size() < 4 || isValidTurno(turnos[3]));
     }
 
-    // Valida la estructura de un día del horario (activo + turnos[])
     function isValidDiaHorario(d) {
-      return d is map &&
-             d.keys().hasOnly(['activo', 'turnos']) &&
-             (d.activo == true || d.activo == false) &&
-             d.turnos is list &&
+      return d is map && d.keys().hasOnly(['activo', 'turnos']) &&
+             (d.activo == true || d.activo == false) && d.turnos is list &&
              (!d.activo || turnosValidos(d.turnos));
     }
 
-    // Valida la estructura completa del horario semanal
     function isValidHorarioSemanal(h) {
-      return h is map &&
-             h.keys().hasOnly(['lunes','martes','miercoles','jueves','viernes','sabado','domingo']) &&
-             isValidDiaHorario(h.lunes) &&
-             isValidDiaHorario(h.martes) &&
-             isValidDiaHorario(h.miercoles) &&
-             isValidDiaHorario(h.jueves) &&
-             isValidDiaHorario(h.viernes) &&
-             isValidDiaHorario(h.sabado) &&
+      return h is map && h.keys().hasOnly(['lunes','martes','miercoles','jueves','viernes','sabado','domingo']) &&
+             isValidDiaHorario(h.lunes) && isValidDiaHorario(h.martes) && isValidDiaHorario(h.miercoles) &&
+             isValidDiaHorario(h.jueves) && isValidDiaHorario(h.viernes) && isValidDiaHorario(h.sabado) &&
              isValidDiaHorario(h.domingo);
     }
 
-    // Si el request incluye el campo horario, debe ser válido (o nulo)
     function horarioIsValid() {
       return !request.resource.data.keys().hasAny(['horario']) ||
              request.resource.data.horario == null ||
@@ -73,16 +51,10 @@ service cloud.firestore {
 
     // 1. Colección principal: NEGOCIOS
     match /negocios/{slug} {
-      // Público: Los clientes necesitan leer el local para agendar
       allow read: if true;
-      // Creación: el dueño autenticado crea el documento con su owner_uid
-      allow create: if request.auth != null &&
-                     request.resource.data.owner_uid == request.auth.uid;
-      // Actualización y eliminación: solo el dueño
-      allow update, delete: if request.auth != null &&
-                     resource.data.owner_uid == request.auth.uid;
+      allow create: if request.auth != null && request.resource.data.owner_uid == request.auth.uid;
+      allow update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
 
-      // Subcolecciones: SERVICIOS y EMPLEADOS
       match /servicios/{servicioId} {
         allow read: if true;
         allow write: if isOwner(slug);
@@ -90,29 +62,23 @@ service cloud.firestore {
 
       match /empleados/{empId} {
         allow read: if true;
-        // write: solo el dueño Y el horario (si se envía) debe ser válido
         allow write: if isOwner(slug) && horarioIsValid();
       }
     }
 
-    // 2. Colección principal: RESERVAS
+    // 2. Colección principal: RESERVAS (¡Optimizada y Blindada!)
     match /reservas/{reservaId} {
-      // Público: Cualquiera puede CREAR una reserva
-      allow create: if true;
+      // Bloqueo total: Ningún usuario puede crear citas desde el navegador. Solo el backend Go.
+      allow create: if false;
 
-      // Privado: Solo el dueño del negocio puede leer, editar o eliminar sus reservas.
-      // En read/get/list Firestore evalúa la regla por documento devuelto: comparamos el
-      // negocio de la reserva contra el dueño autenticado vía get().
-      allow read, update, delete: if request.auth != null &&
-        (request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid);
+      // Lectura hiper-rápida y económica: Validación condicional directa de la propiedad.
+      allow read, update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
     }
 
-    // 3. Colección principal: CLIENTES (CRM / Cerrojo SaaS)
-    // Los documentos los mantiene el backend (Admin SDK, ignora las reglas).
-    // Solo el dueño del negocio puede leer el directorio de sus clientes.
+    // 3. Colección principal: CLIENTES (CRM Optimizado)
     match /clientes/{clienteId} {
-      allow read: if request.auth != null &&
-        (request.auth.uid == get(/databases/$(database)/documents/negocios/$(resource.data.negocio_id)).data.owner_uid);
+      allow create: if false; // Solo el backend actualiza métricas del CRM
+      allow read, update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
     }
   }
 }
