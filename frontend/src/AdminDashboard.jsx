@@ -194,6 +194,12 @@ export default function AdminDashboard() {
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
   const [enlaceCopiado, setEnlaceCopiado] = useState(false);
 
+  const [ahora, setAhora] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setAhora(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     if (negocio) {
       setWhatsApp(negocio.whatsapp || '');
@@ -230,10 +236,12 @@ export default function AdminDashboard() {
           const qReservas = query(collection(db, 'reservas'), where('negocio_id', '==', docSnap.id));
           const suscribirReservas = () => {
             onSnapshot(qReservas, (snapshot) => {
-              const ahora = Date.now() / 1000;
+              const inicioHoy = new Date();
+              inicioHoy.setHours(0, 0, 0, 0);
+
               const citas = snapshot.docs
                 .map((d) => ({ id: d.id, ...d.data() }))
-                .filter((c) => (c.date_time?.seconds || 0) > ahora)
+                .filter((c) => (c.date_time?.seconds * 1000 || 0) >= inicioHoy.getTime())
                 .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
               setReservas(citas);
             });
@@ -403,6 +411,70 @@ export default function AdminDashboard() {
 
   const clientesCRM = [...clientes].sort((a, b) => (b.visits || 0) - (a.visits || 0));
 
+  const fechaHoy = new Date();
+  fechaHoy.setHours(0, 0, 0, 0);
+  const fechaManana = new Date(fechaHoy);
+  fechaManana.setDate(fechaManana.getDate() + 1);
+  const fechaPasado = new Date(fechaHoy);
+  fechaPasado.setDate(fechaPasado.getDate() + 2);
+
+  const citasHoy = reservas.filter(r => {
+    const t = r.date_time?.seconds * 1000;
+    return t >= fechaHoy.getTime() && t < fechaManana.getTime();
+  });
+  const citasManana = reservas.filter(r => {
+    const t = r.date_time?.seconds * 1000;
+    return t >= fechaManana.getTime() && t < fechaPasado.getTime();
+  });
+  const citasProximas = reservas.filter(r => {
+    const t = r.date_time?.seconds * 1000;
+    return t >= fechaPasado.getTime();
+  });
+
+  const RenderCitaCard = ({ r }) => {
+    const timeMs = r.date_time?.seconds * 1000;
+    const fechaObj = r.date_time ? new Date(timeMs) : null;
+    const isPast = timeMs < ahora;
+    const fechaFormateada = fechaObj ? fechaObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }) : 'N/A';
+    const horaFormateada = fechaObj ? fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+    const profesional = profesionales.find((p) => p.id === r.emp_id);
+
+    return (
+      <div className={`p-4 rounded-2xl border transition-all ${isPast ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200 shadow-2xs'}`}>
+        <div className="flex justify-between items-start gap-3">
+          <div className={isPast ? 'grayscale' : ''}>
+            <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
+            <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
+            <p className={`text-xs font-bold capitalize mt-2 ${isPast ? 'text-gray-400 line-through' : 'text-gray-800'}`}>📅 {fechaFormateada} - {horaFormateada}</p>
+          </div>
+          {isPast ? (
+            <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
+              ✅ Finalizada
+            </span>
+          ) : (
+            <a
+              href={`https://wa.me/${r.user_phone}`} target="_blank" rel="noreferrer"
+              className="text-[11px] text-green-800 bg-green-100 px-3.5 py-2 rounded-full font-bold active:scale-95 transition-transform flex items-center gap-1 shrink-0"
+            >
+              💬 WhatsApp
+            </a>
+          )}
+        </div>
+        {!isPast && (
+          <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
+            <button
+              onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}
+              className="text-xs text-red-500 font-bold active:scale-95 transition-transform bg-red-50 px-3 py-1.5 rounded-lg"
+            >
+              {cancelando === r.id ? 'Cancelando...' : 'Cancelar Cita'}
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   if (loading) return <div className="p-8 text-center text-gray-500 font-medium">Cargando panel...</div>;
   if (!user) {
     return (
@@ -445,61 +517,53 @@ export default function AdminDashboard() {
         {/* ======================= PESTAÑA: AGENDA ======================= */}
         {view === 'agenda' && (
           <div className="space-y-6">
-            {/* BOTÓN COPIAR ENLACE EN LA PARTE SUPERIOR */}
-            <button
-              onClick={copiarEnlace}
-              className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform"
-            >
+            <button onClick={copiarEnlace} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
               {enlaceCopiado ? '✅ ¡Enlace copiado!' : '🔗 Copiar mi Enlace de Reservas'}
             </button>
 
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-4">Próximas Reservas ({reservas.length})</h2>
-              {reservas.length === 0 ? (
-                <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-                  <div className="text-3xl mb-2">📅</div>
-                  <p className="text-sm font-medium text-gray-500">No hay citas agendadas aún.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {reservas.map((r) => {
-                    const fechaObj = r.date_time ? new Date(r.date_time.seconds * 1000) : null;
-                    const fechaFormateada = fechaObj ? fechaObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }) : 'N/A';
-                    const horaFormateada = fechaObj ? fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
-                    const profesional = profesionales.find((p) => p.id === r.emp_id);
-                    return (
-                      <div key={r.id} className="p-4 bg-white border border-gray-200 rounded-2xl shadow-2xs space-y-3">
-                        <div className="flex justify-between items-start gap-3">
-                          <div>
-                            <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
-                            <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
-                            <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
-                            <p className="text-xs font-bold text-gray-800 capitalize mt-2">📅 {fechaFormateada} - {horaFormateada}</p>
-                          </div>
-                          <a
-                            href={`https://wa.me/${r.user_phone}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[11px] text-green-800 bg-green-100 px-3.5 py-2 rounded-full font-bold active:scale-95 transition-transform flex items-center gap-1 shrink-0"
-                          >
-                            💬 WhatsApp
-                          </a>
-                        </div>
-                        <div className="flex justify-end pt-3 border-t border-gray-100">
-                          <button
-                            onClick={() => handleCancelarReserva(r.id)}
-                            disabled={cancelando === r.id}
-                            className="text-xs text-red-500 font-bold active:scale-95 transition-transform bg-red-50 px-3 py-1.5 rounded-lg"
-                          >
-                            {cancelando === r.id ? 'Cancelando...' : 'Cancelar Cita'}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
+            {reservas.length === 0 ? (
+               <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-200 border-dashed">
+                 <div className="text-4xl mb-3">📅</div>
+                 <p className="text-sm font-medium text-gray-500">No hay citas agendadas en el sistema.</p>
+               </div>
+            ) : (
+              <div className="space-y-6">
+                {citasHoy.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span> 
+                      Hoy
+                    </h3>
+                    <div className="space-y-3">
+                      {citasHoy.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    </div>
+                  </div>
+                )}
+
+                {citasManana.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-black text-gray-500 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> 
+                      Mañana
+                    </h3>
+                    <div className="space-y-3">
+                      {citasManana.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    </div>
+                  </div>
+                )}
+
+                {citasProximas.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-black text-gray-400 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                      Próximas
+                    </h3>
+                    <div className="space-y-3">
+                      {citasProximas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
