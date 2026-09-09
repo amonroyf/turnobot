@@ -38,11 +38,10 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
   const diasEnMes = new Date(y, m + 1, 0).getDate();
   const offset = primerDia.getDay();
   const fmt = (d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  
+
   const navegar = (delta) => {
     const fecha = new Date(y, m + delta, 1);
     if (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), 1)) return;
-    // Límite: 30 días en el futuro
     const maxFecha = new Date(hoy);
     maxFecha.setDate(maxFecha.getDate() + 30);
     if (delta > 0 && fecha > new Date(maxFecha.getFullYear(), maxFecha.getMonth(), 1)) return;
@@ -142,6 +141,18 @@ export default function BookingApp() {
       });
   }, [slug]);
 
+  // MEJORA 4: Efecto de Auto-Scroll para experiencia móvil fluida
+  useEffect(() => {
+    if (step > 1 && view === 'agendar') {
+      setTimeout(() => {
+        const el = document.getElementById(`step-${step}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    }
+  }, [step, view]);
+
   const servicioElegido = negocio?.servicios?.find(s => s.id === booking.servicioId);
   const empleadoElegido = negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
@@ -205,9 +216,9 @@ export default function BookingApp() {
     setError('');
     setStep(1);
     setView('agendar');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // Agrupación dinámica por franja horaria para pantallas móviles
   const slotsManana = slots.filter(h => parseInt(h.split(':')[0], 10) < 12);
   const slotsTarde = slots.filter(h => {
     const hNum = parseInt(h.split(':')[0], 10);
@@ -225,7 +236,8 @@ export default function BookingApp() {
       </header>
 
       <main className="p-4">
-        {error && (            <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-2xl text-center font-medium">
+        {error && (
+           <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-2xl text-center font-medium">
             {error}
           </div>
         )}
@@ -271,77 +283,89 @@ export default function BookingApp() {
                   </button>
                 )}
 
-                {step === 1 && (
-                  <div className="space-y-6">
-                    <div>
-                      <h2 className="font-bold text-gray-800 mb-3 text-sm">1. Selecciona un servicio</h2>
-                      <div className="grid gap-3">
-                    {negocio.servicios?.map(s => {
-                      const isActive = booking.servicioId === s.id;
-                      return (
-                        <button
-                          key={s.id}
-                          onClick={() => setBooking({ ...booking, servicioId: s.id })}
-                          className={`p-4 rounded-2xl border text-left flex items-center gap-3 transition-all active:scale-95 ${
-                            isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
-                          }`}
-                        >
-                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                            isActive ? 'border-white' : 'border-gray-300'
-                          }`}
+                {/* PASO 1 */}
+                {step >= 1 && (
+                  <div id="step-1" className={step !== 1 ? 'opacity-50 pointer-events-none' : ''}>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">1. Selecciona un servicio</h2>
+                    <div className="grid gap-3">
+                      {negocio.servicios?.map(s => {
+                        const isActive = booking.servicioId === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            onClick={() => {
+                              setBooking({ ...booking, servicioId: s.id, empleadoId: '', fecha: '', hora: '' });
+                              setStep(1); 
+                            }}
+                            className={`p-4 rounded-2xl border text-left flex items-center gap-3 transition-all active:scale-95 ${
+                              isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
+                            }`}
                           >
-                            {isActive && <div className="w-2.5 h-2.5 bg-white rounded-full"></div>}
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-bold text-sm">{s.name}</p>
-                            <p className="text-xs opacity-75">{s.duration_minutes} min</p>
-                          </div>
-                          <span className="font-black text-base">{formatDinero(s.price)}</span>
-                        </button>
-                      );
-                    })}
-                      </div>
-                    </div>
-
-                    {booking.servicioId && (
-                      <div>
-                        <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
-                        <div className="grid grid-cols-2 gap-3">
-                          {negocio.empleados?.map(e => (
-                            <button
-                              key={e.id}
-                              onClick={() => {
-                                setBooking({ ...booking, empleadoId: e.id });
-                                setStep(2);
-                              }}
-                              className="p-3.5 bg-white border border-gray-200 rounded-2xl font-bold text-sm flex items-center gap-3 active:bg-gray-100 active:scale-95 transition-all shadow-2xs"
+                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                              isActive ? 'border-white' : 'border-gray-300'
+                            }`}
                             >
-                              <span className="w-9 h-9 rounded-full bg-gray-100 text-gray-700 flex items-center justify-center font-black shrink-0 border border-gray-200">
-                                {e.name.charAt(0)}
-                              </span>
-                              <span className="leading-tight text-gray-800 truncate">{e.name}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                              {isActive && <div className="w-2.5 h-2.5 bg-white rounded-full"></div>}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-bold text-sm">{s.name}</p>
+                              <p className="text-xs opacity-75">{s.duration_minutes} min</p>
+                            </div>
+                            <span className="font-black text-base">{formatDinero(s.price)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {step === 2 && (
-                  <div className="space-y-3">
-                    <h2 className="font-bold text-gray-800 text-sm">3. ¿Qué día quieres ir?</h2>
+                {/* PASO 2 */}
+                {(step >= 1 && booking.servicioId) && (
+                  <div id="step-2" className={step > 2 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
+                    <div className="grid grid-cols-2 gap-3">
+                      {negocio.empleados?.map(e => {
+                        const isActive = booking.empleadoId === e.id;
+                        return (
+                          <button
+                            key={e.id}
+                            onClick={() => {
+                              setBooking({ ...booking, empleadoId: e.id, fecha: '', hora: '' });
+                              setStep(2);
+                            }}
+                            className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${
+                              isActive ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                            }`}
+                          >
+                            <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
+                              isActive ? 'bg-gray-800 text-white border-gray-700' : 'bg-gray-100 text-gray-700 border-gray-200'
+                            }`}>
+                              {e.name.charAt(0)}
+                            </span>
+                            <span className="leading-tight truncate">{e.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* PASO 3 (Calendario) */}
+                {step >= 2 && (
+                  <div id="step-3" className={step > 3 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">3. ¿Qué día quieres ir?</h2>
                     <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} />
-                    {loading &&                    <p className="text-center text-xs font-semibold text-gray-500 py-2">Buscando espacios libres...</p>}
+                    {loading && <p className="text-center text-xs font-semibold text-gray-500 py-4">Buscando espacios libres...</p>}
                   </div>
                 )}
 
-                {step === 3 && (
-                  <div>
-                    <h2 className="font-bold text-gray-800 text-sm">4. Horarios para el {booking.fecha}</h2>
+                {/* PASO 4 (Horarios) */}
+                {step >= 3 && slots.length >= 0 && (
+                  <div id="step-4" className={step > 4 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">4. Horarios para el {booking.fecha}</h2>
                     {slots.length === 0 ? (
                       <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
-                        <p className="text-red-500 font-semibold">No hay espacios disponibles este día.</p>
+                        <p className="text-red-500 font-semibold text-sm">No hay espacios disponibles este día.</p>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -352,11 +376,10 @@ export default function BookingApp() {
                               {slotsManana.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => {
-                                    setBooking({ ...booking, hora });
-                                    setStep(4);
-                                  }}
-                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
+                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                  }`}
                                 >
                                   {hora}
                                 </button>
@@ -372,11 +395,10 @@ export default function BookingApp() {
                               {slotsTarde.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => {
-                                    setBooking({ ...booking, hora });
-                                    setStep(4);
-                                  }}
-                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
+                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                  }`}
                                 >
                                   {hora}
                                 </button>
@@ -392,11 +414,10 @@ export default function BookingApp() {
                               {slotsNoche.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => {
-                                    setBooking({ ...booking, hora });
-                                    setStep(4);
-                                  }}
-                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
+                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                  }`}
                                 >
                                   {hora}
                                 </button>
@@ -409,40 +430,47 @@ export default function BookingApp() {
                   </div>
                 )}
 
-                {step === 4 && (
-                  <form onSubmit={confirmarCita} className="space-y-4">
-                    <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>                        <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                      <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
-                      <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
-                      <p>📅 Fecha: <strong>{booking.fecha}</strong> a las <strong>{booking.hora}</strong></p>
-                    </div>
-                    <input
-                      type="text" required placeholder="Tu Nombre completo"
-                      autoComplete="name"
-                      value={booking.clienteNombre}
-                      onChange={e => setBooking({ ...booking, clienteNombre: e.target.value })}
-                      className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
-                    />
-                    <input
-                      type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
-                      inputMode="tel"
-                      autoComplete="tel"
-                      value={booking.clienteTelefono}
-                      onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
-                      className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
-                    />
-                    <button
-                      type="submit"
-                      disabled={loading}
-                      className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-2 disabled:opacity-50 active:scale-95 transition-transform text-sm shadow-sm"
-                    >
-                      {loading ? 'Agendando...' : 'Confirmar Reserva'}
-                    </button>
-                  </form>
+                {/* PASO 5 (Confirmar) */}
+                {step >= 4 && (
+                  <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6">
+                    <form onSubmit={confirmarCita} className="space-y-4">
+                      <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
+                      
+                      <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
+                        <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
+                        <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
+                        <p>📅 Fecha: <strong>{booking.fecha}</strong> a las <strong>{booking.hora}</strong></p>
+                      </div>
+
+                      <input
+                        type="text" required placeholder="Tu Nombre completo"
+                        autoComplete="name"
+                        value={booking.clienteNombre}
+                        onChange={e => setBooking({ ...booking, clienteNombre: e.target.value })}
+                        className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
+                      />
+                      <input
+                        type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+                        inputMode="tel"
+                        autoComplete="tel"
+                        value={booking.clienteTelefono}
+                        onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
+                        className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
+                      />
+                      <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-2 disabled:opacity-50 active:scale-95 transition-transform text-sm shadow-md"
+                      >
+                        {loading ? 'Agendando...' : 'Confirmar Reserva'}
+                      </button>
+                    </form>
+                  </div>
                 )}
 
+                {/* PANTALLA ÉXITO */}
                 {step === 5 && (
-                  <div className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4">
+                  <div id="step-success" className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4 mt-4">
                     {!waConfirmado ? (
                       <>
                         <div className="text-4xl">🎉</div>
@@ -485,7 +513,7 @@ export default function BookingApp() {
         )}
       </main>
 
-      {/* BOTTOM NAVIGATION BAR (UX TÁCTIL) */}
+      {/* BOTTOM NAVIGATION BAR */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2 flex justify-around items-center z-50 shadow-lg">
         <button
           onClick={() => { setView('agendar'); setStep(1); }}

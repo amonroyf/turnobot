@@ -55,10 +55,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
 
   const agregarTurno = (dia) => {
     const actuales = horario[dia]?.turnos || [];
-    if (actuales.length >= 4) {
-      alert('Máximo 4 turnos por día');
-      return;
-    }
+    if (actuales.length >= 4) return;
     setHorario({
       ...horario,
       [dia]: { ...horario[dia], turnos: [...actuales, { inicio: '14:00', fin: '18:00' }] },
@@ -78,16 +75,38 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
       alert(`Horario de ${empleado.name} actualizado`);
       onClose();
     } catch (err) {
-      alert(`Error al guardar el horario. Revisa que cada turno tenga hora válida.`);
+      alert(`Error al guardar el horario.`);
     }
     setGuardando(false);
   };
+
+  // MEJORA 5: Prevención de errores humanos (Inicio >= Fin)
+  const errorValidacion = (() => {
+    for (const dia of DIAS_SEMANA) {
+      const data = horario[dia];
+      if (data?.activo && data?.turnos) {
+        for (const t of data.turnos) {
+          if (t.inicio && t.fin && t.inicio >= t.fin) {
+            return `Revisa el ${dia}: La hora de fin debe ser posterior a la de inicio.`;
+          }
+        }
+      }
+    }
+    return null;
+  })();
 
   return (
     <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
         <h3 className="text-lg font-bold mb-1 text-gray-900">Horario Laboral</h3>
         <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
+        
+        {errorValidacion && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
+            {errorValidacion}
+          </div>
+        )}
+
         <div className="space-y-4">
           {DIAS_SEMANA.map((dia) => (
             <div key={dia} className="border-b border-gray-100 pb-3">
@@ -107,20 +126,20 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
                       <input
                         type="time" value={t.inicio}
                         onChange={(e) => handleTurnoChange(dia, idx, 'inicio', e.target.value)}
-                        className="border border-gray-200 p-1.5 rounded-lg text-sm focus:border-black focus:outline-none"
+                        className={`border p-1.5 rounded-lg text-sm focus:outline-none ${t.inicio >= t.fin ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 focus:border-black'}`}
                       />
                       <span className="text-gray-400 font-medium">a</span>
                       <input
                         type="time" value={t.fin}
                         onChange={(e) => handleTurnoChange(dia, idx, 'fin', e.target.value)}
-                        className="border border-gray-200 p-1.5 rounded-lg text-sm focus:border-black focus:outline-none"
+                        className={`border p-1.5 rounded-lg text-sm focus:outline-none ${t.inicio >= t.fin ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 focus:border-black'}`}
                       />
                       {(horario[dia].turnos || []).length > 1 && (
                         <button onClick={() => eliminarTurno(dia, idx)} className="text-red-400 hover:text-red-600 font-bold px-2 py-1 active:scale-95">✕</button>
                       )}
                     </div>
                   ))}
-                  <button onClick={() => agregarTurno(dia)} className="text-xs text-blue-600 font-bold active:scale-95 pt-1">
+                  <button onClick={() => agregarTurno(dia)} disabled={(horario[dia].turnos || []).length >= 4} className="text-xs text-blue-600 font-bold active:scale-95 pt-1 disabled:opacity-30">
                     + Agregar Turno Partido
                   </button>
                 </div>
@@ -132,7 +151,11 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
           <button onClick={onClose} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
             Cancelar
           </button>
-          <button onClick={guardarHorario} disabled={guardando} className="px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-md">
+          <button 
+            onClick={guardarHorario} 
+            disabled={guardando || errorValidacion != null} 
+            className="px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-md"
+          >
             {guardando ? 'Guardando...' : 'Guardar'}
           </button>
         </div>
@@ -366,12 +389,25 @@ export default function AdminDashboard() {
     return t >= fechaPasado.getTime();
   });
 
+  // MEJORA 3: Función agrupadora para transformar la lista plana en bloques visuales de hora
+  const agruparPorHora = (citasArray) => {
+    const agrupadas = {};
+    citasArray.forEach(r => {
+      const timeMs = r.date_time?.seconds * 1000;
+      const fechaObj = r.date_time ? new Date(timeMs) : null;
+      const horaStr = fechaObj ? fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
+      
+      if (!agrupadas[horaStr]) agrupadas[horaStr] = [];
+      agrupadas[horaStr].push(r);
+    });
+
+    const horasOrdenadas = Object.keys(agrupadas).sort();
+    return horasOrdenadas.map(hora => ({ hora, citas: agrupadas[hora] }));
+  };
+
   const RenderCitaCard = ({ r }) => {
     const timeMs = r.date_time?.seconds * 1000;
-    const fechaObj = r.date_time ? new Date(timeMs) : null;
     const isPast = timeMs < ahora;
-    const fechaFormateada = fechaObj ? fechaObj.toLocaleDateString('es-ES', { weekday: 'short', day: 'numeric', month: 'short' }) : 'N/A';
-    const horaFormateada = fechaObj ? fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
     const profesional = profesionales.find((p) => p.id === r.emp_id);
 
     return (
@@ -381,7 +417,6 @@ export default function AdminDashboard() {
             <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
             <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
-            <p className={`text-xs font-bold capitalize mt-2 ${isPast ? 'text-gray-400 line-through' : 'text-gray-800'}`}>📅 {fechaFormateada} - {horaFormateada}</p>
           </div>
           
           {isPast ? (
@@ -455,37 +490,51 @@ export default function AdminDashboard() {
                  <p className="text-sm font-medium text-gray-500">No hay citas agendadas en el sistema.</p>
                </div>
             ) : (
-              <div className="space-y-6">
-                {/* SECCIÓN HOY */}
+              <div className="space-y-8">
+                {/* SECCIÓN HOY (Agrupada por Hora) */}
                 {citasHoy.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                    <h3 className="text-sm font-black text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider">
                       <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span> 
                       Hoy
                     </h3>
-                    <div className="space-y-3">
-                      {citasHoy.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    <div className="space-y-5">
+                      {agruparPorHora(citasHoy).map(grupo => (
+                        <div key={grupo.hora} className="relative">
+                          <h4 className="text-[11px] font-bold text-gray-400 mb-2 pl-1 border-b border-gray-200/60 pb-1">{grupo.hora}</h4>
+                          <div className="space-y-3">
+                            {grupo.citas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* SECCIÓN MAÑANA */}
+                {/* SECCIÓN MAÑANA (Agrupada por Hora) */}
                 {citasManana.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-black text-gray-500 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                    <h3 className="text-sm font-black text-gray-500 mb-4 flex items-center gap-2 uppercase tracking-wider">
                       <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> 
                       Mañana
                     </h3>
-                    <div className="space-y-3">
-                      {citasManana.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    <div className="space-y-5">
+                      {agruparPorHora(citasManana).map(grupo => (
+                        <div key={grupo.hora} className="relative">
+                          <h4 className="text-[11px] font-bold text-gray-400 mb-2 pl-1 border-b border-gray-200/60 pb-1">{grupo.hora}</h4>
+                          <div className="space-y-3">
+                            {grupo.citas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* SECCIÓN PRÓXIMAS */}
+                {/* SECCIÓN PRÓXIMAS (Agrupada por Día y Hora) */}
                 {citasProximas.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-black text-gray-400 mb-3 flex items-center gap-2 uppercase tracking-wider">
+                    <h3 className="text-sm font-black text-gray-400 mb-4 flex items-center gap-2 uppercase tracking-wider">
                       Próximas
                     </h3>
                     <div className="space-y-3">
