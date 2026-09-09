@@ -362,17 +362,15 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, loc,
 	)
 
-	// 0. Límite estricto: un cliente (identificado por su teléfono) solo puede
-	// tener UNA cita por día en esta barbería. Si ya tiene una reserva para el
-	// mismo día natural, se rechaza la petición antes de tocar Calendar/Firestore.
+	// 0. Límite familiar/Anti-spam: un número de teléfono puede tener máximo 3 citas al día.
 	if hasBookingOnDate(ctx, slug, req.ClienteTelefono, eventDateTime) {
-		log.Printf("Límite diario de %s: ya tiene cita el %s (%s) en %s", req.ClienteTelefono, req.Fecha, req.Hora, slug)
+		log.Printf("Límite diario de %s: ya tiene 3 citas el %s en %s", req.ClienteTelefono, req.Fecha, slug)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "max_per_day",
-			"message": "Ya tienes un turno agendado para este día. Si necesitas reservar para un amigo o familiar, por favor comunícate directamente con la barbería.",
+			"message": "Has alcanzado el límite máximo de 3 reservas para este día usando este número de WhatsApp. Por favor, comunícate directamente con el local para agendar turnos adicionales.",
 		})
 		return
 	}
@@ -402,20 +400,6 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			"success": false,
 			"error":   "slot_taken",
 			"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
-		})
-		return
-	}
-
-	// 2. Verificar que el cliente NO tenga ya una cita que se superponga con este horario.
-	// Un cliente no puede estar en dos citas al mismo tiempo (aunque sea con barberos diferentes).
-	if hasCustomerOverlap(ctx, slug, req.ClienteTelefono, eventDateTime) {
-		log.Printf("Doble reserva del cliente %s: %s %s en %s", req.ClienteTelefono, req.Fecha, req.Hora, slug)
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "double_booking",
-			"message": "Ya tienes una cita agendada a esta hora. Por favor elige otro horario.",
 		})
 		return
 	}
@@ -1271,59 +1255,28 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 	return intervals
 }
 
-// hasCustomerOverlap verifica si el cliente ya tiene una cita que se superpone
-// con el horario solicitado (mismo negocio, mismo teléfono, hora dentro de ±60 min).
-func hasCustomerOverlap(ctx context.Context, negocioID, phone string, requested time.Time) bool {
-	if phone == "" {
-		return false
-	}
-
-	for _, key := range phoneQueryKeys(phone) {
-		docs, err := firestoreClient.Collection("reservas").
-			Where("user_phone", "==", key).
-			Documents(ctx).GetAll()
-		if err != nil {
-			log.Printf("Aviso: error verificando overlap del cliente: %v", err)
-			continue // No bloquear la reserva si hay error de Firestore
-		}
-		for _, d := range docs {
-			var b Booking
-			d.DataTo(&b)
-			if b.NegocioID != negocioID {
-				continue
-			}
-			// Si la diferencia entre las dos citas es menor a 60 minutos, hay superposición
-			diff := b.DateTime.Sub(requested)
-			if diff < 0 {
-				diff = -diff
-			}
-			if diff < 60*time.Minute {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-// hasBookingOnDate verifica si el cliente ya tiene UNA reserva (o más) para el
-// mismo día natural del negocio. Es el filtro estricto de "una cita por cliente
-// al día": se consulta por teléfono y se compara el día en la zona horaria del
-// negocio (la fecha puede diferir entre UTC y la localidad del local).
+// hasBookingOnDate verifica si el cliente ya alcanzó el límite familiar/anti-spam
+// de 3 citas para el mismo día natural del negocio. Se consulta por teléfono y
+// se compara el día en la zona horaria del local.
 func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested time.Time) bool {
 	if phone == "" {
 		return false
 	}
-
 	loc := shopLocation(ctx, negocioID)
 	day := requested.In(loc).Format("2006-01-02")
+	
+	count := 0
+
 	for _, key := range phoneQueryKeys(phone) {
 		docs, err := firestoreClient.Collection("reservas").
 			Where("user_phone", "==", key).
 			Documents(ctx).GetAll()
+
 		if err != nil {
 			log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
-			continue // No bloquear la reserva si hay error de Firestore
+			continue
 		}
+
 		for _, d := range docs {
 			var b Booking
 			d.DataTo(&b)
@@ -1331,11 +1284,12 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 				continue
 			}
 			if b.DateTime.In(loc).Format("2006-01-02") == day {
-				return true
+				count++
 			}
 		}
 	}
-	return false
+	
+	return count >= 3
 }
 
 // isSlotAvailable verifica si un slot horario exacto sigue libre en Google Calendar.
