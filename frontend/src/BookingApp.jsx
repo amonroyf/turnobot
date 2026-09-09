@@ -15,6 +15,8 @@ const formatPhoneNumber = (value) => {
   return value;
 };
 
+const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+
 const DIAS_SEMANA_ABREV = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
 const MESES_ES = [
   'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
@@ -37,8 +39,16 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
   const navegar = (delta) => {
     const fecha = new Date(y, m + delta, 1);
     if (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), 1)) return;
+    // Límite: 30 días en el futuro
+    const maxFecha = new Date(hoy);
+    maxFecha.setDate(maxFecha.getDate() + 30);
+    if (delta > 0 && fecha > new Date(maxFecha.getFullYear(), maxFecha.getMonth(), 1)) return;
     setAnioMes({ y: fecha.getFullYear(), m: fecha.getMonth() });
   };
+
+  const maxFecha30 = new Date(hoy);
+  maxFecha30.setDate(maxFecha30.getDate() + 30);
+  const enLimite = y > maxFecha30.getFullYear() || (y === maxFecha30.getFullYear() && m >= maxFecha30.getMonth());
 
   const celdas = [];
   for (let i = 0; i < offset; i++) celdas.push(null);
@@ -62,8 +72,9 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
         <button
           type="button"
           onClick={() => navegar(1)}
+          disabled={enLimite}
           aria-label="Mes siguiente"
-          className="w-10 h-10 rounded-full hover:bg-gray-100 active:scale-95 font-bold flex items-center justify-center text-lg transition-transform"
+          className="w-10 h-10 rounded-full hover:bg-gray-100 active:scale-95 disabled:opacity-30 font-bold flex items-center justify-center text-lg transition-transform"
         >
           ›
         </button>
@@ -206,13 +217,12 @@ export default function BookingApp() {
   return (
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased">
       <header className="p-4 bg-white border-b border-gray-100 text-center sticky top-0 z-40 shadow-2xs">
-        <h1 className="text-xl font-bold text-gray-900">{negocio?.name || 'Turnobot'}</h1>
-        <p className="text-xs text-gray-500">Reserva tu cita en segundos</p>
+        <h1 className="text-lg font-bold text-gray-900">{negocio?.name || 'Turnobot'}</h1>
+        <p className="text-xs text-gray-400">Reserva tu cita en segundos</p>
       </header>
 
       <main className="p-4">
-        {error && (
-          <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 text-sm rounded-2xl text-center font-medium">
+        {error && (            <div className="mb-4 p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-2xl text-center font-medium">
             {error}
           </div>
         )}
@@ -226,18 +236,22 @@ export default function BookingApp() {
             {view === 'info' && (
               <div className="space-y-4">
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-4 shadow-sm">
-                  <h2 className="text-lg font-bold text-gray-800">{negocio.name}</h2>
-                  <div className="space-y-3 text-sm text-gray-700">
-                    <p className="flex gap-3">📍 <span>{negocio.direccion || 'Dirección no disponible'}</span></p>
-                    <p className="flex gap-3">🕒 <span>{negocio.horario || 'Horario no disponible'}</span></p>
-                    <p className="flex gap-3">📞 <span>{negocio.telefono || 'Teléfono no disponible'}</span></p>
+                  <h2 className="text-base font-bold text-gray-800">{negocio.name}</h2>
+                  <div className="space-y-3 text-xs text-gray-600">
+                    {negocio.direccion ? <p className="flex items-center gap-2">📍 <span>{negocio.direccion}</span></p> : null}
+                    {negocio.horario ? <p className="flex items-center gap-2">🕒 <span>{negocio.horario}</span></p> : null}
+                    {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{negocio.telefono}</span></p> : null}
+                    
+                    {(!negocio.direccion && !negocio.horario && !negocio.telefono) && (
+                      <p className="text-gray-400 italic">Información del local no configurada.</p>
+                    )}
                   </div>
                   {negocio.whatsapp && (
                     <a
                       href={`https://wa.me/${negocio.whatsapp}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center shadow-md active:scale-95 transition-transform"
+                      className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
                     >
                       💬 Escríbenos por WhatsApp
                     </a>
@@ -249,7 +263,7 @@ export default function BookingApp() {
             {view === 'agendar' && (
               <div className="space-y-4">
                 {step > 1 && step < 5 && (
-                  <button onClick={() => setStep(step - 1)} className="text-sm font-semibold text-gray-500 mb-2 flex items-center gap-1 active:opacity-70">
+                  <button onClick={() => setStep(step - 1)} className="text-xs font-bold text-gray-500 mb-2 flex items-center gap-1 active:opacity-70">
                     ← Volver
                   </button>
                 )}
@@ -257,29 +271,38 @@ export default function BookingApp() {
                 {step === 1 && (
                   <div className="space-y-6">
                     <div>
-                      <h2 className="font-bold text-gray-800 mb-3 text-base">1. Selecciona un servicio</h2>
+                      <h2 className="font-bold text-gray-800 mb-3 text-sm">1. Selecciona un servicio</h2>
                       <div className="grid gap-3">
-                        {negocio.servicios?.map(s => (
-                          <button
-                            key={s.id}
-                            onClick={() => setBooking({ ...booking, servicioId: s.id })}
-                            className={`p-4 rounded-2xl border text-left flex justify-between items-center transition-all active:scale-95 ${
-                              booking.servicioId === s.id ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
-                            }`}
+                    {negocio.servicios?.map(s => {
+                      const isActive = booking.servicioId === s.id;
+                      return (
+                        <button
+                          key={s.id}
+                          onClick={() => setBooking({ ...booking, servicioId: s.id })}
+                          className={`p-4 rounded-2xl border text-left flex items-center gap-3 transition-all active:scale-95 ${
+                            isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
+                          }`}
+                        >
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            isActive ? 'border-white' : 'border-gray-300'
+                          }`}
                           >
-                            <div>
-                              <p className="font-bold text-sm">{s.name}</p>
-                              <p className="text-xs opacity-75">{s.duration_minutes} min</p>
-                            </div>
-                            <span className="font-black text-base">${s.price}</span>
-                          </button>
-                        ))}
+                            {isActive && <div className="w-2.5 h-2.5 bg-white rounded-full"></div>}
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-bold text-sm">{s.name}</p>
+                            <p className="text-xs opacity-75">{s.duration_minutes} min</p>
+                          </div>
+                          <span className="font-black text-base">{formatDinero(s.price)}</span>
+                        </button>
+                      );
+                    })}
                       </div>
                     </div>
 
                     {booking.servicioId && (
                       <div>
-                        <h2 className="font-bold text-gray-800 mb-3 text-base">2. Selecciona el profesional</h2>
+                        <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
                         <div className="grid grid-cols-2 gap-3">
                           {negocio.empleados?.map(e => (
                             <button
@@ -304,15 +327,15 @@ export default function BookingApp() {
 
                 {step === 2 && (
                   <div className="space-y-3">
-                    <h2 className="font-bold text-gray-800 mb-1 text-base">3. ¿Qué día quieres ir?</h2>
+                    <h2 className="font-bold text-gray-800 text-sm">3. ¿Qué día quieres ir?</h2>
                     <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} />
-                    {loading && <p className="text-center text-sm font-semibold text-gray-500 py-2">Buscando espacios libres...</p>}
+                    {loading &&                    <p className="text-center text-xs font-semibold text-gray-500 py-2">Buscando espacios libres...</p>}
                   </div>
                 )}
 
                 {step === 3 && (
                   <div>
-                    <h2 className="font-bold text-gray-800 mb-3 text-base">4. Horarios para el {booking.fecha}</h2>
+                    <h2 className="font-bold text-gray-800 text-sm">4. Horarios para el {booking.fecha}</h2>
                     {slots.length === 0 ? (
                       <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
                         <p className="text-red-500 font-semibold">No hay espacios disponibles este día.</p>
@@ -330,7 +353,7 @@ export default function BookingApp() {
                                     setBooking({ ...booking, hora });
                                     setStep(4);
                                   }}
-                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
                                 >
                                   {hora}
                                 </button>
@@ -350,7 +373,7 @@ export default function BookingApp() {
                                     setBooking({ ...booking, hora });
                                     setStep(4);
                                   }}
-                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
                                 >
                                   {hora}
                                 </button>
@@ -370,7 +393,7 @@ export default function BookingApp() {
                                     setBooking({ ...booking, hora });
                                     setStep(4);
                                   }}
-                                  className="py-3.5 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 active:bg-black active:text-white active:scale-95 transition-all shadow-2xs"
+                                  className="py-3 bg-white border border-gray-200 rounded-xl font-bold text-xs text-gray-800 active:bg-black active:text-white transition-colors active:scale-95 shadow-2xs"
                                 >
                                   {hora}
                                 </button>
@@ -385,9 +408,8 @@ export default function BookingApp() {
 
                 {step === 4 && (
                   <form onSubmit={confirmarCita} className="space-y-4">
-                    <h2 className="font-bold text-gray-800 text-base">5. Tus datos para confirmar</h2>
-                    <div className="bg-white border border-gray-200 rounded-2xl p-4 text-sm text-gray-700 space-y-1.5 shadow-2xs">
-                      <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> (${servicioElegido?.price})</p>
+                    <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>                        <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
+                      <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
                       <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
                       <p>📅 Fecha: <strong>{booking.fecha}</strong> a las <strong>{booking.hora}</strong></p>
                     </div>
@@ -396,7 +418,7 @@ export default function BookingApp() {
                       autoComplete="name"
                       value={booking.clienteNombre}
                       onChange={e => setBooking({ ...booking, clienteNombre: e.target.value })}
-                      className="w-full p-4 border border-gray-200 rounded-xl bg-white text-base focus:outline-none focus:border-black"
+                      className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                     />
                     <input
                       type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
@@ -404,12 +426,12 @@ export default function BookingApp() {
                       autoComplete="tel"
                       value={booking.clienteTelefono}
                       onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
-                      className="w-full p-4 border border-gray-200 rounded-xl bg-white text-base focus:outline-none focus:border-black"
+                      className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                     />
                     <button
                       type="submit"
                       disabled={loading}
-                      className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-4 disabled:opacity-50 active:scale-95 transition-transform text-base shadow-md"
+                      className="w-full py-4 bg-black text-white font-bold rounded-2xl mt-2 disabled:opacity-50 active:scale-95 transition-transform text-sm shadow-sm"
                     >
                       {loading ? 'Agendando...' : 'Confirmar Reserva'}
                     </button>
@@ -420,8 +442,8 @@ export default function BookingApp() {
                   <div className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4">
                     {!waConfirmado ? (
                       <>
-                        <div className="text-5xl">🎉</div>
-                        <h2 className="text-xl font-bold text-gray-900">¡Cita reservada con éxito!</h2>
+                        <div className="text-4xl">🎉</div>
+                        <h2 className="text-lg font-bold text-gray-900">¡Cita reservada con éxito!</h2>
                         <p className="text-xs text-gray-500">
                           Tu turno ya está en nuestra agenda. Para agilizar tu atención al llegar, envíanos este mensaje rápido por WhatsApp.
                         </p>
@@ -436,7 +458,7 @@ export default function BookingApp() {
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setWaConfirmado(true)}
-                            className="block w-full py-4 bg-green-500 text-white font-bold rounded-2xl text-center shadow-md active:scale-95 transition-transform"
+                            className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
                           >
                             💬 Enviar mensaje por WhatsApp
                           </a>
@@ -444,8 +466,8 @@ export default function BookingApp() {
                       </>
                     ) : (
                       <>
-                        <div className="text-5xl">✅</div>
-                        <h2 className="text-xl font-bold text-gray-900">¡Mensaje Enviado!</h2>
+                        <div className="text-4xl">✅</div>
+                        <h2 className="text-lg font-bold text-gray-900">¡Mensaje Enviado!</h2>
                         <p className="text-xs text-gray-500">Te esperamos el {booking.fecha} a las {booking.hora}.</p>
                       </>
                     )}
@@ -461,26 +483,26 @@ export default function BookingApp() {
       </main>
 
       {/* BOTTOM NAVIGATION BAR (UX TÁCTIL) */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2.5 flex justify-around items-center z-50 shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2 flex justify-around items-center z-50 shadow-lg">
         <button
           onClick={() => { setView('agendar'); setStep(1); }}
-          className={`flex flex-col items-center gap-1 text-xs font-bold ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-xl">📅</span>
+          <span className="text-lg">📅</span>
           <span>Agendar</span>
         </button>
         <button
           onClick={() => setView('citas')}
-          className={`flex flex-col items-center gap-1 text-xs font-bold ${view === 'citas' ? 'text-black' : 'text-gray-400'}`}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'citas' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-xl">📋</span>
+          <span className="text-lg">📋</span>
           <span>Mis Citas</span>
         </button>
         <button
           onClick={() => setView('info')}
-          className={`flex flex-col items-center gap-1 text-xs font-bold ${view === 'info' ? 'text-black' : 'text-gray-400'}`}
+          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'info' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-xl">📍</span>
+          <span className="text-lg">📍</span>
           <span>Info Local</span>
         </button>
       </nav>

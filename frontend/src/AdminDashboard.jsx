@@ -185,6 +185,10 @@ export default function AdminDashboard() {
   const [reservas, setReservas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Estados para actualizar información del local
+  const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
+  const [guardandoInfo, setGuardandoInfo] = useState(false);
+
   const [cancelando, setCancelando] = useState('');
 
   const [nuevoServicio, setNuevoServicio] = useState({
@@ -201,7 +205,15 @@ export default function AdminDashboard() {
   const [enlaceCopiado, setEnlaceCopiado] = useState(false);
 
   useEffect(() => {
-    if (negocio) setWhatsApp(negocio.whatsapp || '');
+    if (negocio) {
+      setWhatsApp(negocio.whatsapp || '');
+      setInfoLocal({
+        name: negocio.name || '',
+        direccion: negocio.direccion || '',
+        horario: negocio.horario || '',
+        telefono: negocio.telefono || ''
+      });
+    }
   }, [negocio]);
 
   useEffect(() => {
@@ -245,8 +257,11 @@ export default function AdminDashboard() {
               qReservas,
               (snapshot) => {
                 intentosReservas.n = 0;
+                const ahora = Date.now() / 1000;
                 const citas = snapshot.docs
                   .map((d) => ({ id: d.id, ...d.data() }))
+                  // Filtrar: Solo conservar las citas futuras
+                  .filter((c) => (c.date_time?.seconds || 0) > ahora)
                   .sort(
                     (a, b) =>
                       (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0),
@@ -313,6 +328,19 @@ export default function AdminDashboard() {
     } catch {
       prompt('Copia tu enlace de reservas:', url);
     }
+  };
+
+  const handleGuardarInfoLocal = async (e) => {
+    e.preventDefault();
+    setGuardandoInfo(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
+      setNegocio(prev => ({ ...prev, ...infoLocal }));
+      alert('Información del local actualizada');
+    } catch (err) {
+      alert('Error al actualizar la información');
+    }
+    setGuardandoInfo(false);
   };
 
   const handleAddServicio = async (e) => {
@@ -428,7 +456,13 @@ export default function AdminDashboard() {
         },
       );
 
-      if (!res.ok) throw new Error('Error al cancelar');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        const msg = data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.';
+        alert(msg);
+        setCancelando('');
+        return;
+      }
     } catch (err) {
       alert('No se pudo cancelar la cita. Intenta nuevamente.');
     } finally {
@@ -544,12 +578,41 @@ export default function AdminDashboard() {
         </button>
       </header>
 
+      {/* DATOS DEL LOCAL (NUEVO) */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
+        <h2 className="text-base font-bold text-gray-800 mb-1">Información del Local</h2>
+        <p className="text-xs text-gray-500 mb-3">Actualiza los datos públicos que verán tus clientes al agendar.</p>
+        <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
+          <input
+            type="text" required placeholder="Nombre del Negocio" value={infoLocal.name}
+            onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="text" placeholder="Dirección física" value={infoLocal.direccion}
+            onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="text" placeholder="Horario (Ej. Lun - Sáb: 9am a 7pm)" value={infoLocal.horario}
+            onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <input
+            type="text" placeholder="Teléfono de contacto" value={infoLocal.telefono}
+            onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
+            className="w-full p-3 border border-gray-200 rounded-xl text-sm"
+          />
+          <button type="submit" disabled={guardandoInfo} className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+            {guardandoInfo ? 'Guardando...' : 'Guardar Información'}
+          </button>
+        </form>
+      </div>
+
       {/* WHATSAPP DEL NEGOCIO */}
       <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm mb-6">
-        <h2 className="text-base font-bold text-gray-800 mb-1">WhatsApp del local</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          Número al que llegan las confirmaciones de citas y las consultas de tus clientes.
-        </p>
+        <h2 className="text-base font-bold text-gray-800 mb-1">WhatsApp de Reservas</h2>
+        <p className="text-xs text-gray-500 mb-3">Número al que llegan las confirmaciones de citas de tus clientes.</p>
         <form onSubmit={handleGuardarWhatsApp} className="space-y-2">
           <div className="flex gap-2">
             <select
@@ -562,9 +625,6 @@ export default function AdminDashboard() {
               <option value="51">🇵🇪 +51</option>
               <option value="56">🇨🇱 +56</option>
               <option value="54">🇦🇷 +54</option>
-              <option value="58">🇻🇪 +58</option>
-              <option value="593">🇪🇨 +593</option>
-              <option value="55">🇧🇷 +55</option>
               <option value="34">🇪🇸 +34</option>
               <option value="1">🇺🇸 +1</option>
             </select>
@@ -581,11 +641,9 @@ export default function AdminDashboard() {
             disabled={guardandoWhatsApp}
             className="w-full py-3 bg-black text-white font-bold rounded-xl text-sm disabled:opacity-50"
           >
-            {guardandoWhatsApp ? 'Guardando...' : 'Guardar WhatsApp'}
+            {guardandoWhatsApp ? 'Guardando...' : 'Actualizar WhatsApp'}
           </button>
-          <p className="text-xs text-gray-400">
-            Escribe solo los 10 dígitos locales (sin 0 inicial ni espacios). Cambia el indicativo si tu WhatsApp es de otro país.
-          </p>
+
         </form>
       </div>
 
@@ -617,7 +675,7 @@ export default function AdminDashboard() {
                 <p className="text-xs text-gray-400">{s.duration_minutes} min</p>
               </div>
               <div className="flex items-center gap-3">
-                <span className="font-semibold">${s.price}</span>
+                <span className="font-bold">{formatDinero(s.price)}</span>
                 <button
                   onClick={() => handleEliminarServicio(s)}
                   disabled={eliminando === s.id}
@@ -794,7 +852,7 @@ export default function AdminDashboard() {
                       href={`https://wa.me/${r.user_phone}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-xs text-green-600 font-bold whitespace-nowrap"
+                      className="text-[11px] text-green-700 bg-green-100 border border-green-200 px-3 py-1.5 rounded-full font-bold shadow-sm active:scale-95 whitespace-nowrap"
                     >
                       💬 WhatsApp
                     </a>

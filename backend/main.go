@@ -563,8 +563,22 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// Regla de negocio: un cliente no puede cancelar por Internet cuando faltan
-	// menos de 2 horas para el turno. El dueño (token verificado) siempre puede.
+	// 1. REGLA DE INTEGRIDAD DE DATOS (Aplica para TODOS)
+	// Nadie puede cancelar una cita que ya ocurrió. Esto protege el historial
+	// y el LTV en el CRM (las cancelaciones decremanten el gasto del cliente).
+	if b.DateTime.Before(time.Now()) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "past_appointment",
+			"message": "No se puede cancelar una cita que ya pasó porque afectaría el historial contable del cliente.",
+		})
+		return
+	}
+
+	// 2. Regla de negocio para clientes: no cancelar con menos de 2 horas.
+	// El dueño (token verificado) sí puede cancelar citas futuras de emergencia.
 	if !isOwnerRequest(r, slug) && b.DateTime.Sub(time.Now()) < 2*time.Hour {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -589,7 +603,7 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// CRM: reflejar la cancelación en el directorio de clientes
+	// CRM: reflejar la cancelación en el directorio de clientes (solo si era futura)
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1110,6 +1124,10 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	var slots []string
 	slotDuration := time.Duration(durationMinutes) * time.Minute
 
+	// Límite máximo: 30 días en el futuro
+	now := time.Now()
+	maxBookingTime := now.Add(30 * 24 * time.Hour)
+
 	// Collect busy periods from Google Calendar for all shift intervals
 	var busyPeriods [][2]time.Time
 	if err != nil {
@@ -1117,7 +1135,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
 		for _, iv := range shiftIntervals {
 			for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
-				if t.After(time.Now()) {
+				if t.After(now) && t.Before(maxBookingTime) {
 					slots = append(slots, t.Format("15:04"))
 				}
 				if len(slots) >= 12 {
@@ -1171,7 +1189,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 						break
 					}
 				}
-				if free && currentTime.After(time.Now()) {
+				if free && currentTime.After(now) && currentTime.Before(maxBookingTime) {
 					slots = append(slots, currentTime.Format("15:04"))
 				}
 				currentTime = currentTime.Add(slotDuration)
