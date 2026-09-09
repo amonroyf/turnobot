@@ -2,8 +2,11 @@ import { useState } from 'react';
 
 // Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
 const formatPhoneNumber = (value) => {
-  const cleaned = ('' + value).replace(/\D/g, '');
-  const match = cleaned.substring(0, 10).match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+  let cleaned = ('' + value).replace(/\D/g, '');
+  if (cleaned.length > 10) {
+    cleaned = cleaned.slice(-10);
+  }
+  const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
   if (match) {
     return !match[2]
       ? match[1]

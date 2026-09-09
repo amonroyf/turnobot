@@ -5,8 +5,11 @@ import MisCitas from './MisCitas.jsx';
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
 const formatPhoneNumber = (value) => {
-  const cleaned = ('' + value).replace(/\D/g, '');
-  const match = cleaned.substring(0, 10).match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
+  let cleaned = ('' + value).replace(/\D/g, '');
+  if (cleaned.length > 10) {
+    cleaned = cleaned.slice(-10);
+  }
+  const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
   if (match) {
     return !match[2]
       ? match[1]
