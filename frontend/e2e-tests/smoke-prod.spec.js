@@ -38,7 +38,7 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Smoke');
   await page.getByPlaceholder('Minutos').fill('60');
   await page.getByPlaceholder('Precio').fill('20000');
-  await page.getByRole('button', { name: 'Guardar Servicio' }).click();
+  await page.getByRole('button', { name: /Agregar Servicio/ }).click();
   await expect(page.getByText('Corte Smoke')).toBeVisible({ timeout: 20000 });
 
   await page.getByPlaceholder('Nombre del profesional').fill('Smoky');

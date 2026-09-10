@@ -715,7 +715,7 @@ export default function AdminDashboard() {
                     </div>
                     <div className="flex items-center gap-4">
                       <span className="font-black text-gray-900">{formatDinero(s.price)}</span>
-                      <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
+                      <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
                     </div>
                   </li>
                 ))}
@@ -753,7 +753,7 @@ export default function AdminDashboard() {
                   <li key={p.id} className="p-4 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-3">
                     <div className="flex justify-between items-center">
                       <p className="font-bold text-gray-900 text-base">{p.name}</p>
-                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} className="px-2.5 py-1.5 bg-red-50 text-red-600 font-bold rounded-lg text-xs active:scale-95 transition-transform">Eliminar</button>
+                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} aria-label={`Eliminar profesional ${p.name}`} className="px-2.5 py-1.5 bg-red-50 text-red-600 font-bold rounded-lg text-xs active:scale-95 transition-transform">Eliminar</button>
                     </div>
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
                       {p.calendar_id ? (

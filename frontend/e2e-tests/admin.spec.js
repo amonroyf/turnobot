@@ -49,7 +49,7 @@ test.describe('Register + Admin Panel', () => {
     await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Tradicional');
     await page.getByPlaceholder('Minutos').fill('30');
     await page.getByPlaceholder('Precio').fill('25000');
-    await page.getByRole('button', { name: 'Guardar Servicio' }).click();
+    await page.getByRole('button', { name: /Agregar Servicio/ }).click();
     await expect(page.getByText('Corte Tradicional')).toBeVisible({
       timeout: 20000,
     });

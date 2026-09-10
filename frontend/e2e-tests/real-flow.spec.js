@@ -39,7 +39,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Premium');
     await page.getByPlaceholder('Minutos').fill('45');
     await page.getByPlaceholder('Precio').fill('35000');
-    await page.getByRole('button', { name: 'Guardar Servicio' }).click();
+    await page.getByRole('button', { name: /Agregar Servicio/ }).click();
     await expect(page.getByText('Corte Premium')).toBeVisible({ timeout: 20000 });
 
     // 4. Crear profesional en Firestore real

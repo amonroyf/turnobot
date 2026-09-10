@@ -32,6 +32,21 @@ func checkRemindersHandler(w http.ResponseWriter, r *http.Request, slug string) 
 		return
 	}
 
+	// Leer el negocio UNA sola vez fuera del loop (evitar N+1 queries)
+	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		log.Printf("Error leyendo negocio para push: %v", err)
+		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
+		return
+	}
+	var neg Negocio
+	negDoc.DataTo(&neg)
+	if neg.PushToken == "" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "sent": 0, "checked": 0, "reason": "no push_token"})
+		return
+	}
+
 	sent := 0
 	for _, d := range docs {
 		var b Booking
@@ -40,19 +55,6 @@ func checkRemindersHandler(w http.ResponseWriter, r *http.Request, slug string) 
 		// Verificar si ya se envió notificación
 		notifSent := d.Data()["notification_sent"]
 		if notifSent != nil {
-			continue
-		}
-
-		// Obtener token del dueño
-		negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
-		if err != nil {
-			log.Printf("Error leyendo negocio para push: %v", err)
-			continue
-		}
-		var neg Negocio
-		negDoc.DataTo(&neg)
-		if neg.PushToken == "" {
-			log.Printf("No hay push_token para %s", slug)
 			continue
 		}
 
@@ -264,6 +266,16 @@ func checkClientRemindersHandler(w http.ResponseWriter, r *http.Request, slug st
 		return
 	}
 
+	// Leer el negocio UNA sola vez fuera del loop (evitar N+1 queries)
+	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		log.Printf("Error leyendo negocio para recordatorios de cliente: %v", err)
+		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
+		return
+	}
+	var neg Negocio
+	negDoc.DataTo(&neg)
+
 	sent := 0
 	for _, d := range docs {
 		var b Booking
@@ -279,14 +291,6 @@ func checkClientRemindersHandler(w http.ResponseWriter, r *http.Request, slug st
 		if b.ClientPushToken == "" {
 			continue
 		}
-
-		// Obtener nombre del negocio
-		negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
-		if err != nil {
-			continue
-		}
-		var neg Negocio
-		negDoc.DataTo(&neg)
 
 		loc := shopLocation(ctx, slug)
 		title := "⏰ Recordatorio de cita"

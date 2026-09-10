@@ -769,8 +769,8 @@ func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 
 	batch := firestoreClient.Batch()
 	batch.Delete(servRef)
-	for _, ref := range affected {
-		batch.Delete(ref)
+	for _, ab := range affected {
+		batch.Delete(ab.ref)
 	}
 	if _, err := batch.Commit(ctx); err != nil {
 		log.Printf("Error borrando servicio %s en cascada: %v", servicioID, err)
@@ -808,8 +808,8 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 
 	batch := firestoreClient.Batch()
 	batch.Delete(empRef)
-	for _, ref := range affected {
-		batch.Delete(ref)
+	for _, ab := range affected {
+		batch.Delete(ab.ref)
 	}
 	if _, err := batch.Commit(ctx); err != nil {
 		log.Printf("Error borrando empleado %s en cascada: %v", empID, err)
@@ -827,10 +827,16 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	})
 }
 
+// affectedBooking empareja un DocumentRef con el Booking leído antes del batch delete.
+type affectedBooking struct {
+	ref *firestore.DocumentRef
+	b   Booking
+}
+
 // cascadeDeleteCitas encuentra las reservas futuras que deben eliminarse en
 // cascada (por empleado y/o por nombre de servicio) y devuelve las citas
-// afectadas con su evento de calendario y sus referencias para el Batch Write.
-func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (int, []*firestore.DocumentRef) {
+// afectadas con sus datos (para limpiar Google Calendar) y referencias (para el batch).
+func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (int, []affectedBooking) {
 	docs, err := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).
 		Documents(ctx).GetAll()
@@ -840,7 +846,7 @@ func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (i
 	}
 
 	now := time.Now()
-	var affected []*firestore.DocumentRef
+	var affected []affectedBooking
 	for _, d := range docs {
 		var b Booking
 		d.DataTo(&b)
@@ -853,23 +859,17 @@ func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (i
 		if serviceName != "" && b.ServiceName != serviceName {
 			continue
 		}
-		affected = append(affected, d.Ref)
+		affected = append(affected, affectedBooking{ref: d.Ref, b: b})
 	}
 	return len(affected), affected
 }
 
 // deleteCitasCalendarEvents libera en Google Calendar todos los eventos de las
-// reservas eliminadas. Se invoca después de confirmar el Batch Write.
-func deleteCitasCalendarEvents(ctx context.Context, slug string, citas []*firestore.DocumentRef) {
-	for _, ref := range citas {
-		doc, err := ref.Get(ctx)
-		if err != nil {
-			continue
-		}
-		var b Booking
-		doc.DataTo(&b)
-		if b.CalendarEvt != "" && b.CalendarEvt != "mock_event_123" {
-			deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
+// reservas eliminadas. Recibe los datos leídos ANTES del batch delete.
+func deleteCitasCalendarEvents(ctx context.Context, slug string, citas []affectedBooking) {
+	for _, ab := range citas {
+		if ab.b.CalendarEvt != "" && ab.b.CalendarEvt != "mock_event_123" {
+			deleteCalendarEvent(ctx, slug, ab.b.EmpID, ab.b.CalendarEvt)
 		}
 	}
 }

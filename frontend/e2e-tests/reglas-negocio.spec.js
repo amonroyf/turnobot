@@ -159,7 +159,7 @@ test('2b. Límite de una reserva por cliente al día (por teléfono)', async () 
   expect(r2.status).toBe(409);
   const b2 = await r2.json();
   expect(b2.error).toBe('max_per_day');
-  expect(b2.message).toContain('Ya tienes un turno agendado para este día');
+  expect(b2.message).toContain('límite máximo');
 
   // 3. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
   const r3 = await book({ ...payloadBase, clienteTelefono: '3200000001', hora: '11:00' });
