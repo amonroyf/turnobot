@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
-import { requestClientPushToken } from './pushNotifications';
+import { initPushNotifications, requestClientPushToken, listenForMessages } from './pushNotifications';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
@@ -130,6 +130,23 @@ export default function BookingApp() {
     clienteTelefono: ''
   });
 
+  // Inicializar Service Worker de Firebase al cargar la página del cliente
+  useEffect(() => {
+    initPushNotifications().then((m) => {
+      if (m) {
+        // Escuchar mensajes en primer plano (pestaña abierta)
+        listenForMessages((payload) => {
+          const title = payload.notification?.title || 'Turnobot';
+          const body = payload.notification?.body || '';
+          // Mostrar notificación nativa del navegador即使 en primer plano
+          if (Notification.permission === 'granted') {
+            new Notification(title, { body, icon: '/icon-192x192.png' });
+          }
+        });
+      }
+    });
+  }, []);
+
   useEffect(() => {
     fetch(`${API_URL}/api/v1/b/${slug}`)
       .then(res => {
@@ -200,6 +217,11 @@ export default function BookingApp() {
       if (res.ok) {
         setWaConfirmado(false);
         setStep(5);
+        // Registrar el token push vinculado al teléfono para futuras citas
+        if (pushToken) {
+          const phone = booking.clienteTelefono.replace(/\D/g, '');
+          registerClientPushToken(slug, pushToken, phone).catch(() => {});
+        }
         return;
       }
       const data = await res.json().catch(() => null);

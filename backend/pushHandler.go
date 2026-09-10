@@ -185,28 +185,30 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 	})
 }
 
-// registerClientPushTokenHandler guarda el push token del cliente en sus citas
-// futuras para que pueda recibir recordatorios y notificaciones de cancelación.
+// registerClientPushTokenHandler guarda el push token del cliente solo en SUS
+// citas futuras (identificadas por teléfono + negocio).
 // POST /api/v1/b/{slug}/register-client-push
 func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	ctx := r.Context()
 
 	type payload struct {
 		Token string `json:"token"`
+		Phone string `json:"phone"`
 	}
 	var p payload
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
 		return
 	}
-	if p.Token == "" {
-		http.Error(w, "Token vacío", http.StatusBadRequest)
+	if p.Token == "" || p.Phone == "" {
+		http.Error(w, "Faltan token o phone", http.StatusBadRequest)
 		return
 	}
 
-	// Actualizar todas las citas futuras de este token con el client_push_token
+	// Buscar solo las citas futuras de ESTE cliente en ESTE negocio
 	docs, err := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).
+		Where("user_phone", "==", p.Phone).
 		Where("date_time", ">", time.Now()).
 		Documents(ctx).GetAll()
 	if err != nil {
