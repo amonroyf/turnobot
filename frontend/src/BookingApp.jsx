@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
+import { requestClientPushToken } from './pushNotifications';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
@@ -119,6 +120,7 @@ export default function BookingApp() {
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
   const [waConfirmado, setWaConfirmado] = useState(false);
+  const [clientPushToken, setClientPushToken] = useState(null);
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
@@ -176,9 +178,18 @@ export default function BookingApp() {
     e.preventDefault();
     setLoading(true);
     setError('');
+
+    // Solicitar permiso push del cliente (silencioso, sin alerta)
+    let pushToken = clientPushToken;
+    if (!pushToken) {
+      pushToken = await requestClientPushToken();
+      if (pushToken) setClientPushToken(pushToken);
+    }
+
     const payload = {
       ...booking,
-      clienteTelefono: booking.clienteTelefono.replace(/\D/g, '')
+      clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
+      client_push_token: pushToken || '',
     };
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {

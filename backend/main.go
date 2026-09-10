@@ -14,6 +14,7 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"firebase.google.com/go/v4/auth"
+	"firebase.google.com/go/v4/messaging"
 
 	"cloud.google.com/go/firestore"
 	"github.com/nyaruka/phonenumbers"
@@ -31,6 +32,7 @@ var (
 	firestoreClient *firestore.Client
 	googleOauthCfg  *oauth2.Config
 	firebaseAuth    *auth.Client
+	fcmClient       *messaging.Client
 )
 
 // ---------------------------------------------------------------------------
@@ -46,13 +48,13 @@ type Negocio struct {
 	CalendarID   string     `firestore:"calendar_id" json:"-"`   // Oculto en JSON
 	Whatsapp     string     `firestore:"whatsapp" json:"whatsapp"`
 	Direccion    string     `firestore:"direccion" json:"direccion"`
-	Horario      string     `firestore:"horario" json:"horario"`
 	Telefono     string     `firestore:"telefono" json:"telefono"`
 	TimeZone     string     `firestore:"timezone" json:"timezone"`
 	OpenTime     string     `firestore:"open_time" json:"open_time"`
 	CloseTime    string     `firestore:"close_time" json:"close_time"`
 	Servicios    []Service  `json:"servicios"`
 	Empleados    []Employee `json:"empleados"`
+	PushToken    string     `firestore:"push_token" json:"-"` // FCM token para notificaciones push
 }
 
 // Turno represents a single work shift within a day.
@@ -97,27 +99,30 @@ type Service struct {
 
 // BookingRequest is the payload sent by the web frontend.
 type BookingRequest struct {
-	ServicioID      string `json:"servicioId"`
-	EmpleadoID      string `json:"empleadoId"`
-	Fecha           string `json:"fecha"`
-	Hora            string `json:"hora"`
-	ClienteNombre   string `json:"clienteNombre"`
-	ClienteTelefono string `json:"clienteTelefono"`
+	ServicioID       string `json:"servicioId"`
+	EmpleadoID       string `json:"empleadoId"`
+	Fecha            string `json:"fecha"`
+	Hora             string `json:"hora"`
+	ClienteNombre    string `json:"clienteNombre"`
+	ClienteTelefono  string `json:"clienteTelefono"`
+	ClientPushToken  string `json:"client_push_token,omitempty"`
 }
 
 // Booking is a confirmed appointment.
 type Booking struct {
-	NegocioID      string    `firestore:"negocio_id"`
-	OwnerUID       string    `firestore:"owner_uid"`
-	EmpID          string    `firestore:"emp_id"`
-	UserPhone      string    `firestore:"user_phone"`
-	ClientName     string    `firestore:"client_name"`
-	ServiceName    string    `firestore:"service_name"`
-	DurationMinute int       `firestore:"duration_minutes,omitempty"`
-	Price          int       `firestore:"price"`
-	DateTime       time.Time `firestore:"date_time"`
-	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
-	CreatedAt      time.Time `firestore:"created_at"`
+	NegocioID       string    `firestore:"negocio_id"`
+	OwnerUID        string    `firestore:"owner_uid"`
+	EmpID           string    `firestore:"emp_id"`
+	UserPhone       string    `firestore:"user_phone"`
+	ClientName      string    `firestore:"client_name"`
+	ServiceName     string    `firestore:"service_name"`
+	DurationMinute  int       `firestore:"duration_minutes,omitempty"`
+	Price           int       `firestore:"price"`
+	DateTime        time.Time `firestore:"date_time"`
+	CalendarEvt     string    `firestore:"calendar_event_id,omitempty"`
+	CreatedAt       time.Time `firestore:"created_at"`
+	NoShow          bool      `firestore:"no_show" json:"no_show"`
+	ClientPushToken string    `firestore:"client_push_token,omitempty" json:"-"`
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +152,12 @@ func main() {
 	firebaseAuth, err = fbApp.Auth(ctx)
 	if err != nil {
 		log.Fatalf("Error inicializando Firebase Auth: %v", err)
+	}
+
+	// 1c. Inicializar FCM (opcional)
+	fcmClient, err = fbApp.Messaging(ctx)
+	if err != nil {
+		log.Printf("Aviso: no se pudo inicializar FCM: %v", err)
 	}
 
 	// 2. OAuth2 Google Calendar config
@@ -223,10 +234,31 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 			listCitasHandler(w, r, slug)
 			return
 		}
+		if action == "check-reminders" && r.Method == http.MethodGet {
+			checkRemindersHandler(w, r, slug)
+			return
+		}
+		if action == "register-push-token" && r.Method == http.MethodPost {
+			registerPushTokenHandler(w, r, slug)
+			return
+		}
+		if action == "register-client-push" && r.Method == http.MethodPost {
+			registerClientPushTokenHandler(w, r, slug)
+			return
+		}
+		if action == "check-client-reminders" && r.Method == http.MethodGet {
+			checkClientRemindersHandler(w, r, slug)
+			return
+		}
 	}
 
 	if len(parts) == 3 && parts[1] == "citas" && r.Method == http.MethodDelete {
 		cancelCitaHandler(w, r, slug, parts[2])
+		return
+	}
+
+	if len(parts) == 3 && parts[1] == "no-show" && r.Method == http.MethodPost {
+		markNoShowHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -420,17 +452,18 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Guardar la reserva en Firestore
 	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
-		NegocioID:      slug,
-		OwnerUID:       negocioInfo.OwnerUID,
-		EmpID:          req.EmpleadoID,
-		UserPhone:      req.ClienteTelefono,
-		ClientName:     req.ClienteNombre,
-		ServiceName:    serviceName,
-		DurationMinute: duration,
-		Price:          precioServicio,
-		DateTime:       eventDateTime,
-		CalendarEvt:    eventID,
-		CreatedAt:      time.Now(),
+		NegocioID:       slug,
+		OwnerUID:        negocioInfo.OwnerUID,
+		EmpID:           req.EmpleadoID,
+		UserPhone:       req.ClienteTelefono,
+		ClientName:      req.ClienteNombre,
+		ServiceName:     serviceName,
+		DurationMinute:  duration,
+		Price:           precioServicio,
+		DateTime:        eventDateTime,
+		CalendarEvt:     eventID,
+		CreatedAt:       time.Now(),
+		ClientPushToken: req.ClientPushToken,
 	})
 	if err != nil {
 		http.Error(w, "Error guardando la reserva", http.StatusInternalServerError)
@@ -439,6 +472,28 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// CRM: actualizar (upsert) el cliente en el directorio del negocio
 	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime, negocioInfo.OwnerUID)
+
+	// Push al cliente: confirmación de reserva (asíncrono, no bloquea la respuesta)
+	if req.ClientPushToken != "" {
+		go func() {
+			loc := shopLocation(context.Background(), slug)
+			title := "✅ Reserva confirmada"
+			body := fmt.Sprintf("%s con %s el %s a las %s", serviceName, "", eventDateTime.In(loc).Format("2006-01-02"), eventDateTime.In(loc).Format("15:04"))
+			if req.EmpleadoID != "" {
+				empDoc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID).Get(context.Background())
+				if err == nil {
+					var emp Employee
+					empDoc.DataTo(&emp)
+					body = fmt.Sprintf("%s con %s el %s a las %s", serviceName, emp.Name, eventDateTime.In(loc).Format("2006-01-02"), eventDateTime.In(loc).Format("15:04"))
+				}
+			}
+			sendPush(context.Background(), req.ClientPushToken, title, body, map[string]string{
+				"slug":    slug,
+				"type":    "booking_confirmed",
+				"cita_id": eventID,
+			})
+		}()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -590,6 +645,16 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	// CRM: reflejar la cancelación en el directorio de clientes (solo si era futura)
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
+
+	// Push al cliente: notificación de cancelación (asíncrono)
+	if b.ClientPushToken != "" {
+		go func() {
+			sendPush(context.Background(), b.ClientPushToken, "❌ Cita cancelada", fmt.Sprintf("Tu cita de %s fue cancelada. Contacta al local para reagendar.", b.ServiceName), map[string]string{
+				"slug": slug,
+				"type": "booking_cancelled",
+			})
+		}()
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

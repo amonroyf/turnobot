@@ -15,6 +15,7 @@ import {
   doc,
   updateDoc,
 } from 'firebase/firestore';
+import { requestPushPermission, listenForMessages } from './pushNotifications';
 
 const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const defaultHorario = {
@@ -240,6 +241,16 @@ export default function AdminDashboard() {
           onSnapshot(qClientes, (snapshot) => {
             setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
           }, (error) => console.error("Error consultando clientes:", error));
+
+          // Registrar push token automáticamente al iniciar sesión
+          try {
+            await requestPushPermission(docSnap.id);
+            listenForMessages((payload) => {
+              alert(`🔔 ${payload.notification?.title}\n${payload.notification?.body}`);
+            });
+          } catch (err) {
+            console.warn('Push registration failed:', err);
+          }
         }
       }
       setLoading(false);
@@ -357,6 +368,20 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleMarcarNoShow = async (citaId) => {
+    if (!confirm('¿Marcar esta cita como no-show?')) return;
+    try {
+      const token = await user.getIdToken();
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/no-show/${citaId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      alert('Cita marcada como no-show');
+    } catch (err) {
+      alert('No se pudo marcar como no-show. Intenta nuevamente.');
+    }
+  };
+
   const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 
   const fechaUltimaVisita = (c) => {
@@ -433,7 +458,13 @@ export default function AdminDashboard() {
           )}
         </div>
         {!isPast && (
-          <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
+          <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
+            <button
+              onClick={() => handleMarcarNoShow(r.id)}
+              className="text-xs text-amber-600 font-bold active:scale-95 transition-transform bg-amber-50 px-3 py-1.5 rounded-lg"
+            >
+              ⚠️ No Llegó
+            </button>
             <button
               onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}
               className="text-xs text-red-500 font-bold active:scale-95 transition-transform bg-red-50 px-3 py-1.5 rounded-lg"
