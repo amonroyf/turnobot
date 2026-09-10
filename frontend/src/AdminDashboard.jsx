@@ -368,18 +368,26 @@ export default function AdminDashboard() {
     }
   };
 
+  const [noShowMarking, setNoShowMarking] = useState('');
+
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿Marcar esta cita como no-show?')) return;
+    if (!confirm('¿Marcar esta cita como no-show? El cliente será notificado.')) return;
+    setNoShowMarking(citaId);
     try {
       const token = await user.getIdToken();
-      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/no-show/${citaId}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/no-show/${citaId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
-      alert('Cita marcada como no-show');
+      if (res.ok) {
+        alert('⚠️ Cita marcada como no-show');
+      } else {
+        alert('No se pudo marcar como no-show. Intenta nuevamente.');
+      }
     } catch (err) {
       alert('No se pudo marcar como no-show. Intenta nuevamente.');
     }
+    setNoShowMarking('');
   };
 
   const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
@@ -433,18 +441,27 @@ export default function AdminDashboard() {
   const RenderCitaCard = ({ r }) => {
     const timeMs = r.date_time?.seconds * 1000;
     const isPast = timeMs < ahora;
+    const isNoShow = r.no_show === true;
     const profesional = profesionales.find((p) => p.id === r.emp_id);
 
     return (
-      <div className={`p-4 rounded-2xl border transition-all ${isPast ? 'bg-gray-50 border-gray-100 opacity-60' : 'bg-white border-gray-200 shadow-2xs'}`}>
+      <div className={`p-4 rounded-2xl border transition-all ${
+        isNoShow ? 'bg-amber-50 border-amber-200' :
+        isPast ? 'bg-gray-50 border-gray-100 opacity-60' :
+        'bg-white border-gray-200 shadow-2xs'
+      }`}>
         <div className="flex justify-between items-start gap-3">
-          <div className={isPast ? 'grayscale' : ''}>
+          <div className={isPast && !isNoShow ? 'grayscale' : ''}>
             <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
             <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
           </div>
           
-          {isPast ? (
+          {isNoShow ? (
+            <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
+              ⚠️ No Show
+            </span>
+          ) : isPast ? (
             <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
               ✅ Finalizada
             </span>
@@ -457,13 +474,14 @@ export default function AdminDashboard() {
             </a>
           )}
         </div>
-        {!isPast && (
+        {!isPast && !isNoShow && (
           <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
             <button
               onClick={() => handleMarcarNoShow(r.id)}
-              className="text-xs text-amber-600 font-bold active:scale-95 transition-transform bg-amber-50 px-3 py-1.5 rounded-lg"
+              disabled={noShowMarking === r.id}
+              className="text-xs text-amber-600 font-bold active:scale-95 transition-transform bg-amber-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
             >
-              ⚠️ No Llegó
+              {noShowMarking === r.id ? 'Marcando...' : '⚠️ No Llegó'}
             </button>
             <button
               onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}

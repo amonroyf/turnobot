@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -127,6 +128,20 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		http.Error(w, "Error marcando no-show", http.StatusInternalServerError)
 		return
 	}
+
+	// Push al cliente: notificación de no-show (asíncrono)
+	if b.ClientPushToken != "" {
+		go func() {
+			sendPush(context.Background(), b.ClientPushToken,
+				"⚠️ No te presentaste",
+				fmt.Sprintf("No te presentaste a tu cita de %s. Si deseas reagendar, contacta al local.", b.ServiceName),
+				map[string]string{"slug": slug, "type": "no_show"},
+			)
+		}()
+	}
+
+	// CRM: restar visita y gasto del cliente por no-show
+	decrementCliente(ctx, slug, b.UserPhone, b.Price)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
