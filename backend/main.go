@@ -456,45 +456,49 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		http.Error(w, "Falta parámetro telefono", http.StatusBadRequest)
 		return
 	}
-
 	ctx := r.Context()
-	// Las reservas se almacenan en E.164 (+573001234567), pero se buscan
-	// también por el formato nacional en dígitos para cubrir reservas creadas
-	// antes de la normalización (user_phone = "3001234567").
+
 	docsByRef := map[string]*firestore.DocumentSnapshot{}
+	now := time.Now()
+
 	for _, key := range phoneQueryKeys(telefono) {
 		keyDocs, err := firestoreClient.Collection("reservas").
 			Where("user_phone", "==", key).
+			Where("negocio_id", "==", slug).
+			Where("date_time", ">", now).
 			Documents(ctx).GetAll()
+
 		if err != nil {
 			log.Printf("Error consultando citas: %v", err)
 			http.Error(w, "Error consultando citas", http.StatusInternalServerError)
 			return
 		}
+
 		for _, d := range keyDocs {
 			docsByRef[d.Ref.ID] = d
 		}
 	}
-	docs := make([]*firestore.DocumentSnapshot, 0, len(docsByRef))
+
+	var citasPendientes []*firestore.DocumentSnapshot
 	for _, d := range docsByRef {
-		docs = append(docs, d)
+		citasPendientes = append(citasPendientes, d)
 	}
 
-	now := time.Now()
-	var citasPendientes []*firestore.DocumentSnapshot
-	for _, d := range docs {
-		var b Booking
-		d.DataTo(&b)
-		if b.NegocioID == slug && b.DateTime.After(now) {
-			citasPendientes = append(citasPendientes, d)
-		}
-	}
 	sort.Slice(citasPendientes, func(i, j int) bool {
 		var bi, bj Booking
 		citasPendientes[i].DataTo(&bi)
 		citasPendientes[j].DataTo(&bj)
 		return bi.DateTime.Before(bj.DateTime)
 	})
+
+	loc := shopLocation(ctx, slug)
+	empNames := map[string]string{}
+	empsDocs, _ := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll()
+	for _, d := range empsDocs {
+		var emp Employee
+		d.DataTo(&emp)
+		empNames[d.Ref.ID] = emp.Name
+	}
 
 	type citaJSON struct {
 		ID         string `json:"id"`
@@ -505,20 +509,6 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		EmpName    string `json:"emp_name"`
 		Cancelable bool   `json:"cancelable"`
 		Iso        string `json:"iso"`
-	}
-
-	// Firestore devuelve los timestamps en UTC; se formatean en la zona horaria
-	// del negocio (configurada en el documento, fallback America/Bogota) para
-	// que la hora mostrada coincida con la elegida.
-	loc := shopLocation(ctx, slug)
-
-	// Mapa empID -> nombre para mostrar el profesional asignado
-	empNames := map[string]string{}
-	empsDocs, _ := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll()
-	for _, d := range empsDocs {
-		var emp Employee
-		d.DataTo(&emp)
-		empNames[d.Ref.ID] = emp.Name
 	}
 
 	citas := []citaJSON{}
@@ -1234,12 +1224,15 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 }
 
 // firestoreBookedIntervals devuelve los intervalos [inicio, fin) ya reservados
-// para un empleado dentro de [startDay, endDay), consultando la colección reservas.
-// La duración se usa para calcular el fin del intervalo (default 60 min).
+// consultando la colección reservas usando índices compuestos hiper-rápidos.
 func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, startDay, endDay time.Time) [][2]time.Time {
 	docs, err := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", negocioID).
+		Where("emp_id", "==", empID).
+		Where("date_time", ">=", startDay).
+		Where("date_time", "<", endDay).
 		Documents(ctx).GetAll()
+
 	if err != nil {
 		log.Printf("Aviso: no se pudieron cargar reservas para calcular slots de %s: %v", negocioID, err)
 		return nil
@@ -1249,58 +1242,44 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 	for _, d := range docs {
 		var b Booking
 		d.DataTo(&b)
-		if b.EmpID != empID {
-			continue
-		}
+
 		dur := time.Duration(b.DurationMinute) * time.Minute
 		if dur <= 0 {
 			dur = 60 * time.Minute
 		}
 		start := b.DateTime
 		end := start.Add(dur)
-		// Filtrar intervalos que no tocan el día consultado
-		if !start.Before(endDay) || !end.After(startDay) {
-			continue
-		}
+
 		intervals = append(intervals, [2]time.Time{start, end})
 	}
 	return intervals
 }
 
 // hasBookingOnDate verifica si el cliente ya alcanzó el límite familiar/anti-spam
-// de 3 citas para el mismo día natural del negocio. Se consulta por teléfono y
-// se compara el día en la zona horaria del local.
+// de 3 citas para el mismo día natural, utilizando índices compuestos hiper-rápidos.
 func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested time.Time) bool {
 	if phone == "" {
 		return false
 	}
 	loc := shopLocation(ctx, negocioID)
-	day := requested.In(loc).Format("2006-01-02")
-	
-	count := 0
+	startOfDay := time.Date(requested.In(loc).Year(), requested.In(loc).Month(), requested.In(loc).Day(), 0, 0, 0, 0, loc)
+	endOfDay := startOfDay.Add(24 * time.Hour)
 
+	count := 0
 	for _, key := range phoneQueryKeys(phone) {
 		docs, err := firestoreClient.Collection("reservas").
 			Where("user_phone", "==", key).
+			Where("negocio_id", "==", negocioID).
+			Where("date_time", ">=", startOfDay).
+			Where("date_time", "<", endOfDay).
 			Documents(ctx).GetAll()
 
 		if err != nil {
 			log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
 			continue
 		}
-
-		for _, d := range docs {
-			var b Booking
-			d.DataTo(&b)
-			if b.NegocioID != negocioID {
-				continue
-			}
-			if b.DateTime.In(loc).Format("2006-01-02") == day {
-				count++
-			}
-		}
+		count += len(docs)
 	}
-	
 	return count >= 3
 }
 

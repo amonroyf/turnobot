@@ -1,0 +1,23 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "negocio_id", "order": "ASCENDING" },
+        { "fieldPath": "emp_id", "order": "ASCENDING" },
+        { "fieldPath": "date_time", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reservas",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "user_phone", "order": "ASCENDING" },
+        { "fieldPath": "negocio_id", "order": "ASCENDING" },
+        { "fieldPath": "date_time", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
