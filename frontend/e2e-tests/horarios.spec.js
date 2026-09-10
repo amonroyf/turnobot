@@ -10,7 +10,13 @@ const SVC_ID = 'svc_test';
 // Fechas dinámicas: próximo lunes y domingo futuros (el backend en modo mock
 // filtra los slots pasados con t.After(time.Now()), así que fechas fijas
 // quedan obsoletas en cuanto pasa el día).
-const fmtFecha = (d) => d.toISOString().slice(0, 10);
+// Usar formato local en lugar de UTC (toISOString) para evitar desfases de timezone
+const fmtFecha = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 function proximoDia(getDay) {
   const d = new Date();
   d.setDate(d.getDate() + 1); // empezar mañana para garantizar futuro
