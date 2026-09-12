@@ -42,48 +42,17 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 | `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita |
 | `/api/v1/b/{slug}/servicios/{id}` | DELETE | Eliminar servicio (en cascada) |
 | `/api/v1/b/{slug}/empleados/{id}` | DELETE | Eliminar empleado (en cascada) |
-| `/api/v1/b/{slug}/check-reminders` | GET | Verificar y enviar recordatorios push |
 | `/api/v1/b/{slug}/no-show/{id}` | POST | Marcar cita como no-show |
-| `/api/v1/b/{slug}/register-push-token` | POST | Registrar token FCM del dueño |
 
-## Notificaciones Push (Web Push FCM)
-
-### Componentes
+## No-Show
 
 | Archivo | Descripción |
 |---------|-------------|
-| `backend/push.go` | Funciones de envío push usando Firebase Admin SDK |
-| `backend/pushHandler.go` | Handlers HTTP: check-reminders, markNoShow, registerPushToken |
-| `frontend/src/pushNotifications.js` | Registro de permiso push y escucha de mensajes |
+| `backend/noshow.go` | Handler HTTP: markNoShow (marca `no_show` + ajuste CRM) |
 
 ### Flujo
 
-1. **Dueño inicia sesión** → Se solicita permiso push → Token se guarda en Firestore (`negocios.push_token`)
-2. **Nueva reserva** → Se envía push "Nueva cita agendada"
-3. **30 min antes de la cita** → Cloud Scheduler ejecuta check-reminders → Se envía recordatorio
-4. **Dueño marca "No Llegó"** → Reserva se marca como `no_show: true`
-
-### Requisitos
-
-- El dueño debe abrir el panel admin al menos una vez para registrar su token push
-- La service account de Firebase debe tener permisos FCM
-
-## Cloud Scheduler
-
-Job programado para ejecutar recordatorios cada 5 minutos:
-
-```bash
-gcloud scheduler jobs create http turnobot-reminders \
-  --schedule="*/5 * * * *" \
-  --uri="https://turnobot-850305350371.us-central1.run.app/api/v1/b/turnobot/check-reminders" \
-  --http-method=GET \
-  --location=us-central1 \
-  --oidc-service-account-email=850305350371-compute@developer.gserviceaccount.com
-```
-
-| Job | Schedule | Endpoint |
-|-----|----------|----------|
-| turnobot-reminders | `*/5 * * * *` | GET /api/v1/b/{slug}/check-reminders |
+1. **Dueño marca "No Llegó"** → Reserva se marca como `no_show: true` y se ajusta el CRM
 
 ## Firestore Indexes
 
@@ -93,7 +62,6 @@ gcloud scheduler jobs create http turnobot-reminders \
 |-----------|--------|-----|
 | reservas | negocio_id + emp_id + date_time | Cálculo de slots disponibles |
 | reservas | user_phone + negocio_id + date_time | Listado de citas del cliente + anti-spam |
-| reservas | negocio_id + date_time | Check-reminders (recordatorios push) |
 
 ## Seguridad
 

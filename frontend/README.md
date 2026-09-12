@@ -26,16 +26,6 @@ Despliegue a Firebase Hosting desde la raíz: `ENV_FILE=... ./deploy.sh only-fro
 | `AdminDashboard.jsx` | Panel admin (Agenda, Clientes CRM, Ajustes, Horarios, No-Show) |
 | `MisCitas.jsx` | Consulta y cancelación de citas del cliente |
 | `firebase.js` | Configuración de Firebase (Auth, Firestore) |
-| `pushNotifications.js` | Registro de push y escucha de mensajes FCM |
-
-## Notificaciones Push
-
-El frontend registra automáticamente el token FCM del dueño al iniciar sesión:
-
-1. Se solicita permiso de notificación al navegador
-2. Se obtiene el token FCM
-3. Se guarda en Firestore (`negocios.push_token`)
-4. Se escuchan mensajes entrantes y se muestran como alerta
 
 ## Tests E2E (Playwright)
 

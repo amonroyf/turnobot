@@ -45,7 +45,6 @@ jobs:
         run: npm run build
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
-          VITE_FIREBASE_VAPID_KEY: ${{ secrets.VITE_FIREBASE_VAPID_KEY }}
 
   # ── Deploy (solo en push a main) ────────────────────────
   deploy:
@@ -81,7 +80,6 @@ jobs:
         run: |
           npm ci
           VITE_API_URL=${{ secrets.VITE_API_URL }} \
-          VITE_FIREBASE_VAPID_KEY=${{ secrets.VITE_FIREBASE_VAPID_KEY }} \
           npm run build
           export TOKEN=$(gcloud auth print-access-token)
           SITE=turnobot-web node ../scripts/deploy-hosting.mjs

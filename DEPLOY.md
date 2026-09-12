@@ -14,13 +14,12 @@ Documentación completa de todos los procesos de despliegue, infraestructura y c
 6. [Cloud Run (Backend)](#6-cloud-run-backend)
 7. [Firebase Hosting (Frontend)](#7-firebase-hosting-frontend)
 8. [Firestore (Base de Datos)](#8-firestore-base-de-datos)
-9. [Cloud Scheduler (Tareas Programadas)](#9-cloud-scheduler-tareas-programadas)
-10. [Push Notifications (FCM)](#10-push-notifications-fcm)
-11. [Backups Automáticos](#11-backups-automáticos)
-12. [Monitoreo y Health Checks](#12-monitoreo-y-health-checks)
-13. [Seguridad](#13-seguridad)
-14. [Troubleshooting](#14-troubleshooting)
-15. [Comandos de Referencia Rápida](#15-comandos-de-referencia-rápida)
+9. [Cloud Scheduler (Backups)](#9-cloud-scheduler-backups)
+10. [Backups Automáticos](#10-backups-automáticos)
+11. [Monitoreo y Health Checks](#11-monitoreo-y-health-checks)
+12. [Seguridad](#12-seguridad)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Comandos de Referencia Rápida](#14-comandos-de-referencia-rápida)
 
 ---
 
@@ -45,17 +44,15 @@ Documentación completa de todos los procesos de despliegue, infraestructura y c
 │  │  Auth        │          │  (Base de datos)  │              │
 │  └─────────────┘          └──────────────────┘              │
 │                                                               │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │              Cloud Scheduler                          │   │
-│  │  • turnobot-reminder-check    (cada 5 min)           │   │
-│  │  • turnobot-client-reminder-check (cada 5 min)       │   │
-│  │  • firestore-backup-daily     (diario 2AM)           │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                               │
-│  ┌─────────────┐    ┌──────────────────────────────┐       │
-│  │  FCM         │    │  Google Calendar API          │       │
-│  │  (Web Push)  │    │  (Calendarios de empleados)   │       │
-│  └─────────────┘    └──────────────────────────────┘       │
+ │  ┌──────────────────────────────────────────────────────┐   │
+ │  │              Cloud Scheduler                          │   │
+ │  │  • firestore-backup-daily     (diario 2AM)           │   │
+ │  └──────────────────────────────────────────────────────┘   │
+ │                                                               │
+ │  ┌──────────────────────────────────────────────────┐       │
+ │  │  Google Calendar API                              │       │
+ │  │  (Calendarios de empleados)                       │       │
+ │  └──────────────────────────────────────────────────┘       │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -137,13 +134,11 @@ FRONTEND_URL: https://turnobot-web.web.app
 | Variable | Valor | Dónde se usa |
 |----------|-------|--------------|
 | `VITE_API_URL` | `https://turnobot-ehomyvoh6q-uc.a.run.app` | URL del backend API |
-| `VITE_FIREBASE_VAPID_KEY` | `BNmZZPMm...` (VAPID key) | Web Push notifications |
 
 Se configuran en `frontend/.env.production` o como variables de build:
 
 ```bash
 VITE_API_URL="https://turnobot-ehomyvoh6q-uc.a.run.app" \
-VITE_FIREBASE_VAPID_KEY="tu-vapid-key" \
 npm run build
 ```
 
@@ -154,7 +149,6 @@ Para CI/CD automático, configurar en GitHub → Settings → Secrets:
 | Secret | Valor |
 |--------|-------|
 | `VITE_API_URL` | `https://turnobot-ehomyvoh6q-uc.a.run.app` |
-| `VITE_FIREBASE_VAPID_KEY` | VAPID key de Firebase |
 | `WIF_PROVIDER` | Workload Identity Federation provider |
 | `WIF_SERVICE_ACCOUNT` | Service account para CI/CD |
 
@@ -257,7 +251,7 @@ gcloud iam service-accounts add-iam-policy-binding \
 
 3. **Configurar secrets en GitHub:**
    - Ir a GitHub → Tu repo → Settings → Secrets and variables → Actions
-   - Agregar: `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`, `VITE_API_URL`, `VITE_FIREBASE_VAPID_KEY`
+   - Agregar: `WIF_PROVIDER`, `WIF_SERVICE_ACCOUNT`, `VITE_API_URL`
 
 ---
 
@@ -327,10 +321,6 @@ gcloud run services logs tail turnobot --region us-central1
 | `/api/v1/b/{slug}/no-show/{id}` | POST | 60/min | Marcar no-show |
 | `/api/v1/b/{slug}/servicios/{id}` | DELETE | 60/min | Eliminar servicio |
 | `/api/v1/b/{slug}/empleados/{id}` | DELETE | 60/min | Eliminar empleado |
-| `/api/v1/b/{slug}/register-push-token` | POST | 60/min | Token push del dueño |
-| `/api/v1/b/{slug}/register-client-push` | POST | 60/min | Token push del cliente |
-| `/api/v1/b/{slug}/check-reminders` | GET | 60/min | Recordatorios dueño |
-| `/api/v1/b/{slug}/check-client-reminders` | GET | 60/min | Recordatorios cliente |
 | `/auth/google/login` | GET | 60/min | OAuth Google Calendar |
 | `/auth/google/callback` | GET | 60/min | Callback OAuth |
 
@@ -360,7 +350,6 @@ cd frontend
 
 # 1. Build
 VITE_API_URL="https://turnobot-ehomyvoh6q-uc.a.run.app" \
-VITE_FIREBASE_VAPID_KEY="tu-vapid-key" \
 npm run build
 
 # 2. Deploy
@@ -373,7 +362,6 @@ SITE=turnobot-web node scripts/deploy-hosting.mjs
 ```
 frontend/dist/
 ├── index.html
-├── firebase-messaging-sw.js    ← Service Worker para push
 ├── assets/
 │   ├── index-[hash].js         ← Bundle principal (~233 KB)
 │   ├── AdminDashboard-[hash].js ← Lazy loaded (~27 KB)
@@ -410,7 +398,7 @@ Los componentes principales se cargan bajo demanda:
 ```
 stalwart-coast-439901-d0 (default)
 ├── negocios/{slug}
-│   ├── name, owner_uid, push_token, timezone, open_time, close_time
+│   ├── name, owner_uid, timezone, open_time, close_time
 │   ├── servicios/{svcId}
 │   │   └── name, duration_minutes, price
 │   └── empleados/{empId}
@@ -419,7 +407,7 @@ stalwart-coast-439901-d0 (default)
 │   └── negocio_id, owner_uid, emp_id, user_phone, client_name,
 │       service_name, duration_minutes, price, date_time,
 │       calendar_event_id, no_show, cancelled, cancelled_at,
-│       client_push_token, created_at
+│       created_at
 └── clientes/{slug__phone}
     └── negocio_id, owner_uid, cliente_phone, client_name,
         visits, total_spent, last_seen, last_date_str, updated_at
@@ -431,7 +419,6 @@ stalwart-coast-439901-d0 (default)
 |-----------|--------|-----|
 | `reservas` | `negocio_id + emp_id + date_time` | Cálculo de slots disponibles |
 | `reservas` | `user_phone + negocio_id + date_time` | Listado de citas + anti-spam |
-| `reservas` | `negocio_id + date_time` | Check-reminders (recordatorios) |
 
 ### Reglas de seguridad
 
@@ -461,37 +448,17 @@ TOKEN=$(gcloud auth print-access-token) \
 
 ---
 
-## 9. Cloud Scheduler (Tareas Programadas)
+## 9. Cloud Scheduler (Backups)
 
 ### Jobs activos
 
-| Job | Schedule | Timezone | Endpoint | Descripción |
-|-----|----------|----------|----------|-------------|
-| `turnobot-reminder-check` | `*/5 * * * *` | America/Bogota | `GET /api/v1/b/{slug}/check-reminders` | Recordatorios al dueño (30-35 min antes) |
-| `turnobot-client-reminder-check` | `*/5 * * * *` | America/Bogota | `GET /api/v1/b/{slug}/check-client-reminders` | Recordatorios al cliente (55-65 min antes) |
-| `firestore-backup-daily` | `0 7 * * *` | America/Bogota | Export Firestore a GCS | Backup diario a las 2AM Colombia |
+| Job | Schedule | Timezone | Descripción |
+|-----|----------|----------|-------------|
+| `firestore-backup-daily` | `0 7 * * *` | America/Bogota | Backup diario a las 2AM Colombia |
 
 ### Crear/actualizar jobs
 
 ```bash
-# Recordatorios del dueño
-gcloud scheduler jobs create http turnobot-reminder-check \
-  --schedule="*/5 * * * *" \
-  --time-zone="America/Bogota" \
-  --uri="https://turnobot-ehomyvoh6q-uc.a.run.app/api/v1/b/turnobot/check-reminders" \
-  --http-method=GET \
-  --oidc-service-account-email=850305350371-compute@developer.gserviceaccount.com \
-  --description="Envía recordatorios push al dueño 30-35 min antes de la cita"
-
-# Recordatorios del cliente
-gcloud scheduler jobs create http turnobot-client-reminder-check \
-  --schedule="*/5 * * * *" \
-  --time-zone="America/Bogota" \
-  --uri="https://turnobot-ehomyvoh6q-uc.a.run.app/api/v1/b/turnobot/check-client-reminders" \
-  --http-method=GET \
-  --oidc-service-account-email=850305350371-compute@developer.gserviceaccount.com \
-  --description="Envía recordatorios push a clientes 1 hora antes de su cita"
-
 # Backup de Firestore
 gcloud scheduler jobs create http firestore-backup-daily \
   --schedule="0 7 * * *" \
@@ -507,72 +474,11 @@ gcloud scheduler jobs create http firestore-backup-daily \
 ```bash
 # Listar todos los jobs
 gcloud scheduler jobs list
-
-# Ver ejecuciones recientes
-gcloud scheduler jobs describe turnobot-reminder-check --format="value(state)"
-
-# Ejecutar manualmente (para probar)
-gcloud scheduler jobs run turnobot-reminder-check
 ```
 
 ---
 
-## 10. Push Notifications (FCM)
-
-### Componentes
-
-| Archivo | Rol |
-|---------|-----|
-| `backend/push.go` | Funciones de envío `sendPush()` usando Firebase Admin SDK |
-| `backend/pushHandler.go` | Handlers HTTP: check-reminders, markNoShow, registerPushToken, etc. |
-| `frontend/src/pushNotifications.js` | Registro de permiso, escucha de mensajes, registro de tokens |
-| `frontend/public/firebase-messaging-sw.js` | Service Worker para recibir push en background |
-
-### Flujo completo
-
-#### Dueño (Admin)
-```
-1. Abre /admin → initPushNotifications() → solicita permiso
-2. Token guardado en negocios.push_token
-3. Nueva reserva → push "Nueva cita agendada"
-4. 30-35 min antes → Cloud Scheduler → check-reminders → push recordatorio
-5. No-show → push "El cliente no se presentó"
-```
-
-#### Cliente
-```
-1. Abre /shop/{slug} → Service Worker registrado automáticamente
-2. Reserva exitosa → solicita permiso push (silencioso)
-3. Token + teléfono enviados al backend → register-client-push
-4. Push de ✅ confirmación
-5. 55-65 min antes → Cloud Scheduler → check-client-reminders → push recordatorio
-6. Si dueño cancela → push ❌ de cancelación
-```
-
-### Configuración VAPID Key
-
-La VAPID key se obtiene de:
-```
-Firebase Console → ⚙️ Project Settings → Cloud Messaging → Web Push certificates → Key pair
-```
-
-Se guarda en `frontend/.env.production`:
-```
-VITE_FIREBASE_VAPID_KEY=BNmZZPMm6D8dgfNvm78fvjysVuGkhBiOiRMg-QoLO0KXLdpI5itsc7g7y7xjMLM-rzlt90yU4WMavJeoXrcF8tc
-```
-
-### Service Worker (`firebase-messaging-sw.js`)
-
-Ubicación: `frontend/public/firebase-messaging-sw.js`
-
-Funciones:
-- Recibe push en background (pestaña cerrada)
-- Muestra notificación nativa del navegador
-- Al hacer click, abre la página del negocio
-
----
-
-## 11. Backups Automáticos
+## 10. Backups Automáticos
 
 ### Configuración
 
@@ -614,7 +520,7 @@ gcloud firestore import gs://stalwart-coast-439901-d0-firestore-backups/2026-09-
 
 ---
 
-## 12. Monitoreo y Health Checks
+## 11. Monitoreo y Health Checks
 
 ### Health check endpoint
 
@@ -682,7 +588,7 @@ gcloud run services describe turnobot --region us-central1 --format="value(statu
 
 ---
 
-## 13. Seguridad
+## 12. Seguridad
 
 ### Middlewares activos
 
@@ -738,7 +644,7 @@ Strict-Transport-Security: max-age=63072000; includeSubDomains (solo HTTPS)
 
 ---
 
-## 14. Troubleshooting
+## 13. Troubleshooting
 
 ### El frontend no carga
 
@@ -767,13 +673,6 @@ gcloud run services logs read turnobot --region us-central1 --limit 20 2>&1 | gr
 curl https://turnobot-ehomyvoh6q-uc.a.run.app/health
 ```
 
-### Push notifications no funcionan
-
-1. **Verificar VAPID key:** Revisar que `VITE_FIREBASE_VAPID_KEY` esté en `.env.production`
-2. **Verificar Service Worker:** Abrir DevTools → Application → Service Workers
-3. **Verificar permiso:** DevTools → Application → Notifications
-4. **Verificar token:** DevTools → Console → buscar logs de `pushNotifications.js`
-
 ### Rate limiting bloquea requests
 
 ```bash
@@ -791,14 +690,11 @@ firebase --project stalwart-coast-439901-d0 firestore:indexes:list
 # Si hay errores de índice faltante, Firebase Console mostrará un link para crearlo
 ```
 
-### Cloud Scheduler no ejecuta
+### Cloud Scheduler (backups) no ejecuta
 
 ```bash
 # Verificar estado del job
-gcloud scheduler jobs describe turnobot-reminder-check
-
-# Ejecutar manualmente
-gcloud scheduler jobs run turnobot-reminder-check
+gcloud scheduler jobs describe firestore-backup-daily
 
 # Ver logs de ejecución
 gcloud logging read "resource.type=cloud_scheduler_job" --limit 10
@@ -806,7 +702,7 @@ gcloud logging read "resource.type=cloud_scheduler_job" --limit 10
 
 ---
 
-## 15. Comandos de Referencia Rápida
+## 14. Comandos de Referencia Rápida
 
 ### Despliegue
 
@@ -859,10 +755,6 @@ TOKEN=$(gcloud auth print-access-token) node scripts/deploy-rules.mjs
 ```bash
 # Listar jobs
 gcloud scheduler jobs list
-
-# Ejecutar manualmente
-gcloud scheduler jobs run turnobot-reminder-check
-gcloud scheduler jobs run turnobot-client-reminder-check
 ```
 
 ### Tests
@@ -906,7 +798,6 @@ curl -I -X OPTIONS https://turnobot-ehomyvoh6q-uc.a.run.app/api/v1/b/test \
 | `scripts/deploy-hosting.mjs` | Deploy de Firebase Hosting |
 | `scripts/deploy-rules.mjs` | Deploy de Firestore rules |
 | `scripts/firestore-backup.sh` | Backup automático de Firestore |
-| `scripts/cloud-scheduler.yaml` | Configuración de Cloud Scheduler jobs |
 | `firestore.rules` | Reglas de seguridad de Firestore |
 | `firestore.indexes.json` | Índices compuestos de Firestore |
 | `.github/workflows/ci.yml` | Pipeline CI/CD |

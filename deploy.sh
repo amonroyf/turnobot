@@ -60,7 +60,7 @@ deploy_backend() {
 
 deploy_frontend() {
   echo "== Build frontend =="
-  (cd "$FRONTEND_DIR" && VITE_API_URL="$API_URL" VITE_FIREBASE_VAPID_KEY="${VITE_FIREBASE_VAPID_KEY:-}" npm run build)
+  (cd "$FRONTEND_DIR" && VITE_API_URL="$API_URL" npm run build)
 
   echo "== Firebase Hosting: $SITE_O =="
   export TOKEN="$(gcloud auth print-access-token)"

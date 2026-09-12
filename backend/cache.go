@@ -70,35 +70,3 @@ func getCachedNegocio(slug string) (Negocio, error) {
 	negocioCache.Set(slug, neg)
 	return neg, nil
 }
-
-// ---------------------------------------------------------------------------
-// Pool de goroutines para operaciones async (push, CRM updates)
-// ---------------------------------------------------------------------------
-
-type WorkerPool struct {
-	workers chan struct{}
-	wg      sync.WaitGroup
-}
-
-var pushPool = &WorkerPool{
-	workers: make(chan struct{}, 10), // máximo 10 goroutines concurrentes para push
-}
-
-func (p *WorkerPool) Submit(fn func()) {
-	p.wg.Add(1)
-	go func() {
-		defer p.wg.Done()
-		p.workers <- struct{}{} // Adquirir slot
-		defer func() { <-p.workers }()
-		fn()
-	}()
-}
-
-func (p *WorkerPool) Wait() {
-	p.wg.Wait()
-}
-
-// submitPush envía push de forma asíncrona con límite de concurrencia.
-func submitPush(fn func()) {
-	pushPool.Submit(fn)
-}

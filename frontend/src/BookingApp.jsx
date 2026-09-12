@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
-import { initPushNotifications, requestClientPushToken, listenForMessages } from './pushNotifications';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
@@ -120,7 +119,6 @@ export default function BookingApp() {
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
   const [waConfirmado, setWaConfirmado] = useState(false);
-  const [clientPushToken, setClientPushToken] = useState(null);
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
@@ -129,23 +127,6 @@ export default function BookingApp() {
     clienteNombre: '',
     clienteTelefono: ''
   });
-
-  // Inicializar Service Worker de Firebase al cargar la página del cliente
-  useEffect(() => {
-    initPushNotifications().then((m) => {
-      if (m) {
-        // Escuchar mensajes en primer plano (pestaña abierta)
-        listenForMessages((payload) => {
-          const title = payload.notification?.title || 'Turnobot';
-          const body = payload.notification?.body || '';
-          // Mostrar notificación nativa del navegador即使 en primer plano
-          if (Notification.permission === 'granted') {
-            new Notification(title, { body, icon: '/icon-192x192.png' });
-          }
-        });
-      }
-    });
-  }, []);
 
   useEffect(() => {
     fetch(`${API_URL}/api/v1/b/${slug}`)
@@ -199,7 +180,6 @@ export default function BookingApp() {
     const payload = {
       ...booking,
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
-      client_push_token: '',
     };
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
@@ -210,14 +190,6 @@ export default function BookingApp() {
       if (res.ok) {
         setWaConfirmado(false);
         setStep(5);
-        // Después de reservar exitosamente, pedir permiso push y registrar token
-        requestClientPushToken().then((token) => {
-          if (token) {
-            setClientPushToken(token);
-            const phone = booking.clienteTelefono.replace(/\D/g, '');
-            registerClientPushToken(slug, token, phone).catch(() => {});
-          }
-        }).catch(() => {});
         return;
       }
       const data = await res.json().catch(() => null);

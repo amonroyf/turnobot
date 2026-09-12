@@ -15,7 +15,6 @@ import {
   doc,
   updateDoc,
 } from 'firebase/firestore';
-import { requestPushPermission, listenForMessages } from './pushNotifications';
 
 const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const defaultHorario = {
@@ -241,16 +240,6 @@ export default function AdminDashboard() {
           onSnapshot(qClientes, (snapshot) => {
             setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
           }, (error) => console.error("Error consultando clientes:", error));
-
-          // Registrar push token automáticamente al iniciar sesión
-          try {
-            await requestPushPermission(docSnap.id);
-            listenForMessages((payload) => {
-              alert(`🔔 ${payload.notification?.title}\n${payload.notification?.body}`);
-            });
-          } catch (err) {
-            console.warn('Push registration failed:', err);
-          }
         }
       }
       setLoading(false);
@@ -371,7 +360,7 @@ export default function AdminDashboard() {
   const [noShowMarking, setNoShowMarking] = useState('');
 
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿Marcar esta cita como no-show? El cliente será notificado.')) return;
+    if (!confirm('¿Marcar esta cita como no-show?')) return;
     setNoShowMarking(citaId);
     try {
       const token = await user.getIdToken();
