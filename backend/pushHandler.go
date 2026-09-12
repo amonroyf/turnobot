@@ -131,15 +131,18 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// Push al cliente: notificación de no-show (asíncrono)
+	// Push al cliente: notificación de no-show (asíncrono con pool)
 	if b.ClientPushToken != "" {
-		go func() {
-			sendPush(context.Background(), b.ClientPushToken,
+		nsToken := b.ClientPushToken
+		nsService := b.ServiceName
+		nsSlug := slug
+		submitPush(func() {
+			sendPush(context.Background(), nsToken,
 				"⚠️ No te presentaste",
-				fmt.Sprintf("No te presentaste a tu cita de %s. Si deseas reagendar, contacta al local.", b.ServiceName),
-				map[string]string{"slug": slug, "type": "no_show"},
+				fmt.Sprintf("No te presentaste a tu cita de %s. Si deseas reagendar, contacta al local.", nsService),
+				map[string]string{"slug": nsSlug, "type": "no_show"},
 			)
-		}()
+		})
 	}
 
 	// CRM: restar visita y gasto del cliente por no-show

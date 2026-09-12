@@ -196,17 +196,10 @@ export default function BookingApp() {
     setLoading(true);
     setError('');
 
-    // Solicitar permiso push del cliente (silencioso, sin alerta)
-    let pushToken = clientPushToken;
-    if (!pushToken) {
-      pushToken = await requestClientPushToken();
-      if (pushToken) setClientPushToken(pushToken);
-    }
-
     const payload = {
       ...booking,
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
-      client_push_token: pushToken || '',
+      client_push_token: '',
     };
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
@@ -217,11 +210,14 @@ export default function BookingApp() {
       if (res.ok) {
         setWaConfirmado(false);
         setStep(5);
-        // Registrar el token push vinculado al teléfono para futuras citas
-        if (pushToken) {
-          const phone = booking.clienteTelefono.replace(/\D/g, '');
-          registerClientPushToken(slug, pushToken, phone).catch(() => {});
-        }
+        // Después de reservar exitosamente, pedir permiso push y registrar token
+        requestClientPushToken().then((token) => {
+          if (token) {
+            setClientPushToken(token);
+            const phone = booking.clienteTelefono.replace(/\D/g, '');
+            registerClientPushToken(slug, token, phone).catch(() => {});
+          }
+        }).catch(() => {});
         return;
       }
       const data = await res.json().catch(() => null);

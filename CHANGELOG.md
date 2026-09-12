@@ -2,6 +2,42 @@
 
 ## 2026-09-10
 
+### Documentación y Auditoría de Producción
+
+**Archivos nuevos:**
+- `DEPLOY.md` — Guía completa de despliegue (infraestructura, CI/CD, monitoreo, seguridad)
+
+**Archivos modificados:**
+- `README.md` — Referencia a DEPLOY.md
+- `CHANGELOG.md` — Registro de este changelog
+
+**Infraestructura agregada:**
+- `middleware.go` — CORS restringido, rate limiting, security headers, structured logging
+- `cache.go` — Caché de negocio (TTL 5min), pool de goroutines (máx 10 concurrentes)
+- `.github/workflows/ci.yml` — Pipeline CI/CD (build → test → deploy)
+- `scripts/firestore-backup.sh` — Backup automático de Firestore
+- `frontend/src/ErrorBoundary.jsx` — Error boundary para React
+- `frontend/public/firebase-messaging-sw.js` — Service Worker para push notifications
+
+**Mejoras de seguridad:**
+- CORS restringido a dominios permitidos (antes era `*`)
+- Rate limiting: 60/min general, 10/min booking
+- Security headers: HSTS, X-Frame-Options, X-Content-Type-Options, CSP
+- Health check real (verifica Firestore, antes era hardcoded "OK")
+- Input validation en booking (campos requeridos, longitud nombre)
+- Soft delete para reservas (antes era borrado físico)
+- Graceful shutdown (SIGTERM/SIGINT)
+
+**Mejoras de rendimiento:**
+- Caché en memoria del negocio (TTL 5min)
+- Pool de goroutines para push (máx 10 concurrentes)
+- Batch delete chunks de 500 documentos
+- Lazy loading de componentes React (code splitting)
+
+---
+
+## 2026-09-10
+
 ### Notificaciones Push (Web Push FCM)
 
 **Archivos nuevos:**

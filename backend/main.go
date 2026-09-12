@@ -7,9 +7,11 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"sort"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	firebase "firebase.google.com/go/v4"
@@ -169,40 +171,49 @@ func main() {
 		Endpoint:     google.Endpoint,
 	}
 
-	// 3. Rutas HTTP
-	http.HandleFunc("/api/v1/b/", corsMiddleware(apiRouter))
-	http.HandleFunc("/auth/google/login", googleLoginHandler)
-	http.HandleFunc("/auth/google/callback", googleCallbackHandler)
-	http.HandleFunc("/health", healthHandler)
+	// 3. Rutas HTTP con middleware compuesto
+	http.HandleFunc("/api/v1/b/", chainMiddleware(apiBookingLimiter(apiRouter), apiLimiter))
+	http.HandleFunc("/auth/google/login", chainMiddleware(googleLoginHandler, apiLimiter))
+	http.HandleFunc("/auth/google/callback", chainMiddleware(googleCallbackHandler, apiLimiter))
+	http.HandleFunc("/health", chainMiddleware(healthHandler, apiLimiter))
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-	log.Printf("Servidor API REST escuchando en el puerto %s", port)
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
-		log.Fatalf("Error iniciando servidor: %v", err)
+
+	srv := &http.Server{
+		Addr:         ":" + port,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
-}
 
-// ---------------------------------------------------------------------------
-// Middleware y enrutador
-// ---------------------------------------------------------------------------
-
-// corsMiddleware permite que el frontend web consulte esta API desde otro dominio.
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusOK)
-			return
+	// Canal para manejar señales de apagado
+	go func() {
+		log.Printf("Servidor API REST escuchando en el puerto %s", port)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Error iniciando servidor: %v", err)
 		}
-		next(w, r)
+	}()
+
+	// Esperar señal SIGINT/SIGTERM para apagado controlado
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+	log.Println("Apagando servidor...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Error apagando servidor: %v", err)
 	}
+	log.Println("Servidor apagado correctamente")
 }
+
+// ---------------------------------------------------------------------------
+// Enrutador
+// ---------------------------------------------------------------------------
 
 // apiRouter analiza la URL y dirige la petición al endpoint correcto.
 func apiRouter(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +374,30 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Validar campos requeridos
+	if req.ServicioID == "" || req.EmpleadoID == "" || req.Fecha == "" || req.Hora == "" || req.ClienteNombre == "" || req.ClienteTelefono == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "missing_fields",
+			"message": "Faltan campos requeridos: servicio, profesional, fecha, hora, nombre y teléfono son obligatorios.",
+		})
+		return
+	}
+
+	// Validar longitud del nombre (1-100 caracteres)
+	if len(req.ClienteNombre) < 1 || len(req.ClienteNombre) > 100 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "invalid_name",
+			"message": "El nombre debe tener entre 1 y 100 caracteres.",
+		})
+		return
+	}
+
 	// Sanitizar y validar teléfono con libphonenumber (+E.164)
 	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono, defaultPhoneRegion)
 	if err != nil {
@@ -473,26 +508,32 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// CRM: actualizar (upsert) el cliente en el directorio del negocio
 	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime, negocioInfo.OwnerUID)
 
-	// Push al cliente: confirmación de reserva (asíncrono, no bloquea la respuesta)
+	// Push al cliente: confirmación de reserva (asíncrono con pool)
 	if req.ClientPushToken != "" {
-		go func() {
-			loc := shopLocation(context.Background(), slug)
+		sendPushToSlug := slug
+		sendPushToToken := req.ClientPushToken
+		sendPushToService := serviceName
+		sendPushToEmpID := req.EmpleadoID
+		sendPushToDateTime := eventDateTime
+		sendPushToEventID := eventID
+		submitPush(func() {
+			loc := shopLocation(context.Background(), sendPushToSlug)
 			title := "✅ Reserva confirmada"
-			body := fmt.Sprintf("%s con %s el %s a las %s", serviceName, "", eventDateTime.In(loc).Format("2006-01-02"), eventDateTime.In(loc).Format("15:04"))
-			if req.EmpleadoID != "" {
-				empDoc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID).Get(context.Background())
+			body := fmt.Sprintf("%s el %s a las %s", sendPushToService, sendPushToDateTime.In(loc).Format("2006-01-02"), sendPushToDateTime.In(loc).Format("15:04"))
+			if sendPushToEmpID != "" {
+				empDoc, err := firestoreClient.Collection("negocios").Doc(sendPushToSlug).Collection("empleados").Doc(sendPushToEmpID).Get(context.Background())
 				if err == nil {
 					var emp Employee
 					empDoc.DataTo(&emp)
-					body = fmt.Sprintf("%s con %s el %s a las %s", serviceName, emp.Name, eventDateTime.In(loc).Format("2006-01-02"), eventDateTime.In(loc).Format("15:04"))
+					body = fmt.Sprintf("%s con %s el %s a las %s", sendPushToService, emp.Name, sendPushToDateTime.In(loc).Format("2006-01-02"), sendPushToDateTime.In(loc).Format("15:04"))
 				}
 			}
-			sendPush(context.Background(), req.ClientPushToken, title, body, map[string]string{
-				"slug":    slug,
+			sendPush(context.Background(), sendPushToToken, title, body, map[string]string{
+				"slug":    sendPushToSlug,
 				"type":    "booking_confirmed",
-				"cita_id": eventID,
+				"cita_id": sendPushToEventID,
 			})
-		}()
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -536,6 +577,11 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	var citasPendientes []*firestore.DocumentSnapshot
 	for _, d := range docsByRef {
+		// Excluir reservas canceladas (soft delete)
+		cancelled := d.Data()["cancelled"]
+		if cancelled == true {
+			continue
+		}
 		citasPendientes = append(citasPendientes, d)
 	}
 
@@ -635,8 +681,11 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
 	}
 
-	// Borrar la reserva de Firestore
-	_, err = docRef.Delete(ctx)
+	// Soft delete: marcar como cancelada en lugar de borrar físicamente
+	_, err = docRef.Update(ctx, []firestore.Update{
+		{Path: "cancelled", Value: true},
+		{Path: "cancelled_at", Value: time.Now()},
+	})
 	if err != nil {
 		log.Printf("Error cancelando cita %s: %v", citaID, err)
 		http.Error(w, "Error cancelando la cita", http.StatusInternalServerError)
@@ -646,14 +695,17 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	// CRM: reflejar la cancelación en el directorio de clientes (solo si era futura)
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
 
-	// Push al cliente: notificación de cancelación (asíncrono)
+	// Push al cliente: notificación de cancelación (asíncrono con pool)
 	if b.ClientPushToken != "" {
-		go func() {
-			sendPush(context.Background(), b.ClientPushToken, "❌ Cita cancelada", fmt.Sprintf("Tu cita de %s fue cancelada. Contacta al local para reagendar.", b.ServiceName), map[string]string{
-				"slug": slug,
+		sendCancelToken := b.ClientPushToken
+		sendCancelService := b.ServiceName
+		sendCancelSlug := slug
+		submitPush(func() {
+			sendPush(context.Background(), sendCancelToken, "❌ Cita cancelada", fmt.Sprintf("Tu cita de %s fue cancelada. Contacta al local para reagendar.", sendCancelService), map[string]string{
+				"slug": sendCancelSlug,
 				"type": "booking_cancelled",
 			})
-		}()
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -851,6 +903,10 @@ func cascadeDeleteCitas(ctx context.Context, slug, empID, serviceName string) (i
 		var b Booking
 		d.DataTo(&b)
 		if !b.DateTime.After(now) {
+			continue
+		}
+		// Excluir canceladas
+		if d.Data()["cancelled"] == true {
 			continue
 		}
 		if empID != "" && b.EmpID != empID {
@@ -1343,7 +1399,15 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 			log.Printf("Aviso: error verificando reserva del día del cliente: %v", err)
 			continue
 		}
-		count += len(docs)
+		for _, d := range docs {
+			// Excluir canceladas y no-show del conteo
+			cancelled := d.Data()["cancelled"]
+			noShow := d.Data()["no_show"]
+			if cancelled == true || noShow == true {
+				continue
+			}
+			count++
+		}
 	}
 	return count >= 3
 }
@@ -1515,6 +1579,33 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprint(w, "Turnobot API REST OK")
+	ctx := r.Context()
+	status := "ok"
+	statusCode := http.StatusOK
+
+	// Verificar Firestore
+	_, err := firestoreClient.Collection("_health").Doc("ping").Get(ctx)
+	if err != nil && !strings.Contains(err.Error(), "not found") {
+		status = "degraded"
+		statusCode = http.StatusServiceUnavailable
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":    status,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"version":   "1.0.0",
+	})
+}
+
+// apiBookingLimiter aplica rate limiting más estricto a endpoints de escritura
+func apiBookingLimiter(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			rateLimitMiddleware(bookingLimiter, next)(w, r)
+			return
+		}
+		next(w, r)
+	}
 }

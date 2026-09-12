@@ -21,6 +21,8 @@ Aplicación web para reservas de citas, con sincronización automática a Google
 
 ## Despliegue
 
+> 📖 **Guía completa de despliegue:** Ver [DEPLOY.md](DEPLOY.md)
+
 ```bash
 ENV_FILE=/ruta/a/env_full.yaml ./deploy.sh              # todo
 ENV_FILE=... ./deploy.sh only-backend                    # solo Cloud Run
