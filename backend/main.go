@@ -523,7 +523,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
 	// con la duración real del servicio.
-	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, req.ClienteNotas)
+	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, req.ClienteNotas, req.ClienteNombre, req.ClienteTelefono, negocioInfo.Direccion)
 
 	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
 	// transacción para cerrar la race condition de doble reserva, y crea la
@@ -1553,7 +1553,9 @@ func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart tim
 }
 
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
-func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time, notes string) string {
+// El evento lleva todos los detalles de la cita (cliente, teléfono, local,
+// notas) y recordatorios automáticos de 1 día y 1 hora antes.
+func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time, notes, clientName, clientPhone, shopAddress string) string {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
 	if err != nil {
 		log.Printf("Aviso: %v. Generando mock event ID.", err)
@@ -1566,9 +1568,15 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 	// Etiquetar el evento con la zona horaria del negocio
 	tzString := getShopTimeZone(ctx, negocioID)
 
+	summary := fmt.Sprintf("Cita - %s", serviceName)
+	description := "Agendado automáticamente vía Turnobot Web" + firstLinesSuffix(notes)
+	if clientName != "" || clientPhone != "" {
+		description += "\n" + formatBookingDescription(clientName, clientPhone)
+	}
+
 	evt := &calendar.Event{
-		Summary:     fmt.Sprintf("Cita - %s", serviceName),
-		Description: "Agendado automáticamente vía Turnobot Web" + firstLinesSuffix(notes),
+		Summary:     summary,
+		Description: description,
 		Start: &calendar.EventDateTime{
 			DateTime: start.Format(time.RFC3339),
 			TimeZone: tzString,
@@ -1577,6 +1585,15 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 			DateTime: end.Format(time.RFC3339),
 			TimeZone: tzString,
 		},
+		Location: shopAddress,
+		Reminders: &calendar.EventReminders{
+			UseDefault: false,
+			Overrides: []*calendar.EventReminder{
+				{Method: "email", Minutes: 1440},
+				{Method: "popup", Minutes: 1440},
+				{Method: "popup", Minutes: 60},
+			},
+		},
 	}
 	created, err := svc.Events.Insert(emp.CalendarID, evt).Context(ctx).Do()
 	if err != nil {
@@ -1584,6 +1601,18 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 		return ""
 	}
 	return created.Id
+}
+
+// formatBookingDescription devuelve una descripción estructurada de la cita.
+func formatBookingDescription(clientName, clientPhone string) string {
+	var lines []string
+	if clientName != "" {
+		lines = append(lines, "Cliente: "+clientName)
+	}
+	if clientPhone != "" {
+		lines = append(lines, "Teléfono: "+clientPhone)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // firstLinesSuffix agrega las notas del cliente a la descripción del evento

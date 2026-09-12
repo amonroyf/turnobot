@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -438,5 +439,40 @@ func TestBookConNotasYPersistencia(t *testing.T) {
 	})
 	if code != http.StatusBadRequest || out["error"] != "notas_muy_largas" {
 		t.Fatalf("code=%d out=%v", code, out)
+	}
+}
+
+func TestFormatBookingDescription(t *testing.T) {
+	cases := []struct {
+		name, phone, want string
+	}{
+		{"Juan", "+573001234567", "Cliente: Juan\nTeléfono: +573001234567"},
+		{"Ana", "", "Cliente: Ana"},
+		{"", "+573001234567", "Teléfono: +573001234567"},
+		{"", "", ""},
+	}
+	for _, c := range cases {
+		got := formatBookingDescription(c.name, c.phone)
+		if got != c.want {
+			t.Errorf("formatBookingDescription(%q, %q)=%q, want %q", c.name, c.phone, got, c.want)
+		}
+	}
+}
+
+func TestFirstLinesSuffix(t *testing.T) {
+	if got := firstLinesSuffix(""); got != "" {
+		t.Errorf("firstLinesSuffix(\"\")=%q, want empty", got)
+	}
+	if got := firstLinesSuffix("nota corta"); got != "\nNotas del cliente: nota corta" {
+		t.Errorf("got=%q", got)
+	}
+	// Más de 200 caracteres se recorta.
+	larga := strings.Repeat("x", 250)
+	got := firstLinesSuffix(larga)
+	if !strings.HasPrefix(got, "\nNotas del cliente: ") {
+		t.Errorf("prefix wrong: %q", got)
+	}
+	if len(got) < 20 {
+		t.Errorf("too short: %d", len(got))
 	}
 }
