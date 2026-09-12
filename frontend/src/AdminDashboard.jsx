@@ -191,7 +191,7 @@ export default function AdminDashboard() {
   const [guardandoReglas, setGuardandoReglas] = useState(false);
 
   const [cancelando, setCancelando] = useState('');
-  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '', buffer_minutes: 0 });
+  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
@@ -316,30 +316,15 @@ export default function AdminDashboard() {
       await addDoc(collection(db, `negocios/${negocio.id}/servicios`), {
         name: nuevoServicio.name,
         duration_minutes: Number(nuevoServicio.duration_minutes),
-        buffer_minutes: Number(nuevoServicio.buffer_minutes) || 0,
         price: nuevoServicio.price,
       });
-      setNuevoServicio({ name: '', duration_minutes: 30, price: '', buffer_minutes: 0 });
+      setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
     } catch (err) {
       alert('Error al guardar el servicio');
     }
   };
 
-  // Buffer por servicio: vía API del backend (requiere token de dueño).
-  const handleBufferChange = async (servicio, valor) => {
-    const buf = Math.max(0, Number(valor) || 0);
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/servicios/${servicio.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ buffer_minutes: buf }),
-      });
-      if (!res.ok) throw new Error('error');
-    } catch (err) {
-      alert('No se pudo actualizar el tiempo entre citas.');
-    }
-  };
+  
 
   // Guarda las reglas de reserva vía API del backend (requiere token de dueño).
   const handleGuardarReglas = async (e) => {
@@ -830,22 +815,13 @@ export default function AdminDashboard() {
                       <p className="text-xs font-medium text-gray-500">{s.duration_minutes} min</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <label className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
-                        Pausa
-                        <input
-                          type="number" min="0" max="120" inputMode="numeric" defaultValue={s.buffer_minutes || 0}
-                          aria-label={`Tiempo entre citas de ${s.name}`}
-                          onBlur={(e) => handleBufferChange(s, e.target.value)}
-                          className="w-14 p-2 border border-gray-200 rounded-lg text-xs focus:border-black focus:outline-none"
-                        />
-                        min
-                      </label>
-                      <span className="font-black text-gray-900">{formatDinero(s.price)}</span>
                       <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
                     </div>
                   </li>
                 ))}
               </ul>
+
+              {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
               <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
                 <input
                   type="text" required placeholder="Nombre del servicio (ej. Corte clásico)" value={nuevoServicio.name}
@@ -863,17 +839,11 @@ export default function AdminDashboard() {
                     onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
                     className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                   />
-                  <input
-                    type="number" placeholder="Pausa (min)" inputMode="numeric" value={nuevoServicio.buffer_minutes}
-                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, buffer_minutes: e.target.value })}
-                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                  />
                 </div>
                 <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   + Agregar Servicio
                 </button>
               </form>
-            </div>
 
             {/* GESTIÓN DE PROFESIONALES */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">

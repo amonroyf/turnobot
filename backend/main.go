@@ -113,9 +113,6 @@ type Service struct {
 	Name     string `firestore:"name" json:"name"`
 	Duration int    `firestore:"duration_minutes" json:"duration_minutes"`
 	Price    string `firestore:"price" json:"price"`
-	// BufferMinutes es el tiempo de preparación/limpieza entre citas de este
-	// servicio (default 0). Se añade a la duración al calcular slots.
-	BufferMinutes int `firestore:"buffer_minutes" json:"buffer_minutes"`
 }
 
 // BookingRequest is the payload sent by the web frontend.
@@ -135,21 +132,18 @@ type BookingRequest struct {
 
 // Booking is a confirmed appointment.
 type Booking struct {
-	NegocioID      string `firestore:"negocio_id"`
-	OwnerUID       string `firestore:"owner_uid"`
-	EmpID          string `firestore:"emp_id"`
-	UserPhone      string `firestore:"user_phone"`
-	ClientName     string `firestore:"client_name"`
-	ServiceName    string `firestore:"service_name"`
-	DurationMinute int    `firestore:"duration_minutes,omitempty"`
-	// BufferMinutes se persiste para que el intervalo bloqueado (duración +
-	// buffer) siga aplicando al recalcular slots aunque cambie la config.
-	BufferMinutes int       `firestore:"buffer_minutes,omitempty"`
-	Price         int       `firestore:"price"`
-	DateTime      time.Time `firestore:"date_time"`
-	CalendarEvt   string    `firestore:"calendar_event_id,omitempty"`
-	CreatedAt     time.Time `firestore:"created_at"`
-	NoShow        bool      `firestore:"no_show" json:"no_show"`
+	NegocioID      string    `firestore:"negocio_id"`
+	OwnerUID       string    `firestore:"owner_uid"`
+	EmpID          string    `firestore:"emp_id"`
+	UserPhone      string    `firestore:"user_phone"`
+	ClientName     string    `firestore:"client_name"`
+	ServiceName    string    `firestore:"service_name"`
+	DurationMinute int       `firestore:"duration_minutes,omitempty"`
+	Price          int       `firestore:"price"`
+	DateTime       time.Time `firestore:"date_time"`
+	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
+	CreatedAt      time.Time `firestore:"created_at"`
+	NoShow         bool      `firestore:"no_show" json:"no_show"`
 	// Notes es la descripción de lo que necesita el cliente.
 	Notes string `firestore:"notes,omitempty" json:"notes,omitempty"`
 }
@@ -393,7 +387,7 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
 	// El buffer del servicio NO cambia la rejilla: solo amplía la ventana
 	// bloqueada después de cada cita (ver firestoreBookedIntervals).
-	_, duration, _, _, _ := resolveService(r.Context(), slug, servicioID)
+	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
 
 	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
@@ -523,7 +517,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Resolver el nombre y la duración real del servicio a partir de su ID.
 	// Un servicio inexistente se rechaza: evita reservas basura con precio 0.
-	serviceName, duration, buffer, precioServicio, found := resolveService(ctx, slug, req.ServicioID)
+	serviceName, duration, precioServicio, found := resolveService(ctx, slug, req.ServicioID)
 	if !found {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -595,7 +589,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// reserva + el upsert del CRM de forma atómica.
 	// El bloqueo de la agenda incluye el buffer: la cita siguiente no puede
 	// empezar antes de que termine la limpieza/preparación de esta.
-	eventEnd := eventDateTime.Add(time.Duration(duration+buffer) * time.Minute)
+	eventEnd := eventDateTime.Add(time.Duration(duration) * time.Minute)
 	newRef := firestoreClient.Collection("reservas").NewDoc()
 	txnErr := firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
@@ -617,7 +611,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			if err := d.DataTo(&b); err != nil {
 				continue
 			}
-			dur := time.Duration(b.DurationMinute+b.BufferMinutes) * time.Minute
+			dur := time.Duration(b.DurationMinute) * time.Minute
 			if dur <= 0 {
 				dur = 60 * time.Minute
 			}
@@ -633,7 +627,6 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			ClientName:     req.ClienteNombre,
 			ServiceName:    serviceName,
 			DurationMinute: duration,
-			BufferMinutes:  buffer,
 			Price:          precioServicio,
 			DateTime:       eventDateTime,
 			CalendarEvt:    eventID,
@@ -998,12 +991,11 @@ func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 		return
 	}
 
-	type req struct {
-		Name          *string `json:"name,omitempty"`
-		DurationMinutes *int  `json:"duration_minutes,omitempty"`
-		Price         *string `json:"price,omitempty"`
-		BufferMinutes *int    `json:"buffer_minutes,omitempty"`
-	}
+type req struct {
+	Name          *string `json:"name,omitempty"`
+	DurationMinutes *int  `json:"duration_minutes,omitempty"`
+	Price         *string `json:"price,omitempty"`
+}
 	var payload req
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -1029,9 +1021,6 @@ func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 	}
 	if payload.Price != nil {
 		updates = append(updates, firestore.Update{Path: "price", Value: *payload.Price})
-	}
-	if payload.BufferMinutes != nil {
-		updates = append(updates, firestore.Update{Path: "buffer_minutes", Value: clamp(*payload.BufferMinutes, 0, 4*60)})
 	}
 
 	if len(updates) == 0 {
@@ -1171,14 +1160,13 @@ func deleteCalendarEvent(ctx context.Context, negocioID, empID, eventID string) 
 // resolveService busca el nombre y la duración real del servicio en Firestore.
 // Retorna found=false si el servicio no existe (el caller decide: slots usa
 // fallback, book rechaza con 400).
-func resolveService(ctx context.Context, slug, servicioID string) (string, int, int, int, bool) {
+func resolveService(ctx context.Context, slug, servicioID string) (string, int, int, bool) {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID).Get(ctx)
 	if err != nil {
-		return servicioID, 60, 0, 0, false // Fallback: 60 minutos por defecto
+		return servicioID, 60, 0, false // Fallback: 60 minutos por defecto
 	}
 	var svc Service
 	doc.DataTo(&svc)
-
 	duration := svc.Duration
 	if duration == 0 {
 		duration = 60
@@ -1187,11 +1175,7 @@ func resolveService(ctx context.Context, slug, servicioID string) (string, int, 
 	if name == "" {
 		name = servicioID
 	}
-	buffer := svc.BufferMinutes
-	if buffer < 0 {
-		buffer = 0
-	}
-	return name, duration, buffer, parsePriceVal(svc.Price), true
+	return name, duration, parsePriceVal(svc.Price), true
 }
 
 // parsePriceVal convierte un precio almacenado como string ("15.000", "$20000")
@@ -1678,48 +1662,19 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 	}
 
 	var intervals [][2]time.Time
-	// Buffer configurado del servicio de cada reserva: leerlo del servicio
-	// vigente (no del snapshot de la reserva) para que cambiar la "Pausa" en
-	// el panel regenere la agenda inmediatamente, incluso para citas viejas.
-	bufferCache := map[string]int{}
-	resolveBuffer := func(serviceName string) int {
-		if buf, ok := bufferCache[serviceName]; ok {
-			return buf
-		}
-		buf := 0
-		for _, d := range docs {
-			var probe Booking
-			d.DataTo(&probe)
-			if probe.ServiceName != serviceName {
-				continue
-			}
-			if svcDoc, err := firestoreClient.Collection("negocios").Doc(negocioID).Collection("servicios").Where("name", "==", serviceName).Limit(1).Documents(context.Background()).GetAll(); err == nil && len(svcDoc) > 0 {
-				var svc Service
-				svcDoc[0].DataTo(&svc)
-				if svc.BufferMinutes > 0 {
-					buf = svc.BufferMinutes
-				}
-			}
-			break
-		}
-		bufferCache[serviceName] = buf
-		return buf
-	}
 	for _, d := range docs {
-		// Las canceladas liberan su horario (soft delete no bloquea).
 		if d.Data()["cancelled"] == true {
 			continue
 		}
 		var b Booking
 		d.DataTo(&b)
-
-		dur := time.Duration(b.DurationMinute+resolveBuffer(b.ServiceName)) * time.Minute
+		
+		dur := time.Duration(b.DurationMinute) * time.Minute
 		if dur <= 0 {
 			dur = 60 * time.Minute
 		}
 		start := b.DateTime
 		end := start.Add(dur)
-
 		intervals = append(intervals, [2]time.Time{start, end})
 	}
 	return intervals
