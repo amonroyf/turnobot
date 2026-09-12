@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { formatearFechaLarga } from './fecha.js';
 
 // Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
 const formatPhoneNumber = (value) => {
@@ -15,7 +16,7 @@ const formatPhoneNumber = (value) => {
   return value;
 };
 
-export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
+export default function MisCitas({ slug, API_URL, whatsapp }) {
   const [telefono, setTelefono] = useState('');
   const [citas, setCitas] = useState(null); // null = aún no buscado
   const [loading, setLoading] = useState(false);
@@ -70,6 +71,7 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
       <form onSubmit={buscarCitas} className="space-y-3">
         <input
           type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+          aria-label="Tu número de WhatsApp"
           inputMode="tel"
           autoComplete="tel"
           value={telefono}
@@ -104,7 +106,7 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
                 Por favor, avísale al local para que puedan asignar el turno a otra persona.
               </p>
               <a
-                href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola, acabo de cancelar mi cita de ${citaCancelada.servicio} con ${citaCancelada.emp_name} para el ${citaCancelada.fecha} a las ${citaCancelada.hora}. ¡Gracias!`)}`}
+                href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola, acabo de cancelar mi cita de ${citaCancelada.servicio} con ${citaCancelada.emp_name} para el ${formatearFechaLarga(citaCancelada.fecha)} a las ${citaCancelada.hora}. ¡Gracias!`)}`}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => setCitaCancelada(null)}
@@ -141,7 +143,7 @@ export default function MisCitas({ slug, API_URL, onVolver, whatsapp }) {
               <div key={c.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
                 <p className="font-bold text-gray-900 text-sm">✨ {c.servicio}</p>
                 <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
-                <p className="text-xs text-gray-600 font-medium">📅 {c.fecha} a las {c.hora}</p>
+                <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
                 
                 {!cancelable ? (
                   <div className="mt-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-xl font-medium">

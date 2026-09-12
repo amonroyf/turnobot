@@ -38,7 +38,11 @@ test.describe('Regresión visual', () => {
   test('registro: paso 1', async ({ page }) => {
     await page.goto('/register');
     await expect(page.getByText('Continuar con Google')).toBeVisible();
-    await expect(page).toHaveScreenshot('register.png', { animations: 'disabled' });
+    // El logo de Google carga de red externa: se enmascara (flaky por red).
+    await expect(page).toHaveScreenshot('register.png', {
+      animations: 'disabled',
+      mask: [page.locator('img')],
+    });
   });
 
   test('admin sin sesión: login', async ({ page }) => {
@@ -61,10 +65,14 @@ test.describe('Regresión visual', () => {
     await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
     const exito = page.locator('#step-success');
     await expect(exito).toBeVisible({ timeout: 20000 });
-    // La fecha/hora del resumen cambian a diario: se enmascaran.
+    // Fechas/horas cambian a diario: se enmascaran (resumen, form y título).
     await expect(page).toHaveScreenshot('booking-exito.png', {
       animations: 'disabled',
-      mask: [exito.locator('div.text-left'), page.locator('#step-5')],
+      mask: [
+        exito.locator('div.text-left'),
+        page.locator('#step-5'),
+        page.locator('h2', { hasText: 'Horarios para el' }),
+      ],
     });
   });
 });

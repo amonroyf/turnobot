@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
+import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono } from './fecha.js';
+import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
@@ -26,36 +28,37 @@ const MESES_ES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
-function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const [anioMes, setAnioMes] = useState(() => ({
-    y: hoy.getFullYear(),
-    m: hoy.getMonth(),
-  }));
+function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone }) {
+  // "Hoy" y el límite de 30 días se calculan en la zona del negocio, no en
+  // la del dispositivo (evita mostrar días de más/menos con TZ distinta).
+  const hoyStr = fechaHoyEnZona(timezone);
+  const maxStr = sumarDias(hoyStr, 30);
+  const [yHoy, mHoy] = hoyStr.split('-').map(Number);
+  const [anioMes, setAnioMes] = useState(() => ({ y: yHoy, m: mHoy - 1 }));
   const { y, m } = anioMes;
   const primerDia = new Date(y, m, 1);
   const diasEnMes = new Date(y, m + 1, 0).getDate();
   const offset = primerDia.getDay();
   const fmt = (d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const keyMes = (yy, mm) => `${yy}-${String(mm + 1).padStart(2, '0')}`;
+  const mesHoy = keyMes(yHoy, mHoy - 1);
+  const [maxY, maxM] = maxStr.split('-').map(Number);
+  const mesMax = keyMes(maxY, maxM - 1);
 
   const navegar = (delta) => {
     const fecha = new Date(y, m + delta, 1);
-    if (fecha < new Date(hoy.getFullYear(), hoy.getMonth(), 1)) return;
-    const maxFecha = new Date(hoy);
-    maxFecha.setDate(maxFecha.getDate() + 30);
-    if (delta > 0 && fecha > new Date(maxFecha.getFullYear(), maxFecha.getMonth(), 1)) return;
+    if (delta < 0 && keyMes(fecha.getFullYear(), fecha.getMonth()) < mesHoy) return;
+    if (delta > 0 && keyMes(fecha.getFullYear(), fecha.getMonth()) > mesMax) return;
     setAnioMes({ y: fecha.getFullYear(), m: fecha.getMonth() });
   };
 
-  const maxFecha30 = new Date(hoy);
-  maxFecha30.setDate(maxFecha30.getDate() + 30);
-  const enLimite = y > maxFecha30.getFullYear() || (y === maxFecha30.getFullYear() && m >= maxFecha30.getMonth());
+  const mesActual = keyMes(y, m);
+  const enLimite = mesActual >= mesMax;
 
   const celdas = [];
   for (let i = 0; i < offset; i++) celdas.push(null);
   for (let d = 1; d <= diasEnMes; d++) {
-    celdas.push(new Date(y, m, d) < hoy ? null : d);
+    celdas.push(fmt(d) < hoyStr ? null : d);
   }
 
   return (
@@ -64,7 +67,7 @@ function CalendarioGrid({ fechaSeleccionada, onSeleccionar }) {
         <button
           type="button"
           onClick={() => navegar(-1)}
-          disabled={y === hoy.getFullYear() && m === hoy.getMonth()}
+          disabled={mesActual <= mesHoy}
           aria-label="Mes anterior"
           className="w-10 h-10 rounded-full hover:bg-gray-100 active:scale-95 disabled:opacity-30 font-bold flex items-center justify-center text-lg transition-transform"
         >
@@ -141,11 +144,13 @@ export default function BookingApp() {
       });
   }, [slug]);
 
-  // MEJORA 4: Efecto de Auto-Scroll para experiencia móvil fluida
+  // Auto-scroll al avanzar de paso (con margen para el header fijo) y a la
+  // pantalla de éxito al confirmar.
   useEffect(() => {
     if (step > 1 && view === 'agendar') {
       setTimeout(() => {
-        const el = document.getElementById(`step-${step}`);
+        const target = step === 5 ? 'step-success' : `step-${step}`;
+        const el = document.getElementById(target);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -246,7 +251,7 @@ export default function BookingApp() {
         {negocio && (
           <>
             {view === 'citas' && (
-              <MisCitas slug={slug} API_URL={API_URL} onVolver={() => setView('agendar')} whatsapp={negocio?.whatsapp} />
+              <MisCitas slug={slug} API_URL={API_URL} whatsapp={negocio?.whatsapp} />
             )}
 
             {view === 'info' && (
@@ -256,7 +261,7 @@ export default function BookingApp() {
                   <div className="space-y-3 text-xs text-gray-600">
                     {negocio.direccion ? <p className="flex items-center gap-2">📍 <span>{negocio.direccion}</span></p> : null}
                     {negocio.horario ? <p className="flex items-center gap-2">🕒 <span>{negocio.horario}</span></p> : null}
-                    {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{negocio.telefono}</span></p> : null}
+                    {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{formatearTelefono(negocio.telefono)}</span></p> : null}
                     
                     {(!negocio.direccion && !negocio.horario && !negocio.telefono) && (
                       <p className="text-gray-400 italic">Información del local no configurada.</p>
@@ -286,7 +291,7 @@ export default function BookingApp() {
 
                 {/* PASO 1 */}
                 {step >= 1 && (
-                  <div id="step-1" className={step !== 1 ? 'opacity-50 pointer-events-none' : ''}>
+                  <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-50 pointer-events-none' : ''}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">1. Selecciona un servicio</h2>
                     <div className="grid gap-3">
                       {negocio.servicios?.map(s => {
@@ -322,7 +327,7 @@ export default function BookingApp() {
 
                 {/* PASO 2 */}
                 {(step >= 1 && booking.servicioId) && (
-                  <div id="step-2" className={step > 2 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
+                  <div id="step-2" className={`scroll-mt-24 ${step > 2 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
                     <div className="grid grid-cols-2 gap-3">
                       {negocio.empleados?.map(e => {
@@ -353,17 +358,17 @@ export default function BookingApp() {
 
                 {/* PASO 3 (Calendario) */}
                 {step >= 2 && (
-                  <div id="step-3" className={step > 3 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
+                  <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">3. ¿Qué día quieres ir?</h2>
-                    <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} />
+                    <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} timezone={negocio?.timezone} />
                     {loading && <p className="text-center text-xs font-semibold text-gray-500 py-4">Buscando espacios libres...</p>}
                   </div>
                 )}
 
                 {/* PASO 4 (Horarios) */}
                 {step >= 3 && slots.length >= 0 && (
-                  <div id="step-4" className={step > 4 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}>
-                    <h2 className="font-bold text-gray-800 mb-3 text-sm">4. Horarios para el {booking.fecha}</h2>
+                  <div id="step-4" className={`scroll-mt-24 ${step > 4 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">4. Horarios para el {formatearFechaLarga(booking.fecha)}</h2>
                     {slots.length === 0 ? (
                       <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
                         <p className="text-red-500 font-semibold text-sm">No hay espacios disponibles este día.</p>
@@ -372,14 +377,14 @@ export default function BookingApp() {
                       <div className="space-y-4">
                         {slotsManana.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Mañana</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Mañana</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsManana.map(hora => (
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
-                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                    booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
                                   {hora}
@@ -391,14 +396,14 @@ export default function BookingApp() {
 
                         {slotsTarde.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Tarde</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Tarde</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsTarde.map(hora => (
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
-                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                    booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
                                   {hora}
@@ -410,14 +415,14 @@ export default function BookingApp() {
 
                         {slotsNoche.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-400 mb-2 uppercase tracking-wider">Noche</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Noche</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsNoche.map(hora => (
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
-                                    booking.hora === hora ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                    booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
                                   {hora}
@@ -433,18 +438,19 @@ export default function BookingApp() {
 
                 {/* PASO 5 (Confirmar) */}
                 {step >= 4 && step < 5 && (
-                  <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6">
+                  <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6 scroll-mt-24">
                     <form onSubmit={confirmarCita} className="space-y-4">
                       <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
                       
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
                         <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
                         <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
-                        <p>📅 Fecha: <strong>{booking.fecha}</strong> a las <strong>{booking.hora}</strong></p>
+                        <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                       </div>
 
                       <input
                         type="text" required placeholder="Tu Nombre completo"
+                        aria-label="Tu nombre completo"
                         autoComplete="name"
                         value={booking.clienteNombre}
                         onChange={e => setBooking({ ...booking, clienteNombre: e.target.value })}
@@ -452,6 +458,7 @@ export default function BookingApp() {
                       />
                       <input
                         type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+                        aria-label="Tu número de WhatsApp"
                         inputMode="tel"
                         autoComplete="tel"
                         value={booking.clienteTelefono}
@@ -471,7 +478,7 @@ export default function BookingApp() {
 
                 {/* PANTALLA ÉXITO */}
                 {step === 5 && (
-                  <div id="step-success" className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4 mt-4">
+                  <div id="step-success" className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4 mt-4 scroll-mt-24">
                     {!waConfirmado ? (
                       <>
                         <div className="text-4xl">🎉</div>
@@ -482,11 +489,11 @@ export default function BookingApp() {
                         <div className="text-left bg-gray-50 rounded-xl p-3.5 space-y-1 text-xs text-gray-700 border border-gray-100">
                           <p><strong>Servicio:</strong> {servicioElegido?.name}</p>
                           <p><strong>Profesional:</strong> {empleadoElegido?.name}</p>
-                          <p><strong>Fecha:</strong> {booking.fecha} - {booking.hora}</p>
+                          <p><strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)} - {booking.hora}</p>
                         </div>
                         {negocio.whatsapp && (
                           <a
-                            href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(`Hola, soy ${booking.clienteNombre}. Acabo de agendar ${servicioElegido?.name} con ${empleadoElegido?.name} el ${booking.fecha} a las ${booking.hora}.`)}`}
+                            href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(`Hola, soy ${booking.clienteNombre}. Acabo de agendar ${servicioElegido?.name} con ${empleadoElegido?.name} el ${formatearFechaLarga(booking.fecha)} a las ${booking.hora}.`)}`}
                             target="_blank"
                             rel="noreferrer"
                             onClick={() => setWaConfirmado(true)}
@@ -500,7 +507,7 @@ export default function BookingApp() {
                       <>
                         <div className="text-4xl">✅</div>
                         <h2 className="text-lg font-bold text-gray-900">¡Mensaje Enviado!</h2>
-                        <p className="text-xs text-gray-500">Te esperamos el {booking.fecha} a las {booking.hora}.</p>
+                        <p className="text-xs text-gray-500">Te esperamos el {formatearFechaLarga(booking.fecha)} a las {booking.hora}.</p>
                       </>
                     )}
                     <button onClick={reiniciarAgendamiento} className="text-xs text-gray-500 font-semibold underline pt-2">
@@ -520,21 +527,21 @@ export default function BookingApp() {
           onClick={() => { setView('agendar'); setStep(1); }}
           className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-lg">📅</span>
+          <IconoCalendario />
           <span>Agendar</span>
         </button>
         <button
           onClick={() => setView('citas')}
           className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'citas' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-lg">📋</span>
+          <IconoLista />
           <span>Mis Citas</span>
         </button>
         <button
           onClick={() => setView('info')}
           className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'info' ? 'text-black' : 'text-gray-400'}`}
         >
-          <span className="text-lg">📍</span>
+          <IconoPin />
           <span>Info Local</span>
         </button>
       </nav>

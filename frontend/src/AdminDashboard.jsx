@@ -15,6 +15,8 @@ import {
   doc,
   updateDoc,
 } from 'firebase/firestore';
+import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono } from './fecha.js';
+import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
 
 const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const defaultHorario = {
@@ -390,42 +392,40 @@ export default function AdminDashboard() {
 
   const fechaUltimaVisita = (c) => {
     if (c.last_date_str) {
-      const [year, month, day] = c.last_date_str.split('-').map(Number);
-      if (year && month && day) return new Date(year, month - 1, day).toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' });
+      const larga = formatearFechaLarga(c.last_date_str);
+      if (larga !== c.last_date_str) return larga;
     }
     return 'N/A';
   };
 
   const clientesCRM = [...clientes].sort((a, b) => (b.visits || 0) - (a.visits || 0));
 
-  const fechaHoy = new Date();
-  fechaHoy.setHours(0, 0, 0, 0);
-  const fechaManana = new Date(fechaHoy);
-  fechaManana.setDate(fechaManana.getDate() + 1);
-  const fechaPasado = new Date(fechaHoy);
-  fechaPasado.setDate(fechaPasado.getDate() + 2);
+  // Agrupación Hoy/Mañana/Próximas en la zona del negocio (no del dispositivo).
+  const zonaNegocio = negocio?.timezone || 'America/Bogota';
+  const keyHoy = fechaHoyEnZona(zonaNegocio);
+  const keyManana = sumarDias(keyHoy, 1);
+  const keyPasado = sumarDias(keyHoy, 2);
 
   const citasHoy = reservas.filter(r => {
     const t = r.date_time?.seconds * 1000;
-    return t >= fechaHoy.getTime() && t < fechaManana.getTime();
+    return t && diaKeyEnZona(t, zonaNegocio) === keyHoy;
   });
   const citasManana = reservas.filter(r => {
     const t = r.date_time?.seconds * 1000;
-    return t >= fechaManana.getTime() && t < fechaPasado.getTime();
+    return t && diaKeyEnZona(t, zonaNegocio) === keyManana;
   });
   const citasProximas = reservas.filter(r => {
     const t = r.date_time?.seconds * 1000;
-    return t >= fechaPasado.getTime();
+    return t && diaKeyEnZona(t, zonaNegocio) >= keyPasado;
   });
 
-  // MEJORA 3: Función agrupadora para transformar la lista plana en bloques visuales de hora
+  // Función agrupadora: bloques visuales por hora (en zona del negocio).
   const agruparPorHora = (citasArray) => {
     const agrupadas = {};
     citasArray.forEach(r => {
       const timeMs = r.date_time?.seconds * 1000;
-      const fechaObj = r.date_time ? new Date(timeMs) : null;
-      const horaStr = fechaObj ? fechaObj.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'N/A';
-      
+      const horaStr = timeMs ? horaEnZona(timeMs, zonaNegocio) : 'N/A';
+
       if (!agrupadas[horaStr]) agrupadas[horaStr] = [];
       agrupadas[horaStr].push(r);
     });
@@ -459,8 +459,8 @@ export default function AdminDashboard() {
               ⚠️ No Show
             </span>
           ) : isCancelled ? (
-            <span className="text-[10px] font-bold bg-gray-200 text-gray-500 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
-              Cancelada
+            <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
+              ✕ Cancelada
             </span>
           ) : isPast ? (
             <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
@@ -617,7 +617,7 @@ export default function AdminDashboard() {
                       <div>
                         <p className="font-bold text-gray-900 text-sm mb-1">{c.client_name}</p>
                         <a href={`https://wa.me/${c.cliente_phone}`} target="_blank" rel="noreferrer" className="text-xs text-green-600 font-bold bg-green-50 px-2 py-1 rounded-md">
-                          {c.cliente_phone}
+                          {formatearTelefono(c.cliente_phone)}
                         </a>
                         <p className="text-[10px] text-gray-400 font-bold mt-2 uppercase tracking-wider">
                           {c.visits || 0} visitas • Última: {fechaUltimaVisita(c)}
@@ -794,15 +794,15 @@ export default function AdminDashboard() {
 
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2.5 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
         <button onClick={() => setView('agenda')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'agenda' ? 'text-black' : 'text-gray-400'}`}>
-          <span className="text-xl">📅</span>
+          <IconoCalendario />
           <span>Agenda</span>
         </button>
         <button onClick={() => setView('clientes')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'clientes' ? 'text-black' : 'text-gray-400'}`}>
-          <span className="text-xl">👥</span>
+          <IconoUsuarios />
           <span>Clientes</span>
         </button>
         <button onClick={() => setView('ajustes')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'ajustes' ? 'text-black' : 'text-gray-400'}`}>
-          <span className="text-xl">⚙️</span>
+          <IconoAjustes />
           <span>Ajustes</span>
         </button>
       </nav>

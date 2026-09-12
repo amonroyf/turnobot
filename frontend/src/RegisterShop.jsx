@@ -269,7 +269,7 @@ export default function RegisterShop() {
                 </label>
                 <div className="mt-1 flex rounded-xl shadow-sm">
                   <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
-                    tu-saas.com/shop/
+                    {window.location.host}/shop/
                   </span>
                   <input
                     type="text"
