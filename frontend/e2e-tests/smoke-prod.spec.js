@@ -4,7 +4,7 @@ import { db, adminAuth } from './setup.js';
 const BASE = 'https://turnobot-web.web.app';
 const API = 'https://turnobot-ehomyvoh6q-uc.a.run.app';
 const ts = Date.now();
-const slug = `smokeprod${ts}`;
+const slug = `e2e-smokeprod${ts}`;
 const email = `smoke${ts}@turnobot.test`;
 let uid;
 

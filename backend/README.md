@@ -17,10 +17,21 @@ Copiar `.env.example` como referencia (no versionar valores reales):
 ```bash
 cd backend
 go run .                 # API en :8080
-go test ./...            # tests unitarios
+go test ./...            # tests unitarios (sin emulador se omiten los de handlers)
 go vet ./...             # análisis estático
-go run seed.go           # datos de prueba en Firestore (negocio barberia-vip)
+SEED_ALLOW_PROD=1 go run seed.go  # SOLO dev: sobrescribe negocios/barberia-vip
 ```
+
+## Tests de handlers (emulador Firestore)
+
+```bash
+firebase emulators:start --only firestore   # puerto 8090 (ver firebase.emu.json de ejemplo en CI)
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 go test ./... -count=1
+```
+
+Cubren: reserva OK + CRM, servicio inválido 400, doble reserva concurrente
+(8 goroutines → 1 ganador), cancel idempotente + liberación del slot, no-show
+sin auth → 401.
 
 ## Endpoints
 

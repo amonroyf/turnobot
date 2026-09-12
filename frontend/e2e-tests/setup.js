@@ -13,7 +13,13 @@ if (!admin.apps.length) {
 export const db = admin.firestore();
 export const adminAuth = admin.auth();
 
-const SLUG_E2E = 'tienda-e2e';
+// Aislamiento de staging: TODOS los datos de pruebas usan slugs con este
+// prefijo (configurable). Nunca usar slugs de negocios reales.
+// Ver e2e-tests/cleanup-staging.mjs para borrarlos.
+export const E2E_PREFIX = process.env.E2E_SLUG_PREFIX || 'e2e';
+export const e2eSlug = (base) => `${E2E_PREFIX}-${base}`;
+
+const SLUG_E2E = e2eSlug('tienda');
 
 // Elimina todas las reservas de la tienda de prueba en bloques de máximo 400
 // documentos (límite de batch de Firestore) para empezar con agenda vacía.

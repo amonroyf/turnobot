@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -133,16 +134,29 @@ func (rl *rateLimiter) allow(ip string) bool {
 	return true
 }
 
+// clientIP extrae la IP real del cliente detrás de Cloud Run / Google Front End.
+// GFE agrega la IP observada AL FINAL de X-Forwarded-For, así que los valores
+// previos pueden ser falsificados por el cliente: se toma el ÚLTIMO.
+// Sin encabezados de proxy se usa RemoteAddr (sin puerto).
+func clientIP(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		parts := strings.Split(fwd, ",")
+		if ip := strings.TrimSpace(parts[len(parts)-1]); ip != "" {
+			return ip
+		}
+	}
+	if ip := strings.TrimSpace(r.Header.Get("X-Real-IP")); ip != "" {
+		return ip
+	}
+	if host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr)); err == nil {
+		return host
+	}
+	return strings.TrimSpace(r.RemoteAddr)
+}
+
 func rateLimitMiddleware(rl *rateLimiter, next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = strings.Split(fwd, ",")[0]
-		}
-		if fwd := r.Header.Get("X-Real-IP"); fwd != "" {
-			ip = fwd
-		}
-		ip = strings.TrimSpace(ip)
+		ip := clientIP(r)
 
 		if !rl.allow(ip) {
 			w.Header().Set("Content-Type", "application/json")
@@ -196,10 +210,7 @@ var logger = structuredLogger{}
 func loggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		ip := r.RemoteAddr
-		if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-			ip = strings.Split(fwd, ",")[0]
-		}
+		ip := clientIP(r)
 
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next(rw, r)

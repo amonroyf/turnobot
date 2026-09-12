@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -34,6 +35,10 @@ var (
 	googleOauthCfg  *oauth2.Config
 	firebaseAuth    *auth.Client
 )
+
+// errSlotConflict indica que el horario se ocupó entre la verificación y la
+// escritura. Se usa para abortar la transacción de reserva.
+var errSlotConflict = errors.New("slot ocupado por reserva concurrente")
 
 // ---------------------------------------------------------------------------
 // Data Models (optimizados para JSON y Firestore)
@@ -470,27 +475,88 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// con la duración real del servicio.
 	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime)
 
-	// Guardar la reserva en Firestore
-	_, _, err = firestoreClient.Collection("reservas").Add(ctx, Booking{
-		NegocioID:      slug,
-		OwnerUID:       negocioInfo.OwnerUID,
-		EmpID:          req.EmpleadoID,
-		UserPhone:      req.ClienteTelefono,
-		ClientName:     req.ClienteNombre,
-		ServiceName:    serviceName,
-		DurationMinute: duration,
-		Price:          precioServicio,
-		DateTime:       eventDateTime,
-		CalendarEvt:    eventID,
-		CreatedAt:      time.Now(),
+	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
+	// transacción para cerrar la race condition de doble reserva, y crea la
+	// reserva + el upsert del CRM de forma atómica.
+	eventEnd := eventDateTime.Add(time.Duration(duration) * time.Minute)
+	newRef := firestoreClient.Collection("reservas").NewDoc()
+	txnErr := firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
+		// largas previas que solapen con la nueva.
+		q := firestoreClient.Collection("reservas").
+			Where("negocio_id", "==", slug).
+			Where("emp_id", "==", req.EmpleadoID).
+			Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+			Where("date_time", "<", eventEnd)
+		docs, err := tx.Documents(q).GetAll()
+		if err != nil {
+			return err
+		}
+		for _, d := range docs {
+			if d.Data()["cancelled"] == true {
+				continue
+			}
+			var b Booking
+			if err := d.DataTo(&b); err != nil {
+				continue
+			}
+			dur := time.Duration(b.DurationMinute) * time.Minute
+			if dur <= 0 {
+				dur = 60 * time.Minute
+			}
+			if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
+				return errSlotConflict
+			}
+		}
+		if err := tx.Create(newRef, Booking{
+			NegocioID:      slug,
+			OwnerUID:       negocioInfo.OwnerUID,
+			EmpID:          req.EmpleadoID,
+			UserPhone:      req.ClienteTelefono,
+			ClientName:     req.ClienteNombre,
+			ServiceName:    serviceName,
+			DurationMinute: duration,
+			Price:          precioServicio,
+			DateTime:       eventDateTime,
+			CalendarEvt:    eventID,
+			CreatedAt:      time.Now(),
+		}); err != nil {
+			return err
+		}
+		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
+		return tx.Set(cliRef, map[string]interface{}{
+			"negocio_id":    slug,
+			"owner_uid":     negocioInfo.OwnerUID,
+			"cliente_phone": req.ClienteTelefono,
+			"client_name":   req.ClienteNombre,
+			"visits":        firestore.Increment(1),
+			"total_spent":   firestore.Increment(precioServicio),
+			"last_seen":     eventDateTime,
+			"last_date_str": eventDateTime.Format("2006-01-02"),
+			"updated_at":    time.Now(),
+		}, firestore.MergeAll)
 	})
-	if err != nil {
+	if txnErr != nil {
+		if errors.Is(txnErr, errSlotConflict) {
+			// Compensar: liberar el evento de Calendar creado fuera de la
+			// transacción para no dejar eventos huérfanos.
+			if eventID != "" && eventID != "mock_event_123" {
+				deleteCalendarEvent(ctx, slug, req.EmpleadoID, eventID)
+			}
+			log.Printf("Slot ocupado en transacción: %s %s para emp %s en %s", req.Fecha, req.Hora, req.EmpleadoID, slug)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "slot_taken",
+				"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
+			})
+			return
+		}
+		log.Printf("Error en transacción de reserva: %v", txnErr)
 		http.Error(w, "Error guardando la reserva", http.StatusInternalServerError)
 		return
 	}
-
-	// CRM: actualizar (upsert) el cliente en el directorio del negocio
-	upsertCliente(ctx, slug, req.ClienteTelefono, req.ClienteNombre, precioServicio, eventDateTime, negocioInfo.OwnerUID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -675,30 +741,6 @@ func clienteDocID(slug, phone string) string {
 	return slug + "__" + phone
 }
 
-// upsertCliente escribe (o actualiza) el cliente en la colección clientes del
-// negocio cada vez que agenda una cita. Invalida las reglas de Firestore
-// porque el backend usa el Admin SDK (service account).
-func upsertCliente(ctx context.Context, slug, phone, name string, price int, dateTime time.Time, ownerUID string) {
-	if slug == "" || phone == "" {
-		return
-	}
-	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-	_, err := ref.Set(ctx, map[string]interface{}{
-		"negocio_id":    slug,
-		"owner_uid":     ownerUID,
-		"cliente_phone": phone,
-		"client_name":   name,
-		"visits":        firestore.Increment(1),
-		"total_spent":   firestore.Increment(price),
-		"last_seen":     dateTime,
-		"last_date_str": dateTime.Format("2006-01-02"),
-		"updated_at":    time.Now(),
-	}, firestore.MergeAll)
-	if err != nil {
-		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
-	}
-}
-
 // decrementCliente refleja una cancelación en el directorio de clientes
 // (resta una visita y el valor del servicio cancelado).
 func decrementCliente(ctx context.Context, slug, phone string, price int) {
@@ -713,6 +755,37 @@ func decrementCliente(ctx context.Context, slug, phone string, price int) {
 	})
 	if err != nil {
 		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
+	}
+}
+
+// decrementClienteBulk refleja eliminaciones en cascada en el CRM, agregando
+// por teléfono para no hacer un write por cada cita (visits -= n,
+// total_spent -= suma de precios).
+func decrementClienteBulk(ctx context.Context, slug string, citas []affectedBooking) {
+	type ajuste struct{ count, total int }
+	porTelefono := map[string]*ajuste{}
+	for _, ab := range citas {
+		if ab.b.UserPhone == "" {
+			continue
+		}
+		a := porTelefono[ab.b.UserPhone]
+		if a == nil {
+			a = &ajuste{}
+			porTelefono[ab.b.UserPhone] = a
+		}
+		a.count++
+		a.total += ab.b.Price
+	}
+	for phone, a := range porTelefono {
+		ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
+		_, err := ref.Update(ctx, []firestore.Update{
+			{Path: "visits", Value: firestore.Increment(-a.count)},
+			{Path: "total_spent", Value: firestore.Increment(-a.total)},
+			{Path: "updated_at", Value: time.Now()},
+		})
+		if err != nil {
+			log.Printf("Aviso: no se pudo ajustar al cliente %s en %s: %v", phone, slug, err)
+		}
 	}
 }
 
@@ -785,6 +858,9 @@ func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 
 	deleteCitasCalendarEvents(ctx, slug, affected)
 
+	// CRM: las citas eliminadas en cascada también restan del directorio.
+	decrementClienteBulk(ctx, slug, affected)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
@@ -823,6 +899,9 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	}
 
 	deleteCitasCalendarEvents(ctx, slug, affected)
+
+	// CRM: las citas eliminadas en cascada también restan del directorio.
+	decrementClienteBulk(ctx, slug, affected)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

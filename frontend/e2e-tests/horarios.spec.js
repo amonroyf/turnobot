@@ -3,7 +3,7 @@ import { db } from './setup.js';
 
 const API = process.env.API_BASE || 'http://localhost:8080';
 const ts = Date.now();
-const SLUG = `tienda-horarios-${ts}`;
+const SLUG = `e2e-horarios-${ts}`;
 const EMP_ID = 'emp_test';
 const SVC_ID = 'svc_test';
 

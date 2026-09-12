@@ -6,14 +6,19 @@ import {
 } from 'firebase/auth';
 import {
   doc,
-  setDoc,
-  getDoc,
   collection,
   query,
   where,
   getDocs,
+  runTransaction,
 } from 'firebase/firestore';
 import { auth, provider, db } from './firebase';
+
+// Slug válido: minúsculas, números y guiones; 3-50 caracteres; sin guiones
+// en los extremos. Evita IDs que rompan rutas (/shop/:slug) o Firestore.
+export function esSlugValido(slug) {
+  return typeof slug === 'string' && /^[a-z0-9]([a-z0-9-]{1,48}[a-z0-9])?$/.test(slug);
+}
 
 export default function RegisterShop() {
   const navigate = useNavigate();
@@ -108,34 +113,45 @@ export default function RegisterShop() {
     setLoading(true);
     setError('');
 
+    const slug = (formData.slug || '').toLowerCase().trim();
+    if (!esSlugValido(slug)) {
+      setError('El enlace solo puede tener minúsculas, números y guiones (3-50 caracteres).');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const docRef = doc(db, 'negocios', formData.slug);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        setError('Este enlace ya está en uso. Por favor, elige otro.');
-        setLoading(false);
-        return;
-      }
-
-      await setDoc(docRef, {
-        name: formData.name,
-        owner_uid: user.uid, // <-- Blindamos la regla de seguridad multi-tenant
-        whatsapp: '',
-        direccion: '',
-        horario: '',
-        telefono: '',
-        calendar_id: 'primary',
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        open_time: '09:00',
-        close_time: '18:00',
-        created_at: new Date(),
+      // Transacción: verificar y crear atómicamente para que dos registros
+      // simultáneos con el mismo enlace no se sobrescriban entre sí.
+      await runTransaction(db, async (tx) => {
+        const docRef = doc(db, 'negocios', slug);
+        const docSnap = await tx.get(docRef);
+        if (docSnap.exists()) {
+          throw new Error('slug-en-uso');
+        }
+        tx.set(docRef, {
+          name: formData.name,
+          owner_uid: user.uid, // <-- Blindamos la regla de seguridad multi-tenant
+          whatsapp: '',
+          direccion: '',
+          horario: '',
+          telefono: '',
+          calendar_id: 'primary',
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          open_time: '09:00',
+          close_time: '18:00',
+          created_at: new Date(),
+        });
       });
 
       navigate('/admin');
     } catch (err) {
       console.error(err);
-      setError('Hubo un error al crear la tienda. Intenta de nuevo.');
+      if (err.message === 'slug-en-uso') {
+        setError('Este enlace ya está en uso. Por favor, elige otro.');
+      } else {
+        setError('Hubo un error al crear la tienda. Intenta de nuevo.');
+      }
     }
     setLoading(false);
   };

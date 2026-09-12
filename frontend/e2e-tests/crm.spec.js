@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { db, limpiarEntornoReal } from './setup.js';
+import { db, limpiarEntornoReal, e2eSlug } from './setup.js';
 
 test.setTimeout(120_000);
 
@@ -14,7 +14,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
     const ts = Date.now();
     const nombre = `Cliente QA ${ts}`;
     const email = `crm${ts}@turnobot.test`;
-    const slug = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
+    const slug = e2eSlug(nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-'));
 
     // Las tarjetas de clientes (CRM) se distinguen de las de reservas por el
     // marcador "LTV" y viven dentro de una tajeta blanca contenedora.
@@ -31,6 +31,8 @@ test.describe('Directorio de Clientes (CRM)', () => {
 
       await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
       await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
+      // Usar slug con prefijo e2e antes de finalizar (aislamiento de staging)
+      await page.locator('input[type="text"]').nth(1).fill(slug);
       await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
       await expect(page).toHaveURL(/\/admin$/);

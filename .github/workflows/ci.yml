@@ -23,9 +23,35 @@ jobs:
       - name: Build
         working-directory: backend
         run: go build ./...
-      - name: Test
+      - name: Test unitario (sin emulador)
         working-directory: backend
         run: go test ./... -v -count=1
+
+  # ── Backend handlers (emulador Firestore) ──────────────────
+  backend-handlers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Instalar firebase-tools
+        run: npm install -g firebase-tools
+      - name: Levantar emulador Firestore
+        run: |
+          printf '{"emulators":{"firestore":{"port":8090},"ui":{"enabled":false}}}' > firebase.emu.json
+          (npx firebase emulators:start --only firestore --project ${{ env.PROJECT_ID }} --config firebase.emu.json > /tmp/emu.log 2>&1 &) 
+          for i in $(seq 1 30); do
+            grep -q "All emulators ready" /tmp/emu.log && break
+            sleep 5
+          done
+          grep -q "All emulators ready" /tmp/emu.log
+      - name: Test handlers (con emulador)
+        working-directory: backend
+        run: FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 go test ./... -v -count=1
 
   # ── Frontend ─────────────────────────────────────────────
   frontend-build:

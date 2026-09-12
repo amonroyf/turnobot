@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
-import { limpiarReservasE2E, crearReservaE2E, elegirDiaEnCalendario, db } from './setup.js';
+import { limpiarReservasE2E, crearReservaE2E, elegirDiaEnCalendario, db, e2eSlug } from './setup.js';
 
-const SLUG = 'tienda-e2e';
+const SLUG = e2eSlug('tienda');
 
 const mañana = () => {
   const d = new Date(Date.now() + 86400000);

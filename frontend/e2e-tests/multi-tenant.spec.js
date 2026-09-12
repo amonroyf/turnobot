@@ -1,8 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { limpiarReservasE2E, crearReservaE2E, db } from './setup.js';
+import { limpiarReservasE2E, crearReservaE2E, db, e2eSlug } from './setup.js';
 
-const TIENDA_A = 'tienda-alfa';
-const TIENDA_B = 'tienda-beta';
+const TIENDA_A = e2eSlug('alfa');
+const TIENDA_B = e2eSlug('beta');
 
 async function garantizarTienda(slug, servicios, empleado) {
   const negocioRef = db.collection('negocios').doc(slug);

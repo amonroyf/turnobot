@@ -1,10 +1,10 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth } from './setup.js';
+import { db, adminAuth, e2eSlug } from './setup.js';
 
 const API = process.env.API_BASE || 'http://localhost:8080';
 const WEB_API_KEY = 'AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU';
 const ts = Date.now();
-const slug = `reglas-${ts}`;
+const slug = e2eSlug(`reglas-${ts}`);
 const email = `owner${ts}@turnobot.test`;
 const mafana = () => {
   const d = new Date(Date.now() + 86400000);
@@ -132,7 +132,7 @@ test('2. Ventana de 2 horas para cancelación del cliente', async () => {
   expect(rechazada.status).toBe(403);
 });
 
-test('2b. Límite de una reserva por cliente al día (por teléfono)', async () => {
+test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () => {
   const phone = '3200000000';
   const manana = new Date(Date.now() + 86400000);
   const fecha = manana.toISOString().split('T')[0];
@@ -150,29 +150,31 @@ test('2b. Límite de una reserva por cliente al día (por teléfono)', async () 
       body: JSON.stringify(body),
     });
 
-  // 1. Primera reserva del día -> 201
-  const r1 = await book({ ...payloadBase, hora: '10:00' });
-  expect(r1.status).toBe(201);
+  // 1-3. Tres reservas el mismo día con el mismo teléfono -> 201
+  for (const hora of ['10:00', '11:00', '12:00']) {
+    const r = await book({ ...payloadBase, hora });
+    expect(r.status).toBe(201);
+  }
 
-  // 2. MISMO día y MISMO teléfono (otra hora) -> 409 max_per_day
-  const r2 = await book({ ...payloadBase, hora: '11:00' });
-  expect(r2.status).toBe(409);
-  const b2 = await r2.json();
-  expect(b2.error).toBe('max_per_day');
-  expect(b2.message).toContain('límite máximo');
+  // 4. Cuarta reserva MISMO día y MISMO teléfono -> 409 max_per_day
+  const r4 = await book({ ...payloadBase, hora: '13:00' });
+  expect(r4.status).toBe(409);
+  const b4 = await r4.json();
+  expect(b4.error).toBe('max_per_day');
+  expect(b4.message).toContain('límite máximo');
 
-  // 3. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
-  const r3 = await book({ ...payloadBase, clienteTelefono: '3200000001', hora: '11:00' });
-  expect(r3.status).toBe(201);
+  // 5. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
+  const r5 = await book({ ...payloadBase, clienteTelefono: '3200000001', hora: '13:00' });
+  expect(r5.status).toBe(201);
 
-  // 4. MISMO cliente, OTRO día -> permitido
+  // 6. MISMO cliente, OTRO día -> permitido
   const pasadoManana = new Date(Date.now() + 2 * 86400000);
-  const r4 = await book({
+  const r6 = await book({
     ...payloadBase,
     fecha: pasadoManana.toISOString().split('T')[0],
     hora: '10:00',
   });
-  expect(r4.status).toBe(201);
+  expect(r6.status).toBe(201);
 });
 
 test('3. Eliminación en cascada de servicio con citas futuras', async () => {

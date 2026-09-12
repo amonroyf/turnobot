@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { db } from './setup.js';
+import { db, e2eSlug } from './setup.js';
 
 test.setTimeout(120_000);
 
@@ -20,7 +20,9 @@ test.describe('Register + Admin Panel', () => {
     const ts = Date.now();
     const nombre = `Barberia QA ${ts}`;
     const email = `qa${ts}@turnobot.test`;
-    const slug = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
+    const slugAuto = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
+    // Prefijo e2e para aislamiento de staging (el input permite editarlo).
+    const slug = e2eSlug(slugAuto);
 
     await page.goto('/register');
     await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
@@ -31,7 +33,9 @@ test.describe('Register + Admin Panel', () => {
     // Paso 2: nombre del local (el slug se genera solo) y finalizar
     await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
     await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
-    await expect(page.locator('input[type="text"]').nth(1)).toHaveValue(slug);
+    await expect(page.locator('input[type="text"]').nth(1)).toHaveValue(slugAuto);
+    // Usar slug con prefijo e2e antes de finalizar
+    await page.locator('input[type="text"]').nth(1).fill(slug);
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
     // Redirige al panel y carga el negocio recién creado
