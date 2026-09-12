@@ -231,6 +231,7 @@ export default function AdminDashboard() {
 
             const citas = snapshot.docs
               .map((d) => ({ id: d.id, ...d.data() }))
+              .filter((c) => c.cancelled !== true)
               .filter((c) => (c.date_time?.seconds * 1000 || 0) >= inicioHoy.getTime())
               .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
             setReservas(citas);
@@ -347,9 +348,15 @@ export default function AdminDashboard() {
     setCancelando(citaId);
     try {
       const token = await user.getIdToken();
-      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
+      if (res.ok) {
+        alert('Cita cancelada. El espacio quedó libre en la agenda.');
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.');
+      }
     } catch (err) {
       alert('No se pudo cancelar la cita. Intenta nuevamente.');
     } finally {
@@ -431,6 +438,7 @@ export default function AdminDashboard() {
     const timeMs = r.date_time?.seconds * 1000;
     const isPast = timeMs < ahora;
     const isNoShow = r.no_show === true;
+    const isCancelled = r.cancelled === true;
     const profesional = profesionales.find((p) => p.id === r.emp_id);
 
     return (
@@ -450,6 +458,10 @@ export default function AdminDashboard() {
             <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
               ⚠️ No Show
             </span>
+          ) : isCancelled ? (
+            <span className="text-[10px] font-bold bg-gray-200 text-gray-500 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
+              Cancelada
+            </span>
           ) : isPast ? (
             <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
               ✅ Finalizada
@@ -463,7 +475,7 @@ export default function AdminDashboard() {
             </a>
           )}
         </div>
-        {!isPast && !isNoShow && (
+        {!isPast && !isNoShow && !isCancelled && (
           <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
             <button
               onClick={() => handleMarcarNoShow(r.id)}
