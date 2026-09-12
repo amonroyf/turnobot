@@ -53,3 +53,23 @@ PLAYWRIGHT_BASE_URL=http://localhost:5174 npx playwright test  # otro front
 
 Los usuarios de Auth de pruebas se borran por test (`limpiarEntornoReal`); el
 script de limpieza no los toca (no se pueden listar por slug).
+
+### Regresión visual (screenshots)
+
+`e2e-tests/visual.spec.js` compara screenshots contra la línea base
+(`e2e-tests/visual.spec.js-snapshots/`, versionada en git). Detecta cambios
+visuales no intencionales (botones que desaparecen, layouts rotos, textos).
+
+```bash
+# Stack local con emulador (no toca producción):
+firebase emulators:start --only firestore   # :8090
+PORT=8080 GCP_PROJECT_ID=<tu-proyecto> FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 go run .  # backend/
+npm run dev                                  # frontend/ :5173
+FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 npx playwright test visual.spec.js
+
+# Aceptar un cambio visual intencional:
+npx playwright test visual.spec.js --update-snapshots
+```
+
+Las zonas con fecha/hora se enmascaran (`mask`) para que el test no falle a
+diario. En CI corre el job `visual-tests` con este mismo stack.
