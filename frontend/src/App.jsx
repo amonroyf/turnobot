@@ -6,6 +6,7 @@ import ErrorBoundary from './ErrorBoundary.jsx';
 const BookingApp = lazy(() => import('./BookingApp.jsx'));
 const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 const RegisterShop = lazy(() => import('./RegisterShop.jsx'));
+const SuperAdmin = lazy(() => import('./SuperAdmin.jsx'));
 
 function LoadingSpinner() {
   return (
@@ -32,6 +33,9 @@ export default function App() {
 
             {/* Registro de primer dueño */}
             <Route path="/register" element={<RegisterShop />} />
+
+            {/* Panel de administración SaaS (solo super admin) */}
+            <Route path="/super-admin" element={<SuperAdmin />} />
 
             {/* Redirección por defecto */}
             <Route path="*" element={<Navigate to="/register" replace />} />
