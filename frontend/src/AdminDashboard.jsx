@@ -180,8 +180,18 @@ export default function AdminDashboard() {
   const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
   const [guardandoInfo, setGuardandoInfo] = useState(false);
 
+  // Reglas de reserva (configurables por negocio, defaults en el backend)
+  const [reglas, setReglas] = useState({
+    min_notice_minutes: 120,
+    booking_window_days: 30,
+    max_bookings_per_phone_per_day: 3,
+    reminder_days_before: 1,
+    reminder_hours_before: 2,
+  });
+  const [guardandoReglas, setGuardandoReglas] = useState(false);
+
   const [cancelando, setCancelando] = useState('');
-  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
+  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '', buffer_minutes: 0 });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
@@ -204,6 +214,13 @@ export default function AdminDashboard() {
         direccion: negocio.direccion || '',
         horario: negocio.horario || '',
         telefono: negocio.telefono || ''
+      });
+      setReglas({
+        min_notice_minutes: negocio.min_notice_minutes || 120,
+        booking_window_days: negocio.booking_window_days || 30,
+        max_bookings_per_phone_per_day: negocio.max_bookings_per_phone_per_day || 3,
+        reminder_days_before: negocio.reminder_days_before || 1,
+        reminder_hours_before: negocio.reminder_hours_before || 2,
       });
     }
   }, [negocio]);
@@ -299,12 +316,48 @@ export default function AdminDashboard() {
       await addDoc(collection(db, `negocios/${negocio.id}/servicios`), {
         name: nuevoServicio.name,
         duration_minutes: Number(nuevoServicio.duration_minutes),
+        buffer_minutes: Number(nuevoServicio.buffer_minutes) || 0,
         price: nuevoServicio.price,
       });
-      setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
+      setNuevoServicio({ name: '', duration_minutes: 30, price: '', buffer_minutes: 0 });
     } catch (err) {
       alert('Error al guardar el servicio');
     }
+  };
+
+  // Buffer por servicio: updateDoc directo en Firestore (reglas: solo dueño).
+  const handleBufferChange = async (servicio, valor) => {
+    const buf = Math.max(0, Number(valor) || 0);
+    try {
+      await updateDoc(doc(db, `negocios/${negocio.id}/servicios`, servicio.id), { buffer_minutes: buf });
+    } catch (err) {
+      alert('No se pudo actualizar el tiempo entre citas.');
+    }
+  };
+
+  // Guarda las reglas de reserva vía API del backend (requiere token de dueño).
+  const handleGuardarReglas = async (e) => {
+    e.preventDefault();
+    setGuardandoReglas(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          min_notice_minutes: Number(reglas.min_notice_minutes),
+          booking_window_days: Number(reglas.booking_window_days),
+          max_bookings_per_phone_per_day: Number(reglas.max_bookings_per_phone_per_day),
+          reminder_days_before: Number(reglas.reminder_days_before),
+          reminder_hours_before: Number(reglas.reminder_hours_before),
+        }),
+      });
+      if (!res.ok) throw new Error('error');
+      alert('✅ Reglas de reserva actualizadas');
+    } catch (err) {
+      alert('No se pudieron guardar las reglas. Intenta de nuevo.');
+    }
+    setGuardandoReglas(false);
   };
 
   const handleAddProfesional = async (e) => {
@@ -704,6 +757,61 @@ export default function AdminDashboard() {
               </form>
             </div>
 
+            {/* REGLAS DE RESERVA */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Reglas de Reserva</h2>
+              <p className="text-[11px] font-medium text-gray-500 mb-4">
+                Ajusta la agenda a tu tipo de negocio (2h peluquería, 24h clínica, 30min restaurante…).
+              </p>
+              <form onSubmit={handleGuardarReglas} className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs font-bold text-gray-700">
+                    Antelación mínima (min)
+                    <input
+                      type="number" min="0" max="10080" required inputMode="numeric" value={reglas.min_notice_minutes}
+                      onChange={(e) => setReglas({ ...reglas, min_notice_minutes: e.target.value })}
+                      className="mt-1 w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-gray-700">
+                    Ventana de reserva (días)
+                    <input
+                      type="number" min="1" max="365" required inputMode="numeric" value={reglas.booking_window_days}
+                      onChange={(e) => setReglas({ ...reglas, booking_window_days: e.target.value })}
+                      className="mt-1 w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-gray-700">
+                    Máx. reservas por teléfono/día
+                    <input
+                      type="number" min="1" max="20" required inputMode="numeric" value={reglas.max_bookings_per_phone_per_day}
+                      onChange={(e) => setReglas({ ...reglas, max_bookings_per_phone_per_day: e.target.value })}
+                      className="mt-1 w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-gray-700">
+                    Recordatorio días antes
+                    <input
+                      type="number" min="1" max="30" required inputMode="numeric" value={reglas.reminder_days_before}
+                      onChange={(e) => setReglas({ ...reglas, reminder_days_before: e.target.value })}
+                      className="mt-1 w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-bold text-gray-700">
+                    Recordatorio horas antes
+                    <input
+                      type="number" min="1" max="72" required inputMode="numeric" value={reglas.reminder_hours_before}
+                      onChange={(e) => setReglas({ ...reglas, reminder_hours_before: e.target.value })}
+                      className="mt-1 w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                </div>
+                <button type="submit" disabled={guardandoReglas} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                  {guardandoReglas ? 'Guardando...' : 'Guardar Reglas'}
+                </button>
+              </form>
+            </div>
+
             {/* GESTIÓN DE SERVICIOS */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-4">Servicios Activos</h2>
@@ -715,7 +823,17 @@ export default function AdminDashboard() {
                       <p className="font-bold text-gray-900">{s.name}</p>
                       <p className="text-xs font-medium text-gray-500">{s.duration_minutes} min</p>
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-3">
+                      <label className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase">
+                        Pausa
+                        <input
+                          type="number" min="0" max="120" inputMode="numeric" defaultValue={s.buffer_minutes || 0}
+                          aria-label={`Tiempo entre citas de ${s.name}`}
+                          onBlur={(e) => handleBufferChange(s, e.target.value)}
+                          className="w-14 p-2 border border-gray-200 rounded-lg text-xs focus:border-black focus:outline-none"
+                        />
+                        min
+                      </label>
                       <span className="font-black text-gray-900">{formatDinero(s.price)}</span>
                       <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
                     </div>
@@ -732,12 +850,17 @@ export default function AdminDashboard() {
                   <input
                     type="number" required placeholder="Minutos" inputMode="numeric" value={nuevoServicio.duration_minutes}
                     onChange={(e) => setNuevoServicio({ ...nuevoServicio, duration_minutes: e.target.value })}
-                    className="w-1/2 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                   />
                   <input
                     type="number" required placeholder="Precio" inputMode="numeric" value={nuevoServicio.price}
                     onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
-                    className="w-1/2 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  />
+                  <input
+                    type="number" placeholder="Pausa (min)" inputMode="numeric" value={nuevoServicio.buffer_minutes}
+                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, buffer_minutes: e.target.value })}
+                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                   />
                 </div>
                 <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">

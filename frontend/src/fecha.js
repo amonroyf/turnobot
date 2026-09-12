@@ -113,9 +113,9 @@ export function fechaHoraAUtc(yyyymmdd, hhmm, timezone) {
 const fICal = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 const escICal = (s) => (s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
 
-// descargarICS genera un .ics con la cita (recordatorios 1 día y 2 horas
-// antes) para "Añadir al calendario" sin backend.
-export function descargarICS({ slug, servicio, profesional, fecha, hora, duracionMin, direccion, timezone, notas }) {
+// descargarICS genera un .ics con la cita (recordatorios configurables,
+// default 1 día y 2 horas antes) para "Añadir al calendario" sin backend.
+export function descargarICS({ slug, servicio, profesional, fecha, hora, duracionMin, direccion, timezone, notas, reminderDias, reminderHoras }) {
   const inicio = fechaHoraAUtc(fecha, hora, timezone);
   if (!inicio) return;
   const fin = new Date(inicio.getTime() + (duracionMin || 60) * 60000);
@@ -140,14 +140,16 @@ export function descargarICS({ slug, servicio, profesional, fecha, hora, duracio
   if (direccion) {
     icsLines.push(`LOCATION:${escICal(direccion)}`);
   }
+  const dias = Number(reminderDias) > 0 ? Number(reminderDias) : 1;
+  const horas = Number(reminderHoras) > 0 ? Number(reminderHoras) : 2;
   icsLines.push(
     'BEGIN:VALARM',
-    'TRIGGER:-P1D',
+    `TRIGGER:-P${dias}D`,
     'ACTION:DISPLAY',
     `DESCRIPTION:${alarmDesc}`,
     'END:VALARM',
     'BEGIN:VALARM',
-    'TRIGGER:-PT2H',
+    `TRIGGER:-PT${horas}H`,
     'ACTION:DISPLAY',
     `DESCRIPTION:${alarmDesc}`,
     'END:VALARM',

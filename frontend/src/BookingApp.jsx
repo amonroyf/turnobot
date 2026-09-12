@@ -28,11 +28,11 @@ const MESES_ES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
-function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone }) {
-  // "Hoy" y el límite de 30 días se calculan en la zona del negocio, no en
-  // la del dispositivo (evita mostrar días de más/menos con TZ distinta).
+function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone, ventanaDias }) {
+  // "Hoy" y el límite de días de la ventana de reserva se calculan en la zona
+  // del negocio, no en la del dispositivo (evita desfases con TZ distinta).
   const hoyStr = fechaHoyEnZona(timezone);
-  const maxStr = sumarDias(hoyStr, 30);
+  const maxStr = sumarDias(hoyStr, ventanaDias || 30);
   const [yHoy, mHoy] = hoyStr.split('-').map(Number);
   const [anioMes, setAnioMes] = useState(() => ({ y: yHoy, m: mHoy - 1 }));
   const { y, m } = anioMes;
@@ -236,6 +236,8 @@ export default function BookingApp() {
       direccion: negocio?.direccion || '',
       timezone: negocio?.timezone || 'America/Bogota',
       notas: booking.clienteNotas || '',
+      reminderDias: negocio?.reminder_days_before || 1,
+      reminderHoras: negocio?.reminder_hours_before || 2,
     });
   };
 
@@ -403,7 +405,7 @@ export default function BookingApp() {
                 {step >= 2 && (
                   <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">3. ¿Qué día quieres ir?</h2>
-                    <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} timezone={negocio?.timezone} />
+                    <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} timezone={negocio?.timezone} ventanaDias={negocio?.booking_window_days} />
                     {loading && <p className="text-center text-xs font-semibold text-gray-500 py-4">Buscando espacios libres...</p>}
                   </div>
                 )}
