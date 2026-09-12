@@ -287,6 +287,11 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 3 && parts[1] == "servicios" && r.Method == http.MethodPut {
+		updateServicioHandler(w, r, slug, parts[2])
+		return
+	}
+
 	if len(parts) == 3 && parts[1] == "empleados" && r.Method == http.MethodDelete {
 		deleteEmpleadoHandler(w, r, slug, parts[2])
 		return
@@ -982,6 +987,74 @@ func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 		"success":        true,
 		"message":        "Servicio eliminado",
 		"citas_borradas": deleted,
+	})
+}
+
+// PUT /api/v1/b/{slug}/servicios/{servicioID}
+// Actualiza campos del servicio (nombre, duración, precio, buffer).
+func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servicioID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	type req struct {
+		Name          *string `json:"name,omitempty"`
+		DurationMinutes *int  `json:"duration_minutes,omitempty"`
+		Price         *string `json:"price,omitempty"`
+		BufferMinutes *int    `json:"buffer_minutes,omitempty"`
+	}
+	var payload req
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		http.Error(w, "Payload inválido", http.StatusBadRequest)
+		return
+	}
+
+	clamp := func(v, min, max int) int {
+		if v < min {
+			return min
+		}
+		if v > max {
+			return max
+		}
+		return v
+	}
+
+	updates := []firestore.Update{}
+	if payload.Name != nil {
+		updates = append(updates, firestore.Update{Path: "name", Value: *payload.Name})
+	}
+	if payload.DurationMinutes != nil {
+		updates = append(updates, firestore.Update{Path: "duration_minutes", Value: clamp(*payload.DurationMinutes, 1, 8*60)})
+	}
+	if payload.Price != nil {
+		updates = append(updates, firestore.Update{Path: "price", Value: *payload.Price})
+	}
+	if payload.BufferMinutes != nil {
+		updates = append(updates, firestore.Update{Path: "buffer_minutes", Value: clamp(*payload.BufferMinutes, 0, 4*60)})
+	}
+
+	if len(updates) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Sin cambios que aplicar",
+		})
+		return
+	}
+
+	updates = append(updates, firestore.Update{Path: "updated_at", Value: time.Now()})
+	servRef := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID)
+	if _, err := servRef.Update(r.Context(), updates); err != nil {
+		log.Printf("Error actualizando servicio %s: %v", servicioID, err)
+		http.Error(w, "Error guardando el servicio", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Servicio actualizado",
 	})
 }
 

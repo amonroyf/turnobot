@@ -325,11 +325,17 @@ export default function AdminDashboard() {
     }
   };
 
-  // Buffer por servicio: updateDoc directo en Firestore (reglas: solo dueño).
+  // Buffer por servicio: vía API del backend (requiere token de dueño).
   const handleBufferChange = async (servicio, valor) => {
     const buf = Math.max(0, Number(valor) || 0);
     try {
-      await updateDoc(doc(db, `negocios/${negocio.id}/servicios`, servicio.id), { buffer_minutes: buf });
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/servicios/${servicio.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ buffer_minutes: buf }),
+      });
+      if (!res.ok) throw new Error('error');
     } catch (err) {
       alert('No se pudo actualizar el tiempo entre citas.');
     }
