@@ -326,7 +326,8 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Agrega la lectura del servicio para calcular saltos según su duración real
-	_, duration, _ := resolveService(r.Context(), slug, servicioID)
+	// (si el servicio no existe se usa el fallback de 60 min solo para previsualizar).
+	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
 
 	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
@@ -416,8 +417,19 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Resolver el nombre y la duración real del servicio a partir de su ID
-	serviceName, duration, precioServicio := resolveService(ctx, slug, req.ServicioID)
+	// Resolver el nombre y la duración real del servicio a partir de su ID.
+	// Un servicio inexistente se rechaza: evita reservas basura con precio 0.
+	serviceName, duration, precioServicio, found := resolveService(ctx, slug, req.ServicioID)
+	if !found {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "servicio_no_encontrado",
+			"message": "El servicio seleccionado ya no existe. Por favor elige otro.",
+		})
+		return
+	}
 
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
 	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
@@ -590,6 +602,16 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	doc.DataTo(&b)
 	if b.NegocioID != slug {
 		http.Error(w, "Cita no encontrada", http.StatusNotFound)
+		return
+	}
+
+	// Idempotencia: si ya estaba cancelada, éxito sin volver a tocar el CRM.
+	if doc.Data()["cancelled"] == true {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "La cita ya estaba cancelada",
+		})
 		return
 	}
 
@@ -879,10 +901,12 @@ func deleteCalendarEvent(ctx context.Context, negocioID, empID, eventID string) 
 }
 
 // resolveService busca el nombre y la duración real del servicio en Firestore.
-func resolveService(ctx context.Context, slug, servicioID string) (string, int, int) {
+// Retorna found=false si el servicio no existe (el caller decide: slots usa
+// fallback, book rechaza con 400).
+func resolveService(ctx context.Context, slug, servicioID string) (string, int, int, bool) {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID).Get(ctx)
 	if err != nil {
-		return servicioID, 60, 0 // Fallback: 60 minutos por defecto
+		return servicioID, 60, 0, false // Fallback: 60 minutos por defecto
 	}
 	var svc Service
 	doc.DataTo(&svc)
@@ -895,7 +919,7 @@ func resolveService(ctx context.Context, slug, servicioID string) (string, int, 
 	if name == "" {
 		name = servicioID
 	}
-	return name, duration, parsePriceVal(svc.Price)
+	return name, duration, parsePriceVal(svc.Price), true
 }
 
 // parsePriceVal convierte un precio almacenado como string ("15.000", "$20000")
@@ -1292,6 +1316,10 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 
 	var intervals [][2]time.Time
 	for _, d := range docs {
+		// Las canceladas liberan su horario (soft delete no bloquea).
+		if d.Data()["cancelled"] == true {
+			continue
+		}
 		var b Booking
 		d.DataTo(&b)
 

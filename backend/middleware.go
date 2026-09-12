@@ -14,10 +14,10 @@ import (
 // ---------------------------------------------------------------------------
 
 var allowedOrigins = map[string]bool{
-	"https://turnobot-web.web.app": true,
+	"https://turnobot-web.web.app":             true,
 	"https://stalwart-coast-439901-d0.web.app": true,
-	"http://localhost:5173": true,
-	"http://localhost:3000": true,
+	"http://localhost:5173":                    true,
+	"http://localhost:3000":                    true,
 }
 
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -76,8 +76,8 @@ type visitor struct {
 }
 
 var (
-	apiLimiter    = newRateLimiter(60, time.Minute)    // 60 req/min por IP
-	bookingLimiter = newRateLimiter(10, time.Minute)   // 10 bookings/min por IP
+	apiLimiter     = newRateLimiter(60, time.Minute) // 60 req/min por IP
+	bookingLimiter = newRateLimiter(10, time.Minute) // 10 bookings/min por IP
 )
 
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {

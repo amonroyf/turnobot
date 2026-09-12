@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"log"
+	"os"
 
 	"cloud.google.com/go/firestore"
 )
@@ -12,6 +13,12 @@ import (
 func main() {
 	ctx := context.Background()
 	projectID := "stalwart-coast-439901-d0"
+
+	// Guardia: este script hace Set SIN merge (sobrescribe el negocio).
+	// Nunca correr contra producción sin confirmación explícita.
+	if os.Getenv("SEED_ALLOW_PROD") != "1" {
+		log.Fatal("Rehusado: seed apunta a producción. Define SEED_ALLOW_PROD=1 solo si sabes lo que haces (sobrescribe negocios/barberia-vip).")
+	}
 
 	client, err := firestore.NewClient(ctx, projectID)
 	if err != nil {

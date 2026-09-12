@@ -432,7 +432,7 @@ export default function BookingApp() {
                 )}
 
                 {/* PASO 5 (Confirmar) */}
-                {step >= 4 && (
+                {step >= 4 && step < 5 && (
                   <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6">
                     <form onSubmit={confirmarCita} className="space-y-4">
                       <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>

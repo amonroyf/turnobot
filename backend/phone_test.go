@@ -101,10 +101,10 @@ func TestDigitsOnly(t *testing.T) {
 	cases := []struct {
 		in, want string
 	}{
-	{"+57 300 123 4567", "573001234567"},
-	{"300.123.4567", "3001234567"},
-	{"abc", ""},
-	{"", ""},
+		{"+57 300 123 4567", "573001234567"},
+		{"300.123.4567", "3001234567"},
+		{"abc", ""},
+		{"", ""},
 	}
 	for _, c := range cases {
 		if got := digitsOnly(c.in); got != c.want {
@@ -152,9 +152,9 @@ func TestBearerToken(t *testing.T) {
 
 func TestEmployeeDayHorario(t *testing.T) {
 	h := &HorarioSemanal{
-		Lunes:    DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "12:00"}}},
-		Martes:   DiaHorario{Activo: false},
-		Domingo:  DiaHorario{Activo: false},
+		Lunes:   DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "12:00"}}},
+		Martes:  DiaHorario{Activo: false},
+		Domingo: DiaHorario{Activo: false},
 	}
 
 	// Lunes activo
@@ -203,5 +203,24 @@ func TestSplitShiftIntervals(t *testing.T) {
 	intervals = splitShiftIntervals(nil, "test-slug", nil, day)
 	if intervals != nil {
 		t.Error("splitShiftIntervals: nil debería devolver nil")
+	}
+}
+
+func TestCanMarkNoShow(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		dt   time.Time
+		want bool
+	}{
+		{"pasada", now.Add(-time.Hour), true},
+		{"ahora mismo", now, true},
+		{"futura", now.Add(time.Hour), false},
+		{"manana", now.Add(24 * time.Hour), false},
+	}
+	for _, c := range cases {
+		if got := canMarkNoShow(c.dt, now); got != c.want {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
 	}
 }
