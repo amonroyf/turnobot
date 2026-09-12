@@ -122,18 +122,40 @@ export function descargarICS({ slug, servicio, profesional, fecha, hora, duracio
   const uid = `${slug}-${fecha}-${hora.replace(':', '')}@turnobot`;
   const desc = [`${servicio} con ${profesional}`, notas ? `Notas: ${notas}` : '']
     .filter(Boolean).join('\\n');
-  const ics = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnobot//ES', 'BEGIN:VEVENT',
-    `UID:${uid}`, `DTSTAMP:${fICal(new Date())}`,
-    `DTSTART:${fICal(inicio)}`, `DTEND:${fICal(fin)}`,
+  const alarmDesc = escICal('Recordatorio de cita');
+  const icsLines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Turnobot//ES',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${fICal(new Date())}`,
+    `DTSTART:${fICal(inicio)}`,
+    `DTEND:${fICal(fin)}`,
     `SUMMARY:${escICal(`${servicio} - ${profesional}`)}`,
     `DESCRIPTION:${escICal(desc)}`,
-    `LOCATION:${escICal(direccion || '')}`,
-    'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de cita', 'END:VALARM',
-    'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de cita', 'END:VALARM',
-    'END:VEVENT', 'END:VCALENDAR',
-  ].join('\r\n');
-  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  ];
+  if (direccion) {
+    icsLines.push(`LOCATION:${escICal(direccion)}`);
+  }
+  icsLines.push(
+    'BEGIN:VALARM',
+    'TRIGGER:-P1D',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${alarmDesc}`,
+    'END:VALARM',
+    'BEGIN:VALARM',
+    'TRIGGER:-PT2H',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${alarmDesc}`,
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  );
+  const ics = icsLines.join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar; charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url;
   a.download = `cita-${fecha}-${hora.replace(':', '')}.ics`;
