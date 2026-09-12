@@ -1593,6 +1593,7 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 				{Method: "popup", Minutes: 1440},
 				{Method: "popup", Minutes: 60},
 			},
+			ForceSendFields: []string{"UseDefault"},
 		},
 	}
 	created, err := svc.Events.Insert(emp.CalendarID, evt).Context(ctx).Do()
