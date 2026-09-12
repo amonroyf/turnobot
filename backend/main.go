@@ -60,8 +60,11 @@ type Negocio struct {
 	// MinNoticeMinutes es la antelación mínima para reservar (default 120).
 	// Se configura por negocio; 0 o ausente = 120.
 	MinNoticeMinutes int        `firestore:"min_notice_minutes" json:"min_notice_minutes"`
-	Servicios        []Service  `json:"servicios"`
-	Empleados        []Employee `json:"empleados"`
+	// Suspended marca un negocio suspendido por el super admin: no acepta
+	// reservas nuevas (slots y book responden 403).
+	Suspended bool       `firestore:"suspended" json:"suspended"`
+	Servicios []Service  `json:"servicios"`
+	Empleados []Employee `json:"empleados"`
 }
 
 // Turno represents a single work shift within a day.
@@ -323,8 +326,31 @@ func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	json.NewEncoder(w).Encode(negocio)
 }
 
+// isBusinessSuspended verifica si un negocio tiene suspended=true en Firestore.
+// Si el documento no se puede leer, devuelve false para no bloquear por falsos positivos.
+func isBusinessSuspended(ctx context.Context, slug string) bool {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return false
+	}
+	suspended, _ := doc.Data()["suspended"].(bool)
+	return suspended
+}
+
 // GET /api/v1/b/{slug}/slots?emp_id=XYZ&servicio_id=ABC&fecha=YYYY-MM-DD
 func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	// Negocio suspendido: no se ofrecen horarios.
+	if isBusinessSuspended(r.Context(), slug) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "business_suspended",
+			"message": "Este negocio no está aceptando reservas en este momento.",
+		})
+		return
+	}
+
 	empID := r.URL.Query().Get("emp_id")
 	servicioID := r.URL.Query().Get("servicio_id")
 	fechaStr := r.URL.Query().Get("fecha")
@@ -360,6 +386,18 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	var req BookingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
+		return
+	}
+
+	// Negocio suspendido: se rechaza la reserva (el super admin lo controla).
+	if isBusinessSuspended(r.Context(), slug) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "business_suspended",
+			"message": "Este negocio no está aceptando reservas en este momento. Por favor, comunícate directamente con el local.",
+		})
 		return
 	}
 

@@ -272,6 +272,27 @@ export default function BookingApp() {
 
         {negocio && (
           <>
+            {/* Negocio suspendido: aviso y contacto directo, sin flujo de reserva */}
+            {negocio.suspended && (
+              <div className="mb-4 p-6 bg-amber-50 border border-amber-200 rounded-2xl text-center">
+                <div className="text-4xl mb-3">⏸️</div>
+                <h2 className="text-base font-bold text-amber-800 mb-2">Negocio No Disponible</h2>
+                <p className="text-xs text-amber-700 mb-4">
+                  Este negocio no está aceptando reservas en este momento. Por favor, comunícate directamente con el local.
+                </p>
+                {negocio.whatsapp && (
+                  <a
+                    href={`https://wa.me/${negocio.whatsapp}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-block py-3 px-6 bg-green-500 text-white font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                  >
+                    💬 Escribir por WhatsApp
+                  </a>
+                )}
+              </div>
+            )}
+
             {view === 'citas' && (
               <MisCitas slug={slug} API_URL={API_URL} whatsapp={negocio?.whatsapp} />
             )}
