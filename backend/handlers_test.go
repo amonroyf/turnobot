@@ -309,3 +309,134 @@ func contiene(xs []string, s string) bool {
 	}
 	return false
 }
+
+func TestBookMuyProntoRechazado(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-notice")
+	seedTienda(t, ctx, slug)
+
+	// Slot hoy: siguiente fracción de 30 min (siempre < 120 min de aviso).
+	now := time.Now()
+	hora := now.Truncate(30 * time.Minute)
+	if !hora.After(now) {
+		hora = hora.Add(30 * time.Minute)
+	}
+	fecha := hora.Format("2006-01-02")
+
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": hora.Format("15:04"),
+		"clienteNombre": "Juan", "clienteTelefono": "+573001234567",
+	})
+	if code != http.StatusBadRequest || out["error"] != "muy_pronto" {
+		t.Fatalf("code=%d out=%v (esperaba 400 muy_pronto)", code, out)
+	}
+	if ids := reservaIDsPorTelefono(t, ctx, slug, "+573001234567"); len(ids) != 0 {
+		t.Fatalf("no debió crear reserva, hay %d", len(ids))
+	}
+}
+
+func TestBookMinNoticeConfigurable(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-notice-cfg")
+	seedTienda(t, ctx, slug)
+	// Negocio con aviso de solo 10 minutos.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"min_notice_minutes": 10,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+
+	now := time.Now()
+	hora := now.Truncate(30 * time.Minute)
+	if !hora.After(now) {
+		hora = hora.Add(30 * time.Minute)
+	}
+	// El slot debe existir en la jornada 09:00-18:00; si es de noche, usar mañana 09:30.
+	fecha := hora.Format("2006-01-02")
+	horaStr := hora.Format("15:04")
+	if hora.Hour() < 8 || hora.Hour() >= 18 {
+		fecha = mañanaStr()
+		horaStr = "09:30"
+	}
+
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": horaStr,
+		"clienteNombre": "Juan", "clienteTelefono": "+573001234567",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("code=%d out=%v (con aviso 10min debió pasar)", code, out)
+	}
+}
+
+func TestBookHoneypotFingeExito(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-honeypot")
+	seedTienda(t, ctx, slug)
+
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "09:30",
+		"clienteNombre": "Spam Bot", "clienteTelefono": "+573001234567",
+		"website": "http://spam.example",
+	})
+	if code != http.StatusCreated || out["success"] != true {
+		t.Fatalf("el honeypot debe fingir éxito: code=%d out=%v", code, out)
+	}
+	if ids := reservaIDsPorTelefono(t, ctx, slug, "+573001234567"); len(ids) != 0 {
+		t.Fatalf("el bot no debió crear nada, hay %d", len(ids))
+	}
+	if v := visitasCliente(t, ctx, slug, "+573001234567"); v != 0 {
+		t.Fatalf("visits=%d, esperaba 0", v)
+	}
+}
+
+func TestBookConNotasYPersistencia(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-notas")
+	seedTienda(t, ctx, slug)
+	phone := "+573001234567"
+
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "09:30",
+		"clienteNombre": "Juan", "clienteTelefono": phone,
+		"clienteNotas": "Corte degradado, alérgico a la loción X",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book code=%d", code)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, phone)
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, err := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var b Booking
+	doc.DataTo(&b)
+	if b.Notes != "Corte degradado, alérgico a la loción X" {
+		t.Fatalf("notes=%q", b.Notes)
+	}
+
+	// Notas demasiado largas se rechazan.
+	largas := ""
+	for i := 0; i < 501; i++ {
+		largas += "x"
+	}
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:30",
+		"clienteNombre": "Juan", "clienteTelefono": phone,
+		"clienteNotas": largas,
+	})
+	if code != http.StatusBadRequest || out["error"] != "notas_muy_largas" {
+		t.Fatalf("code=%d out=%v", code, out)
+	}
+}

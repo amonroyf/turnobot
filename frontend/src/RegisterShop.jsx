@@ -140,6 +140,7 @@ export default function RegisterShop() {
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           open_time: '09:00',
           close_time: '18:00',
+          min_notice_minutes: 120,
           created_at: new Date(),
         });
       });

@@ -84,3 +84,61 @@ export function formatearTelefono(tel) {
   }
   return tel || '';
 }
+
+// fechaHoraAUtc convierte 'YYYY-MM-DD' + 'HH:MM' en la zona del negocio a
+// un Date UTC (para el .ics). Itera 2 veces para clavar el offset con DST.
+export function fechaHoraAUtc(yyyymmdd, hhmm, timezone) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyymmdd || '');
+  const h = /^(\d{2}):(\d{2})$/.exec(hhmm || '');
+  if (!m || !h) return null;
+  const tz = timezone || 'America/Bogota';
+  const target = Date.UTC(+m[1], +m[2] - 1, +m[3], +h[1], +h[2]);
+  let utc = target;
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hour12: false, year: 'numeric', month: '2-digit',
+      day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    });
+    for (let i = 0; i < 2; i++) {
+      const p = Object.fromEntries(dtf.formatToParts(new Date(utc)).map((x) => [x.type, x.value]));
+      const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+      utc += target - asUTC;
+    }
+  } catch {
+    // sin soporte de zona: se asume hora local del dispositivo
+  }
+  return new Date(utc);
+}
+
+const fICal = (d) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+const escICal = (s) => (s || '').replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+
+// descargarICS genera un .ics con la cita (recordatorios 1 día y 2 horas
+// antes) para "Añadir al calendario" sin backend.
+export function descargarICS({ slug, servicio, profesional, fecha, hora, duracionMin, direccion, timezone, notas }) {
+  const inicio = fechaHoraAUtc(fecha, hora, timezone);
+  if (!inicio) return;
+  const fin = new Date(inicio.getTime() + (duracionMin || 60) * 60000);
+  const uid = `${slug}-${fecha}-${hora.replace(':', '')}@turnobot`;
+  const desc = [`${servicio} con ${profesional}`, notas ? `Notas: ${notas}` : '']
+    .filter(Boolean).join('\\n');
+  const ics = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Turnobot//ES', 'BEGIN:VEVENT',
+    `UID:${uid}`, `DTSTAMP:${fICal(new Date())}`,
+    `DTSTART:${fICal(inicio)}`, `DTEND:${fICal(fin)}`,
+    `SUMMARY:${escICal(`${servicio} - ${profesional}`)}`,
+    `DESCRIPTION:${escICal(desc)}`,
+    `LOCATION:${escICal(direccion || '')}`,
+    'BEGIN:VALARM', 'TRIGGER:-P1D', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de cita', 'END:VALARM',
+    'BEGIN:VALARM', 'TRIGGER:-PT2H', 'ACTION:DISPLAY', 'DESCRIPTION:Recordatorio de cita', 'END:VALARM',
+    'END:VEVENT', 'END:VCALENDAR',
+  ].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cita-${fecha}-${hora.replace(':', '')}.ics`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

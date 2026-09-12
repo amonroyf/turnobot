@@ -46,19 +46,22 @@ var errSlotConflict = errors.New("slot ocupado por reserva concurrente")
 
 // Negocio (business) document stored in Firestore.
 type Negocio struct {
-	ID           string     `json:"id"`
-	Name         string     `firestore:"name" json:"name"`
-	OwnerUID     string     `firestore:"owner_uid" json:"-"`
-	RefreshToken string     `firestore:"refresh_token" json:"-"` // Oculto en JSON
-	CalendarID   string     `firestore:"calendar_id" json:"-"`   // Oculto en JSON
-	Whatsapp     string     `firestore:"whatsapp" json:"whatsapp"`
-	Direccion    string     `firestore:"direccion" json:"direccion"`
-	Telefono     string     `firestore:"telefono" json:"telefono"`
-	TimeZone     string     `firestore:"timezone" json:"timezone"`
-	OpenTime     string     `firestore:"open_time" json:"open_time"`
-	CloseTime    string     `firestore:"close_time" json:"close_time"`
-	Servicios    []Service  `json:"servicios"`
-	Empleados    []Employee `json:"empleados"`
+	ID           string `json:"id"`
+	Name         string `firestore:"name" json:"name"`
+	OwnerUID     string `firestore:"owner_uid" json:"-"`
+	RefreshToken string `firestore:"refresh_token" json:"-"` // Oculto en JSON
+	CalendarID   string `firestore:"calendar_id" json:"-"`   // Oculto en JSON
+	Whatsapp     string `firestore:"whatsapp" json:"whatsapp"`
+	Direccion    string `firestore:"direccion" json:"direccion"`
+	Telefono     string `firestore:"telefono" json:"telefono"`
+	TimeZone     string `firestore:"timezone" json:"timezone"`
+	OpenTime     string `firestore:"open_time" json:"open_time"`
+	CloseTime    string `firestore:"close_time" json:"close_time"`
+	// MinNoticeMinutes es la antelación mínima para reservar (default 120).
+	// Se configura por negocio; 0 o ausente = 120.
+	MinNoticeMinutes int        `firestore:"min_notice_minutes" json:"min_notice_minutes"`
+	Servicios        []Service  `json:"servicios"`
+	Empleados        []Employee `json:"empleados"`
 }
 
 // Turno represents a single work shift within a day.
@@ -109,6 +112,11 @@ type BookingRequest struct {
 	Hora            string `json:"hora"`
 	ClienteNombre   string `json:"clienteNombre"`
 	ClienteTelefono string `json:"clienteTelefono"`
+	// ClienteNotas es la descripción opcional de lo que necesita (máx 500).
+	ClienteNotas string `json:"clienteNotas,omitempty"`
+	// Website es un honeypot anti-bots: los humanos nunca lo llenan.
+	// Si trae valor, la reserva se finge exitosa sin escribir nada.
+	Website string `json:"website,omitempty"`
 }
 
 // Booking is a confirmed appointment.
@@ -125,6 +133,8 @@ type Booking struct {
 	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
 	CreatedAt      time.Time `firestore:"created_at"`
 	NoShow         bool      `firestore:"no_show" json:"no_show"`
+	// Notes es la descripción de lo que necesita el cliente.
+	Notes string `firestore:"notes,omitempty" json:"notes,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +363,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Honeypot anti-bots: si el campo trampa trae valor, se finge éxito sin
+	// escribir nada (no se le avisa al bot que fue detectado).
+	if req.Website != "" {
+		log.Printf("Honeypot activado en %s (bot bloqueado)", slug)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"message":  "Cita agendada exitosamente",
+			"event_id": "mock_event_123",
+		})
+		return
+	}
+
 	// Validar campos requeridos
 	if req.ServicioID == "" || req.EmpleadoID == "" || req.Fecha == "" || req.Hora == "" || req.ClienteNombre == "" || req.ClienteTelefono == "" {
 		w.Header().Set("Content-Type", "application/json")
@@ -373,6 +397,18 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			"success": false,
 			"error":   "invalid_name",
 			"message": "El nombre debe tener entre 1 y 100 caracteres.",
+		})
+		return
+	}
+
+	// Validar longitud de las notas (máx 500 caracteres)
+	if len(req.ClienteNotas) > 500 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "notas_muy_largas",
+			"message": "La descripción no puede superar los 500 caracteres.",
 		})
 		return
 	}
@@ -436,6 +472,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Antelación mínima: no se puede reservar con menos aviso del configurado
+	// por el negocio (default 2 horas).
+	minNotice := negocioMinNotice(ctx, slug)
+	if time.Until(eventDateTime) < time.Duration(minNotice)*time.Minute {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "muy_pronto",
+			"message": fmt.Sprintf("Las reservas requieren al menos %d horas de anticipación. Por favor elige otro horario o comunícate con el local.", (minNotice+59)/60),
+		})
+		return
+	}
+
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
 	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
 	if err != nil {
@@ -473,7 +523,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
 	// con la duración real del servicio.
-	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime)
+	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, req.ClienteNotas)
 
 	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
 	// transacción para cerrar la race condition de doble reserva, y crea la
@@ -520,6 +570,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			DateTime:       eventDateTime,
 			CalendarEvt:    eventID,
 			CreatedAt:      time.Now(),
+			Notes:          req.ClienteNotas,
 		}); err != nil {
 			return err
 		}
@@ -632,6 +683,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		EmpName    string `json:"emp_name"`
 		Cancelable bool   `json:"cancelable"`
 		Iso        string `json:"iso"`
+		Notes      string `json:"notes,omitempty"`
 	}
 
 	citas := []citaJSON{}
@@ -647,6 +699,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			EmpName:    empNames[b.EmpID],
 			Cancelable: b.DateTime.Sub(now) >= 2*time.Hour,
 			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
+			Notes:      b.Notes,
 		})
 	}
 
@@ -1041,6 +1094,21 @@ func getShopTimeZone(ctx context.Context, slug string) string {
 	return negocio.TimeZone
 }
 
+// negocioMinNotice devuelve la antelación mínima de reserva en minutos
+// configurada por el negocio (default 120 si no existe o es inválida).
+func negocioMinNotice(ctx context.Context, slug string) int {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return 120
+	}
+	var n Negocio
+	doc.DataTo(&n)
+	if n.MinNoticeMinutes <= 0 {
+		return 120
+	}
+	return n.MinNoticeMinutes
+}
+
 // shopLocation devuelve el *time.Location del negocio, resolviendo la zona
 // horaria desde Firestore con respaldo a Bogotá si es inválida o no existe.
 func shopLocation(ctx context.Context, slug string) *time.Location {
@@ -1269,6 +1337,9 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	now := time.Now()
 	maxBookingTime := now.Add(30 * 24 * time.Hour)
 
+	// Antelación mínima: no se ofrecen slots con menos aviso del configurado.
+	earliest := now.Add(time.Duration(negocioMinNotice(ctx, negocioID)) * time.Minute)
+
 	// Collect busy periods from Google Calendar for all shift intervals
 	var busyPeriods [][2]time.Time
 	if err != nil {
@@ -1276,7 +1347,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
 		for _, iv := range shiftIntervals {
 			for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
-				if t.After(now) && t.Before(maxBookingTime) {
+				if t.After(earliest) && t.Before(maxBookingTime) {
 					slots = append(slots, t.Format("15:04"))
 				}
 				if len(slots) >= 12 {
@@ -1330,7 +1401,7 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 						break
 					}
 				}
-				if free && currentTime.After(now) && currentTime.Before(maxBookingTime) {
+				if free && currentTime.After(earliest) && currentTime.Before(maxBookingTime) {
 					slots = append(slots, currentTime.Format("15:04"))
 				}
 				currentTime = currentTime.Add(slotDuration)
@@ -1482,7 +1553,7 @@ func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart tim
 }
 
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
-func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time) string {
+func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time, notes string) string {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
 	if err != nil {
 		log.Printf("Aviso: %v. Generando mock event ID.", err)
@@ -1497,7 +1568,7 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 
 	evt := &calendar.Event{
 		Summary:     fmt.Sprintf("Cita - %s", serviceName),
-		Description: "Agendado automáticamente vía Turnobot Web",
+		Description: "Agendado automáticamente vía Turnobot Web" + firstLinesSuffix(notes),
 		Start: &calendar.EventDateTime{
 			DateTime: start.Format(time.RFC3339),
 			TimeZone: tzString,
@@ -1513,6 +1584,19 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 		return ""
 	}
 	return created.Id
+}
+
+// firstLinesSuffix agrega las notas del cliente a la descripción del evento
+// (máx 200 caracteres para no saturar el calendario).
+func firstLinesSuffix(notes string) string {
+	n := strings.TrimSpace(notes)
+	if n == "" {
+		return ""
+	}
+	if len(n) > 200 {
+		n = n[:200] + "…"
+	}
+	return "\nNotas del cliente: " + n
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,26 @@ test.describe('Regresión visual', () => {
     await expect(page).toHaveScreenshot('booking-paso-2.png', { animations: 'disabled' });
   });
 
+  test('booking paso 4: horarios y formulario de confirmación', async ({ page }) => {
+    await page.goto(`/shop/${SLUG}`);
+    await page.getByText('Corte y Barba').first().click();
+    await page.getByText('Alejandro', { exact: true }).click();
+    await elegirDiaEnCalendario(page, mañana());
+    const slot = page.locator('div.grid-cols-3 button').first();
+    await expect(slot).toBeVisible();
+    await slot.click();
+    await expect(page.getByPlaceholder('Tu Nombre completo')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Confirmar Reserva' })).toBeVisible();
+    await expect(page).toHaveScreenshot('booking-paso-4.png', {
+      animations: 'disabled',
+      fullPage: true,
+      mask: [
+        page.locator('h2', { hasText: 'Horarios para el' }),
+        page.locator('#step-5 p').last(),
+      ],
+    });
+  });
+
   test('mis citas: estado inicial', async ({ page }) => {
     await page.goto(`/shop/${SLUG}`);
     await page.getByRole('button', { name: /Mis Citas/ }).click();

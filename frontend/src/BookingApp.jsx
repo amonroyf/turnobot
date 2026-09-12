@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
-import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono } from './fecha.js';
+import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS } from './fecha.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
@@ -128,7 +128,9 @@ export default function BookingApp() {
     fecha: '',
     hora: '',
     clienteNombre: '',
-    clienteTelefono: ''
+    clienteTelefono: '',
+    clienteNotas: '',
+    website: '',
   });
 
   useEffect(() => {
@@ -209,6 +211,13 @@ export default function BookingApp() {
         await fetchHorarios(booking.fecha, { preserveError: true });
         return;
       }
+      // 400 con mensaje (servicio inexistente, muy pronto, notas largas...):
+      // se muestra el motivo sin perder el formulario.
+      if (data?.message) {
+        setError(data.message);
+        setLoading(false);
+        return;
+      }
       setError("Hubo un problema al agendar. Intenta de nuevo.");
     } catch (err) {
       setError("Hubo un problema al agendar");
@@ -216,8 +225,21 @@ export default function BookingApp() {
     setLoading(false);
   };
 
-  const reiniciarAgendamiento = () => {
-    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '' });
+  const descargarMiICS = () => {
+    descargarICS({
+      slug,
+      servicio: servicioElegido?.name || '',
+      profesional: empleadoElegido?.name || '',
+      fecha: booking.fecha,
+      hora: booking.hora,
+      duracionMin: servicioElegido?.duration_minutes || 60,
+      direccion: negocio?.direccion || '',
+      timezone: negocio?.timezone || 'America/Bogota',
+      notas: booking.clienteNotas || '',
+    });
+  };
+
+  const reiniciarAgendamiento = () => {    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '' });
     setSlots([]);
     setError('');
     setStep(1);
@@ -465,6 +487,23 @@ export default function BookingApp() {
                         onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
                         className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                       />
+                      <textarea
+                        placeholder="¿Algo que debamos saber? (opcional, máx 500 caracteres)"
+                        aria-label="Descripción de lo que necesitas (opcional)"
+                        rows={2}
+                        maxLength={500}
+                        value={booking.clienteNotas}
+                        onChange={e => setBooking({ ...booking, clienteNotas: e.target.value })}
+                        className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black resize-none"
+                      />
+                      {/* Honeypot anti-bots: invisible para humanos */}
+                      <input
+                        type="text" tabIndex={-1} autoComplete="off" aria-hidden="true"
+                        name="website" placeholder="No llenar"
+                        value={booking.website}
+                        onChange={e => setBooking({ ...booking, website: e.target.value })}
+                        className="absolute -left-[9999px] top-auto w-px h-px opacity-0"
+                      />
                       <button
                         type="submit"
                         disabled={loading}
@@ -490,6 +529,7 @@ export default function BookingApp() {
                           <p><strong>Servicio:</strong> {servicioElegido?.name}</p>
                           <p><strong>Profesional:</strong> {empleadoElegido?.name}</p>
                           <p><strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)} - {booking.hora}</p>
+                          {booking.clienteNotas && <p><strong>Notas:</strong> {booking.clienteNotas}</p>}
                         </div>
                         {negocio.whatsapp && (
                           <a
@@ -502,12 +542,26 @@ export default function BookingApp() {
                             💬 Enviar mensaje por WhatsApp
                           </a>
                         )}
+                        <button
+                          type="button"
+                          onClick={descargarMiICS}
+                          className="block w-full py-3.5 bg-white border border-gray-200 text-gray-800 font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
+                        >
+                          📅 Añadir al calendario (.ics)
+                        </button>
                       </>
                     ) : (
                       <>
                         <div className="text-4xl">✅</div>
                         <h2 className="text-lg font-bold text-gray-900">¡Mensaje Enviado!</h2>
                         <p className="text-xs text-gray-500">Te esperamos el {formatearFechaLarga(booking.fecha)} a las {booking.hora}.</p>
+                        <button
+                          type="button"
+                          onClick={descargarMiICS}
+                          className="block w-full py-3.5 bg-white border border-gray-200 text-gray-800 font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
+                        >
+                          📅 Añadir al calendario (.ics)
+                        </button>
                       </>
                     )}
                     <button onClick={reiniciarAgendamiento} className="text-xs text-gray-500 font-semibold underline pt-2">

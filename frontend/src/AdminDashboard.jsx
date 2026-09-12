@@ -452,6 +452,7 @@ export default function AdminDashboard() {
             <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
             <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
+            {r.notes && <p className="text-xs text-gray-600 mt-1 italic">📝 {r.notes}</p>}
           </div>
           
           {isNoShow ? (

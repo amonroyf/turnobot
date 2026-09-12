@@ -126,8 +126,9 @@ test.describe('Turnobot E2E Suite', () => {
     await expect(page.getByText('Cita cancelada')).toBeVisible();
     await expect(page.getByText('El espacio en la agenda ha sido liberado.')).toBeVisible();
 
-    // Verificar que Firestore ya no tiene la reserva
+    // Verificar que la reserva quedó marcada como cancelada
     const snap = await db.collection('reservas').where('user_phone', '==', phone).get();
-    expect(snap.empty).toBe(true);
+    expect(snap.empty).toBe(false);
+    expect(snap.docs[0].data().cancelled).toBe(true);
   });
 });

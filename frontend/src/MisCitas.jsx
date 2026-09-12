@@ -144,6 +144,7 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
                 <p className="font-bold text-gray-900 text-sm">✨ {c.servicio}</p>
                 <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
                 <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
+                {c.notes && <p className="text-xs text-gray-500 italic">📝 {c.notes}</p>}
                 
                 {!cancelable ? (
                   <div className="mt-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-xl font-medium">
