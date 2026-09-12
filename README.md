@@ -8,7 +8,7 @@ Aplicación web para reservas de citas, con sincronización automática a Google
 - `frontend/` — app web en React + Vite + Tailwind (Firebase Hosting). Ver `frontend/README.md`.
 - `firestore.rules` — reglas de seguridad de Firestore.
 - `firestore.indexes.json` — índices compuestos de Firestore.
-- `scripts/` — despliegues, reglas, scheduler.
+- `scripts/` — despliegues, reglas y backup manual de Firestore.
 - `deploy.sh` — despliegue completo (backend + frontend).
 
 ## URLs de Producción

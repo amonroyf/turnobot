@@ -14,12 +14,11 @@ Documentación completa de todos los procesos de despliegue, infraestructura y c
 6. [Cloud Run (Backend)](#6-cloud-run-backend)
 7. [Firebase Hosting (Frontend)](#7-firebase-hosting-frontend)
 8. [Firestore (Base de Datos)](#8-firestore-base-de-datos)
-9. [Cloud Scheduler (Backups)](#9-cloud-scheduler-backups)
-10. [Backups Automáticos](#10-backups-automáticos)
-11. [Monitoreo y Health Checks](#11-monitoreo-y-health-checks)
-12. [Seguridad](#12-seguridad)
-13. [Troubleshooting](#13-troubleshooting)
-14. [Comandos de Referencia Rápida](#14-comandos-de-referencia-rápida)
+9. [Backups (manuales)](#9-backups-manuales)
+10. [Monitoreo y Health Checks](#10-monitoreo-y-health-checks)
+11. [Seguridad](#11-seguridad)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Comandos de Referencia Rápida](#13-comandos-de-referencia-rápida)
 
 ---
 
@@ -44,11 +43,6 @@ Documentación completa de todos los procesos de despliegue, infraestructura y c
 │  │  Auth        │          │  (Base de datos)  │              │
 │  └─────────────┘          └──────────────────┘              │
 │                                                               │
- │  ┌──────────────────────────────────────────────────────┐   │
- │  │              Cloud Scheduler                          │   │
- │  │  • firestore-backup-daily     (diario 2AM)           │   │
- │  └──────────────────────────────────────────────────────┘   │
- │                                                               │
  │  ┌──────────────────────────────────────────────────┐       │
  │  │  Google Calendar API                              │       │
  │  │  (Calendarios de empleados)                       │       │
@@ -97,7 +91,6 @@ go version  # >= 1.22
 | `roles/run.admin` | Cloud Run | Desplegar backend |
 | `roles/firebasehosting.admin` | Firebase Hosting | Desplegar frontend |
 | `roles/datastore.user` | Firestore | Leer/escribir datos |
-| `roles/cloudscheduler.admin` | Cloud Scheduler | Gestionar jobs |
 | `roles/iam.serviceAccountUser` | IAM | Usar service accounts |
 
 ### Service Account utilizada
@@ -448,52 +441,11 @@ TOKEN=$(gcloud auth print-access-token) \
 
 ---
 
-## 9. Cloud Scheduler (Backups)
+## 9. Backups (manuales)
 
-### Jobs activos
-
-| Job | Schedule | Timezone | Descripción |
-|-----|----------|----------|-------------|
-| `firestore-backup-daily` | `0 7 * * *` | America/Bogota | Backup diario a las 2AM Colombia |
-
-### Crear/actualizar jobs
-
-```bash
-# Backup de Firestore
-gcloud scheduler jobs create http firestore-backup-daily \
-  --schedule="0 7 * * *" \
-  --time-zone="America/Bogota" \
-  --uri="https://console.cloud.google.com" \
-  --http-method=GET \
-  --oidc-service-account-email=850305350371-compute@developer.gserviceaccount.com \
-  --description="Backup diario de Firestore a las 2AM Colombia"
-```
-
-### Verificar jobs
-
-```bash
-# Listar todos los jobs
-gcloud scheduler jobs list
-```
-
----
-
-## 10. Backups Automáticos
-
-### Configuración
-
-| Parámetro | Valor |
-|-----------|-------|
-| Bucket | `gs://stalwart-coast-439901-d0-firestore-backups` |
-| Schedule | Diario a las 2AM Colombia (`0 7 * * *` UTC) |
-| Tipo | Exportación completa de Firestore |
-| Retención | Default GCP (30 días) |
-
-### Crear bucket de backups
-
-```bash
-gsutil mb -p stalwart-coast-439901-d0 -l us-central1 gs://stalwart-coast-439901-d0-firestore-backups
-```
+> Ya no hay jobs de Cloud Scheduler. Los jobs de recordatorios se eliminaron
+> junto con las notificaciones push, y el backup diario automático también se
+> dio de baja. Los backups se hacen manualmente con el script.
 
 ### Backup manual
 
@@ -518,9 +470,20 @@ gcloud firestore import gs://stalwart-coast-439901-d0-firestore-backups/2026-09-
   --project=stalwart-coast-439901-d0
 ```
 
+### Recrear el backup diario automático (opcional)
+
+```bash
+gcloud scheduler jobs create http firestore-backup-daily \
+  --schedule="0 7 * * *" \
+  --time-zone="America/Bogota" \
+  --uri="https://us-central1-firestore.googleapis.com/v1/projects/stalwart-coast-439901-d0/databases/(default):exportDocuments" \
+  --http-method=POST \
+  --oidc-service-account-email=850305350371-compute@developer.gserviceaccount.com
+```
+
 ---
 
-## 11. Monitoreo y Health Checks
+## 10. Monitoreo y Health Checks
 
 ### Health check endpoint
 
@@ -588,7 +551,7 @@ gcloud run services describe turnobot --region us-central1 --format="value(statu
 
 ---
 
-## 12. Seguridad
+## 11. Seguridad
 
 ### Middlewares activos
 
@@ -644,7 +607,7 @@ Strict-Transport-Security: max-age=63072000; includeSubDomains (solo HTTPS)
 
 ---
 
-## 13. Troubleshooting
+## 12. Troubleshooting
 
 ### El frontend no carga
 
@@ -690,19 +653,9 @@ firebase --project stalwart-coast-439901-d0 firestore:indexes:list
 # Si hay errores de índice faltante, Firebase Console mostrará un link para crearlo
 ```
 
-### Cloud Scheduler (backups) no ejecuta
-
-```bash
-# Verificar estado del job
-gcloud scheduler jobs describe firestore-backup-daily
-
-# Ver logs de ejecución
-gcloud logging read "resource.type=cloud_scheduler_job" --limit 10
-```
-
 ---
 
-## 14. Comandos de Referencia Rápida
+## 13. Comandos de Referencia Rápida
 
 ### Despliegue
 
@@ -748,13 +701,6 @@ gcloud firestore export list --project=stalwart-coast-439901-d0
 
 # Desplegar reglas
 TOKEN=$(gcloud auth print-access-token) node scripts/deploy-rules.mjs
-```
-
-### Cloud Scheduler
-
-```bash
-# Listar jobs
-gcloud scheduler jobs list
 ```
 
 ### Tests

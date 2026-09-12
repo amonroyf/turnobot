@@ -10,13 +10,13 @@
   },
   "dependencies": {
     "firebase": "^12.18.0",
-    "firebase-admin": "^13.10.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "firebase-admin": "^13.10.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
     "tailwindcss": "^4.3.3",

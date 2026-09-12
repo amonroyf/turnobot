@@ -30,8 +30,5 @@ Thumbs.DB
 .vscode/
 .idea/
 
-# Frontend package-lock (se genera localmente)
-frontend/package-lock.json
-
 # Archivos temporales
 /tmp/
