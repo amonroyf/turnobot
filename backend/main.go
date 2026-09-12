@@ -66,8 +66,8 @@ type Negocio struct {
 	MaxBookingsPerPhonePerDay int `firestore:"max_bookings_per_phone_per_day" json:"max_bookings_per_phone_per_day"`
 	// ReminderDaysBefore y ReminderHoursBefore configuran los recordatorios
 	// de Calendar e ICS (defaults 1 día y 2 horas antes).
-	ReminderDaysBefore  int        `firestore:"reminder_days_before" json:"reminder_days_before"`
-	ReminderHoursBefore int        `firestore:"reminder_hours_before" json:"reminder_hours_before"`
+	ReminderDaysBefore  int `firestore:"reminder_days_before" json:"reminder_days_before"`
+	ReminderHoursBefore int `firestore:"reminder_hours_before" json:"reminder_hours_before"`
 	// Suspended marca un negocio suspendido por el super admin: no acepta
 	// reservas nuevas (slots y book responden 403).
 	Suspended bool       `firestore:"suspended" json:"suspended"`
@@ -109,13 +109,13 @@ type Employee struct {
 
 // Service offered by a business.
 type Service struct {
-	ID            string `json:"id"`
-	Name          string `firestore:"name" json:"name"`
-	Duration      int    `firestore:"duration_minutes" json:"duration_minutes"`
-	Price         string `firestore:"price" json:"price"`
+	ID       string `json:"id"`
+	Name     string `firestore:"name" json:"name"`
+	Duration int    `firestore:"duration_minutes" json:"duration_minutes"`
+	Price    string `firestore:"price" json:"price"`
 	// BufferMinutes es el tiempo de preparación/limpieza entre citas de este
 	// servicio (default 0). Se añade a la duración al calcular slots.
-	BufferMinutes int    `firestore:"buffer_minutes" json:"buffer_minutes"`
+	BufferMinutes int `firestore:"buffer_minutes" json:"buffer_minutes"`
 }
 
 // BookingRequest is the payload sent by the web frontend.
@@ -135,21 +135,21 @@ type BookingRequest struct {
 
 // Booking is a confirmed appointment.
 type Booking struct {
-	NegocioID      string    `firestore:"negocio_id"`
-	OwnerUID       string    `firestore:"owner_uid"`
-	EmpID          string    `firestore:"emp_id"`
-	UserPhone      string    `firestore:"user_phone"`
-	ClientName     string    `firestore:"client_name"`
-	ServiceName    string    `firestore:"service_name"`
-	DurationMinute int       `firestore:"duration_minutes,omitempty"`
+	NegocioID      string `firestore:"negocio_id"`
+	OwnerUID       string `firestore:"owner_uid"`
+	EmpID          string `firestore:"emp_id"`
+	UserPhone      string `firestore:"user_phone"`
+	ClientName     string `firestore:"client_name"`
+	ServiceName    string `firestore:"service_name"`
+	DurationMinute int    `firestore:"duration_minutes,omitempty"`
 	// BufferMinutes se persiste para que el intervalo bloqueado (duración +
 	// buffer) siga aplicando al recalcular slots aunque cambie la config.
 	BufferMinutes int       `firestore:"buffer_minutes,omitempty"`
-	Price          int       `firestore:"price"`
-	DateTime       time.Time `firestore:"date_time"`
-	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
-	CreatedAt      time.Time `firestore:"created_at"`
-	NoShow         bool      `firestore:"no_show" json:"no_show"`
+	Price         int       `firestore:"price"`
+	DateTime      time.Time `firestore:"date_time"`
+	CalendarEvt   string    `firestore:"calendar_event_id,omitempty"`
+	CreatedAt     time.Time `firestore:"created_at"`
+	NoShow        bool      `firestore:"no_show" json:"no_show"`
 	// Notes es la descripción de lo que necesita el cliente.
 	Notes string `firestore:"notes,omitempty" json:"notes,omitempty"`
 }
@@ -384,12 +384,13 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Agrega la lectura del servicio para calcular saltos según su duración real
-	// más el buffer configurado (limpieza/preparación entre citas).
-	// (si el servicio no existe se usa el fallback de 60 min solo para previsualizar).
-	_, duration, buffer, _, _ := resolveService(r.Context(), slug, servicioID)
+	// Agrega la lectura del servicio para calcular la rejilla según su duración
+	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
+	// El buffer del servicio NO cambia la rejilla: solo amplía la ventana
+	// bloqueada después de cada cita (ver firestoreBookedIntervals).
+	_, duration, _, _, _ := resolveService(r.Context(), slug, servicioID)
 
-	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration+buffer)
+	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error obteniendo slots: %v", err)
 		http.Error(w, "Error calculando disponibilidad", http.StatusInternalServerError)
@@ -544,7 +545,9 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
-	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration+buffer)
+	// Verificación con la rejilla de duración pura: el buffer bloquea huecos
+	// tras las citas existentes, no los horarios de inicio ofrecidos.
+	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error verificando disponibilidad en el calendario: %v", err)
 		http.Error(w, "Error verificando disponibilidad en el calendario", http.StatusInternalServerError)
@@ -1546,6 +1549,9 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	// Excluir los horarios ya reservados en Firestore (fuente de verdad local).
 	// Esto protege contra la doble reserva del mismo slot aunque el empleado no
 	// tenga Google Calendar vinculado (modo mock) o hay latencia en el freebusy.
+	// Los intervalos reservados incluyen el buffer vigente del servicio, así que
+	// la pausa de limpieza/preparación bloquea la cita siguiente sin cambiar la
+	// rejilla de horarios ofrecidos (paso = duración del servicio).
 	var bookStart, bookEnd time.Time
 	if len(shiftIntervals) > 0 {
 		bookStart = shiftIntervals[0][0]
@@ -1599,6 +1605,33 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 	}
 
 	var intervals [][2]time.Time
+	// Buffer configurado del servicio de cada reserva: leerlo del servicio
+	// vigente (no del snapshot de la reserva) para que cambiar la "Pausa" en
+	// el panel regenere la agenda inmediatamente, incluso para citas viejas.
+	bufferCache := map[string]int{}
+	resolveBuffer := func(serviceName string) int {
+		if buf, ok := bufferCache[serviceName]; ok {
+			return buf
+		}
+		buf := 0
+		for _, d := range docs {
+			var probe Booking
+			d.DataTo(&probe)
+			if probe.ServiceName != serviceName {
+				continue
+			}
+			if svcDoc, err := firestoreClient.Collection("negocios").Doc(negocioID).Collection("servicios").Where("name", "==", serviceName).Limit(1).Documents(context.Background()).GetAll(); err == nil && len(svcDoc) > 0 {
+				var svc Service
+				svcDoc[0].DataTo(&svc)
+				if svc.BufferMinutes > 0 {
+					buf = svc.BufferMinutes
+				}
+			}
+			break
+		}
+		bufferCache[serviceName] = buf
+		return buf
+	}
 	for _, d := range docs {
 		// Las canceladas liberan su horario (soft delete no bloquea).
 		if d.Data()["cancelled"] == true {
@@ -1607,7 +1640,7 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 		var b Booking
 		d.DataTo(&b)
 
-		dur := time.Duration(b.DurationMinute+b.BufferMinutes) * time.Minute
+		dur := time.Duration(b.DurationMinute+resolveBuffer(b.ServiceName)) * time.Minute
 		if dur <= 0 {
 			dur = 60 * time.Minute
 		}
@@ -1719,7 +1752,7 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 			DateTime: end.Format(time.RFC3339),
 			TimeZone: tzString,
 		},
-		Location: shopAddress,
+		Location:  shopAddress,
 		Reminders: remindersConfig(ctx, negocioID),
 	}
 	created, err := svc.Events.Insert(emp.CalendarID, evt).Context(ctx).Do()
@@ -1893,7 +1926,7 @@ func updateSettingsHandler(w http.ResponseWriter, r *http.Request, slug string) 
 
 	updates := []firestore.Update{}
 	if req.MinNoticeMinutes != nil {
-		updates = append(updates, firestore.Update{Path: "min_notice_minutes", Value: clamp(*req.MinNoticeMinutes, 0, 60 * 24 * 14)})
+		updates = append(updates, firestore.Update{Path: "min_notice_minutes", Value: clamp(*req.MinNoticeMinutes, 0, 60*24*14)})
 	}
 	if req.BookingWindowDays != nil {
 		updates = append(updates, firestore.Update{Path: "booking_window_days", Value: clamp(*req.BookingWindowDays, 1, 365)})
