@@ -319,6 +319,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Los paneles mutan vía SDK directo (addDoc/updateDoc) sin pasar por Go:
+	// tras hacerlo, llaman aquí para limpiar la RAM y evitar hasta 5min stale.
+	if len(parts) == 3 && parts[1] == "cache" && parts[2] == "invalidate" && r.Method == http.MethodPost {
+		invalidateCacheHandler(w, r, slug)
+		return
+	}
+
 	http.Error(w, "Ruta no encontrada", http.StatusNotFound)
 }
 
@@ -1109,6 +1116,9 @@ func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 	// CRM: las citas eliminadas en cascada también restan del directorio.
 	decrementClienteBulk(ctx, slug, affected)
 
+	// INVALIDAR CACHÉ: releer los servicios restantes en la próxima consulta.
+	negocioCache.Invalidate(slug)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
@@ -1174,6 +1184,9 @@ func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 		return
 	}
 
+	// INVALIDAR CACHÉ: refleja cambios de precio o nombre de inmediato.
+	negocioCache.Invalidate(slug)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
@@ -1215,11 +1228,31 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	// CRM: las citas eliminadas en cascada también restan del directorio.
 	decrementClienteBulk(ctx, slug, affected)
 
+	// INVALIDAR CACHÉ: releer el equipo restante en la próxima consulta.
+	negocioCache.Invalidate(slug)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":        true,
 		"message":        "Profesional eliminado",
 		"citas_borradas": deleted,
+	})
+}
+
+// POST /api/v1/b/{slug}/cache/invalidate -> limpia la caché en RAM del negocio.
+// La usan los paneles tras mutaciones vía SDK directo (addDoc/updateDoc de
+// servicios, empleados, horarios o datos del local), que el backend no ve.
+// Solo invalida memoria; no toca Firestore. Acepta dueño o Super Admin.
+func invalidateCacheHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if !isOwnerRequest(r, slug) && !isSuperAdminRequest(r) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	negocioCache.Invalidate(slug)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Caché invalidada",
 	})
 }
 

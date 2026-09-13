@@ -374,12 +374,27 @@ export default function AdminDashboard() {
     }
   };
 
+  // Avisa al backend para limpiar su caché en RAM tras mutaciones vía SDK
+  // (addDoc/updateDoc no pasan por Go). Fire-and-forget: si falla, el TTL
+  // de 5 min lo corrige solo.
+  const invalidarCache = async () => {
+    try {
+      const token = await user.getIdToken();
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/cache/invalidate`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error('No se pudo invalidar caché:', err);
+    }
+  };
+
   const handleGuardarInfoLocal = async (e) => {
     e.preventDefault();
     setGuardandoInfo(true);
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
       setNegocio(prev => ({ ...prev, ...infoLocal }));
+      invalidarCache();
       alert('Información del local actualizada');
     } catch (err) {
       alert('Error al actualizar la información');
@@ -397,6 +412,7 @@ export default function AdminDashboard() {
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), { whatsapp: limpio });
       setNegocio({ ...negocio, whatsapp: limpio });
+      invalidarCache();
       alert('WhatsApp actualizado');
     } catch (err) {
       alert('No se pudo actualizar el WhatsApp. Intenta nuevamente.');
@@ -413,6 +429,7 @@ export default function AdminDashboard() {
         price: nuevoServicio.price,
       });
       setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
+      invalidarCache();
     } catch (err) {
       alert('Error al guardar el servicio');
     }
@@ -429,6 +446,7 @@ export default function AdminDashboard() {
         servicios_ids: servicios.map((s) => s.id),
       });
       setNuevoProfesional({ name: '' });
+      invalidarCache();
     } catch (err) {
       alert('Error al guardar el profesional');
     }
@@ -953,8 +971,8 @@ export default function AdminDashboard() {
         </button>
       </nav>
 
-      {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => setHorarioModal(null)} />}
-      {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => setServiciosModal(null)} />}
+      {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => { setHorarioModal(null); invalidarCache(); }} />}
+      {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
     </div>
   );
 }

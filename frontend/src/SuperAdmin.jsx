@@ -419,6 +419,15 @@ export default function SuperAdmin() {
         suspended: !currentlySuspended,
         suspended_at: currentlySuspended ? null : new Date(),
       });
+      // Limpiar la caché del backend (el banner de suspendido se sirve vía API).
+      try {
+        const token = await auth.currentUser.getIdToken();
+        await fetch(`${API_URL}/api/v1/b/${negocioId}/cache/invalidate`, {
+          method: 'POST', headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (err) {
+        console.error('No se pudo invalidar caché:', err);
+      }
       alert(`✅ Negocio ${currentlySuspended ? 'reactivado' : 'suspendido'} correctamente.`);
     } catch (err) {
       console.error(`Error al ${action} negocio:`, err);
