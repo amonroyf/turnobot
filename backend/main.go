@@ -40,6 +40,24 @@ var (
 // escritura. Se usa para abortar la transacción de reserva.
 var errSlotConflict = errors.New("slot ocupado por reserva concurrente")
 
+// errServicioNoOfrecido indica que el empleado no ofrece el servicio (su
+// lista servicios_ids cambió a mitad de la reserva). Aborta la transacción.
+var errServicioNoOfrecido = errors.New("empleado no ofrece el servicio")
+
+// ofreceServicio dice si el empleado puede realizar el servicio.
+// Lista nil (empleados antiguos) = ofrece todos.
+func ofreceServicio(emp Employee, servicioID string) bool {
+	if emp.ServiciosIDs == nil {
+		return true
+	}
+	for _, sID := range emp.ServiciosIDs {
+		if sID == servicioID {
+			return true
+		}
+	}
+	return false
+}
+
 // ---------------------------------------------------------------------------
 // Data Models (optimizados para JSON y Firestore)
 // ---------------------------------------------------------------------------
@@ -105,6 +123,10 @@ type Employee struct {
 	CalendarID string          `firestore:"calendar_id" json:"-"`
 	Phone      string          `firestore:"phone" json:"-"`
 	Horario    *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
+	// ServiciosIDs limita qué servicios ofrece el empleado. Nil = todos
+	// (empleados antiguos sin el campo). Se expone en JSON para que el
+	// frontend filtre el paso 2.
+	ServiciosIDs []string `firestore:"servicios_ids" json:"servicios_ids"`
 }
 
 // Service offered by a business.
@@ -507,6 +529,26 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// El empleado debe ofrecer este servicio (multi-especialidad). Falla
+	// rápido aquí; la transacción lo re-verifica contra TOCTOU.
+	empDoc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID).Get(ctx)
+	if err != nil {
+		http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
+		return
+	}
+	var empData Employee
+	empDoc.DataTo(&empData)
+	if !ofreceServicio(empData, req.ServicioID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "servicio_no_ofrecido",
+			"message": "El profesional seleccionado no realiza este servicio. Por favor, elige a otro profesional.",
+		})
+		return
+	}
+
 	// Antelación mínima: no se puede reservar con menos aviso del configurado
 	// por el negocio (default 0 = citas inmediatas).
 	minNotice := negocioMinNotice(ctx, slug)
@@ -610,11 +652,24 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 					return errSlotConflict
 				}
 			}
-			// Lectura del cliente ANTES de cualquier escritura: Firestore
-			// prohíbe "read after write" dentro de una transacción.
+			// Lecturas ANTES de cualquier escritura: Firestore prohíbe
+			// "read after write" dentro de una transacción.
 			cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
 			cliDoc, errCli := tx.Get(cliRef)
 			isNewClient := errCli != nil || !cliDoc.Exists()
+
+			// Re-verificar especialidad dentro de la transacción: el dueño
+			// pudo editar servicios_ids entre la validación previa y el commit.
+			empRef := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID)
+			empSnap, errEmp := tx.Get(empRef)
+			if errEmp != nil {
+				return errEmp
+			}
+			var empTxn Employee
+			empSnap.DataTo(&empTxn)
+			if !ofreceServicio(empTxn, req.ServicioID) {
+				return errServicioNoOfrecido
+			}
 
 			if err := tx.Create(newRef, Booking{
 				NegocioID:      slug,
@@ -660,12 +715,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Reintentos con backoff para contención transaccional ("Transaction lock
-	// timeout" bajo picos concurrentes sobre el mismo slot). errSlotConflict
-	// es un conflicto real de agenda: se devuelve 409 sin reintentar.
+	// timeout" bajo picos concurrentes sobre el mismo slot). errSlotConflict y
+	// errServicioNoOfrecido son deterministas: no se reintentan.
 	var txnErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		txnErr = bookTxn()
-		if txnErr == nil || errors.Is(txnErr, errSlotConflict) {
+		if txnErr == nil || errors.Is(txnErr, errSlotConflict) || errors.Is(txnErr, errServicioNoOfrecido) {
 			break
 		}
 		log.Printf("Reintentando transacción de reserva en %s (intento %d/3): %v", slug, attempt+1, txnErr)
@@ -685,6 +740,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				"success": false,
 				"error":   "slot_taken",
 				"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
+			})
+			return
+		}
+		if errors.Is(txnErr, errServicioNoOfrecido) {
+			// Compensar igual que en slot ocupado: el evento ya se creó.
+			if eventID != "" && eventID != "mock_event_123" {
+				deleteCalendarEvent(ctx, slug, req.EmpleadoID, eventID)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "servicio_no_ofrecido",
+				"message": "El profesional seleccionado no realiza este servicio. Por favor, elige a otro profesional.",
 			})
 			return
 		}

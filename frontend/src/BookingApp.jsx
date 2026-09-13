@@ -410,7 +410,7 @@ export default function BookingApp() {
                   <div id="step-2" className={`scroll-mt-24 ${step > 2 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
                     <div className="grid grid-cols-2 gap-3">
-                      {negocio.empleados?.map(e => {
+                      {negocio.empleados?.filter((e) => !e.servicios_ids || e.servicios_ids.includes(booking.servicioId)).map(e => {
                         const isActive = booking.empleadoId === e.id;
                         return (
                           <button
@@ -432,6 +432,13 @@ export default function BookingApp() {
                           </button>
                         );
                       })}
+
+                      {/* Nadie ofrece el servicio seleccionado */}
+                      {(negocio.empleados?.filter((e) => !e.servicios_ids || e.servicios_ids.includes(booking.servicioId)).length || 0) === 0 && (
+                        <div className="col-span-2 p-4 text-center bg-gray-50 border border-gray-200 rounded-2xl">
+                          <p className="text-gray-500 font-semibold text-xs">No hay profesionales disponibles para este servicio en este momento.</p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

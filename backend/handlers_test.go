@@ -154,6 +154,32 @@ func TestBookServicioInvalido(t *testing.T) {
 	}
 }
 
+func TestBookServicioNoOfrecido(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-noofrece")
+	seedTienda(t, ctx, slug)
+
+	// emp1 solo ofrece "otro-svc": reservar svc1 debe rechazarse sin crear nada.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc("emp1").Set(ctx, map[string]interface{}{
+		"servicios_ids": []string{"otro-svc"},
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "09:30",
+		"clienteNombre": "Juan", "clienteTelefono": "+573001234567",
+	})
+	if code != http.StatusBadRequest || out["error"] != "servicio_no_ofrecido" {
+		t.Fatalf("code=%d out=%v (esperaba 400 servicio_no_ofrecido)", code, out)
+	}
+	if ids := reservaIDsPorTelefono(t, ctx, slug, "+573001234567"); len(ids) != 0 {
+		t.Fatalf("no debió crear reserva, hay %d", len(ids))
+	}
+}
+
 func TestBookTelefonoInvalido(t *testing.T) {
 	testFirestoreClient(t)
 	ctx := context.Background()

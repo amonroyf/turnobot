@@ -199,6 +199,68 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   );
 }
 
+export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose }) {
+  // Sin el array (empleado antiguo), se asume que hace todos por defecto.
+  const [seleccionados, setSeleccionados] = useState(
+    empleado.servicios_ids || servicios.map((s) => s.id)
+  );
+  const [guardando, setGuardando] = useState(false);
+
+  const toggleServicio = (id) => {
+    if (seleccionados.includes(id)) {
+      setSeleccionados(seleccionados.filter((sId) => sId !== id));
+    } else {
+      setSeleccionados([...seleccionados, id]);
+    }
+  };
+
+  const guardar = async () => {
+    setGuardando(true);
+    try {
+      await updateDoc(doc(db, `negocios/${negocioId}/empleados`, empleado.id), {
+        servicios_ids: seleccionados,
+      });
+      onClose();
+    } catch (err) {
+      alert('Error al guardar las especialidades.');
+    }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+      <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+        <h3 className="text-lg font-bold mb-1 text-gray-900">Especialidades</h3>
+        <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
+
+        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+          {servicios.map((s) => (
+            <label key={s.id} className="flex items-center gap-3 p-3 border border-gray-100 rounded-xl cursor-pointer hover:bg-gray-50">
+              <input
+                type="checkbox"
+                checked={seleccionados.includes(s.id)}
+                onChange={() => toggleServicio(s.id)}
+                className="w-5 h-5 accent-black"
+              />
+              <span className="text-sm font-semibold text-gray-800">{s.name}</span>
+            </label>
+          ))}
+          {servicios.length === 0 && <p className="text-xs text-gray-400">No hay servicios creados.</p>}
+        </div>
+
+        <div className="flex gap-2 justify-end mt-6">
+          <button onClick={onClose} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm">
+            Cancelar
+          </button>
+          <button onClick={guardar} disabled={guardando} className="px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50">
+            {guardando ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
@@ -218,6 +280,7 @@ export default function AdminDashboard() {
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
+  const [serviciosModal, setServiciosModal] = useState(null);
   const [whatsApp, setWhatsApp] = useState('');
   const [codigoPais, setCodigoPais] = useState('57');
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
@@ -360,7 +423,11 @@ export default function AdminDashboard() {
   const handleAddProfesional = async (e) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, `negocios/${negocio.id}/empleados`), { name: nuevoProfesional.name, calendar_id: '' });
+      await addDoc(collection(db, `negocios/${negocio.id}/empleados`), {
+        name: nuevoProfesional.name,
+        calendar_id: '',
+        servicios_ids: servicios.map((s) => s.id),
+      });
       setNuevoProfesional({ name: '' });
     } catch (err) {
       alert('Error al guardar el profesional');
@@ -840,6 +907,7 @@ export default function AdminDashboard() {
                       ) : (
                         <a href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`} className="flex-1 text-center py-2 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm">🔗 Vincular Calendar</a>
                       )}
+                      <button onClick={() => setServiciosModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">✂️ Especialidad</button>
                       <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
                     </div>
                   </li>
@@ -886,6 +954,7 @@ export default function AdminDashboard() {
       </nav>
 
       {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => setHorarioModal(null)} />}
+      {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => setServiciosModal(null)} />}
     </div>
   );
 }
