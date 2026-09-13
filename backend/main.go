@@ -57,8 +57,8 @@ type Negocio struct {
 	TimeZone     string `firestore:"timezone" json:"timezone"`
 	OpenTime     string `firestore:"open_time" json:"open_time"`
 	CloseTime    string `firestore:"close_time" json:"close_time"`
-	// MinNoticeMinutes es la antelación mínima para reservar (default 120).
-	// Se configura por negocio; 0 o ausente = 120.
+	// MinNoticeMinutes es la antelación mínima para reservar (default 0).
+	// Se configura por negocio; ausente o negativo = 0 (citas inmediatas).
 	MinNoticeMinutes int `firestore:"min_notice_minutes" json:"min_notice_minutes"`
 	// BookingWindowDays es la ventana de días visibles para reservar (default 30).
 	BookingWindowDays int `firestore:"booking_window_days" json:"booking_window_days"`
@@ -508,15 +508,24 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Antelación mínima: no se puede reservar con menos aviso del configurado
-	// por el negocio (default 2 horas).
+	// por el negocio (default 0 = citas inmediatas).
 	minNotice := negocioMinNotice(ctx, slug)
 	if time.Until(eventDateTime) < time.Duration(minNotice)*time.Minute {
+		// Mensaje acorde a la magnitud: con default 0 el único rechazo posible
+		// es un horario ya pasado (evita el absurdo "al menos 0 horas").
+		mensaje := fmt.Sprintf("Las reservas requieren al menos %d horas de anticipación. Por favor elige otro horario o comunícate con el local.", (minNotice+59)/60)
+		if minNotice < 60 {
+			mensaje = fmt.Sprintf("Las reservas requieren al menos %d minutos de anticipación. Por favor elige otro horario o comunícate con el local.", minNotice)
+		}
+		if minNotice <= 0 {
+			mensaje = "El horario elegido ya pasó. Por favor elige otro horario o comunícate con el local."
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "muy_pronto",
-			"message": fmt.Sprintf("Las reservas requieren al menos %d horas de anticipación. Por favor elige otro horario o comunícate con el local.", (minNotice+59)/60),
+			"message": mensaje,
 		})
 		return
 	}
@@ -1402,16 +1411,18 @@ func getShopTimeZone(ctx context.Context, slug string) string {
 }
 
 // negocioMinNotice devuelve la antelación mínima de reserva en minutos
-// configurada por el negocio (default 120 si no existe o es inválida).
+// configurada por el negocio (default 0 si no existe o es inválida).
 func negocioMinNotice(ctx context.Context, slug string) int {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
 	if err != nil {
-		return 120
+		return 0
 	}
 	var n Negocio
 	doc.DataTo(&n)
-	if n.MinNoticeMinutes <= 0 {
-		return 120
+
+	// El 0 es un valor legítimo (citas inmediatas). Solo se bloquean negativos.
+	if n.MinNoticeMinutes < 0 {
+		return 0
 	}
 	return n.MinNoticeMinutes
 }

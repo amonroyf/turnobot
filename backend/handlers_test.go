@@ -316,6 +316,12 @@ func TestBookMuyProntoRechazado(t *testing.T) {
 	ctx := context.Background()
 	slug := slugUnico("test-notice")
 	seedTienda(t, ctx, slug)
+	// Fijar aviso de 120 min explícito (el default del sistema ahora es 0).
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"min_notice_minutes": 120,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
 
 	// Slot hoy: siguiente fracción de 30 min (siempre < 120 min de aviso).
 	now := time.Now()
