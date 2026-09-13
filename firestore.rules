@@ -88,14 +88,27 @@ service cloud.firestore {
       // Bloqueo total: Ningún usuario puede crear citas desde el navegador. Solo el backend Go.
       allow create: if false;
 
-      // Lectura hiper-rápida y económica: Validación condicional directa de la propiedad.
-      allow read, update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
+      // Lectura: el dueño O el Super Admin (llaves maestras para el panel SaaS).
+      // Escritura (update/delete): solo el dueño — el Super Admin muta vía
+      // backend Go (Admin SDK, sin reglas), no hay path del frontend que lo necesite.
+      allow read: if request.auth != null && (
+        resource.data.owner_uid == request.auth.uid ||
+        request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+      );
+      allow update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
     }
 
     // 3. Colección principal: CLIENTES (CRM Optimizado)
     match /clientes/{clienteId} {
       allow create: if false; // Solo el backend actualiza métricas del CRM
-      allow read, update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
+
+      // Lectura: el dueño O el Super Admin (detalle del negocio en el panel SaaS).
+      // Escritura: solo el dueño, mismo criterio que reservas.
+      allow read: if request.auth != null && (
+        resource.data.owner_uid == request.auth.uid ||
+        request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+      );
+      allow update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
     }
   }
 }
