@@ -113,7 +113,7 @@ const features = [
   { icon: '📅', title: 'Calendario Inteligente', desc: 'Horarios reales por especialista. Sin doble reserva. Sin confusiones.', svg: CalendarSVG },
   { icon: '💰', title: 'Servicios y Precios', desc: 'Tus clientes ven todo antes de reservar. Transparencia total.' },
   { icon: '👥', title: 'Equipo Organizado', desc: 'Cada profesional con su agenda, servicios y especialidad.', svg: PeopleSVG },
-  { icon: '👥', title: 'CRM Automático', desc: 'Registro de visitas, gasto y fidelidad de cada cliente.' },
+  { icon: '👥', title: 'CRM Automático', desc: 'Directorio automático con registro de visitas y gasto por cliente.' },
   { icon: '📊', title: 'Panel de Control', desc: 'Agenda, clientes, servicios y estadísticas en un solo lugar.', svg: ChartSVG },
   { icon: '📱', title: 'Notificaciones', desc: 'Alerta al momento de cada reserva. Sin perderte nada.' },
 ];
@@ -164,16 +164,16 @@ function HeroSection() {
                 <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25">
                   Iniciar Mes de Prueba
                 </a>
-                <a href="#demo" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10">
-                  Ver demo
+                <a href="/shop/barberia-vip" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10">
+                  Ver demo interactiva
                 </a>
               </div>
             </FadeIn>
             <FadeIn delay={400}>
               <div className="mt-8 flex items-center gap-6 text-sm text-gray-500">
-                <span>✓ 30 días gratis</span>
-                <span>✓ Sin tarjeta</span>
-                <span>✓ 10 min setup</span>
+                <span>✓ 30 días de prueba</span>
+                <span>✓ Sin tarjeta de crédito</span>
+                <span>✓ Listo en 10 minutos</span>
               </div>
             </FadeIn>
           </div>
