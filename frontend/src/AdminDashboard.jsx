@@ -636,12 +636,17 @@ export default function AdminDashboard() {
         <div className="flex justify-between items-start gap-3">
           <div className={isPast && !isNoShow ? 'grayscale' : ''}>
             <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
-            <p className="text-xs font-bold text-green-700 mt-0.5">\n              📞 {formatearTelefono(r.user_phone)}
-            </p>
+            <p className="text-xs font-bold text-green-700 mt-0.5">📞 {formatearTelefono(r.user_phone)}</p>
             <p className="text-xs text-gray-500 font-medium mt-1">✂️ {r.service_name}</p>
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
             {r.notes && <p className="text-xs text-gray-600 mt-1 italic">📝 {r.notes}</p>}
           </div>
+          
+          {r.price > 0 && (
+            <span className="text-xs font-black text-gray-900 bg-gray-100 px-2.5 py-1 rounded-lg shrink-0">
+              {formatDinero(r.price)}
+            </span>
+          )}
           
           {isNoShow ? (
             <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
