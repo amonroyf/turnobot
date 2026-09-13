@@ -481,15 +481,30 @@ export default function AdminDashboard() {
   };
 
   const handleCancelarReserva = async (citaId) => {
-    if (!confirm('¿Seguro que deseas cancelar esta cita? Se eliminará del calendario del profesional.')) return;
+    const r = reservas.find((item) => item.id === citaId);
+    if (!r) return;
+
+    if (!confirm(`¿Seguro que deseas cancelar la cita de ${r.client_name}?`)) return;
+
     setCancelando(citaId);
     try {
       const token = await user.getIdToken();
-      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}`, {
-        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
-      });
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+
       if (res.ok) {
-        alert('Cita cancelada. El espacio quedó libre en la agenda.');
+        const t = r.date_time?.seconds * 1000;
+        const fechaStr = t ? diaKeyEnZona(t, zonaNegocio) : '';
+        const horaStr = t ? horaEnZona(t, zonaNegocio) : '';
+
+        const mensaje = `Hola ${r.client_name}, te informamos que tu cita de ${r.service_name} programada para el ${formatearFechaLarga(fechaStr)} a las ${horaStr} en ${negocio.name} ha sido cancelada.`;
+
+        window.location.href = `https://wa.me/${r.user_phone}?text=${encodeURIComponent(mensaje)}`;
       } else {
         const data = await res.json().catch(() => null);
         alert(data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.');

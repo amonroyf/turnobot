@@ -54,10 +54,16 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Error del servidor');
-      setCitaCancelada(cita);
-      setCitas(prev => prev.filter(c => c.id !== cita.id));
+
+      if (whatsapp) {
+        const mensaje = `Hola, acabo de cancelar mi cita de ${cita.servicio} para el ${formatearFechaLarga(cita.fecha)} a las ${cita.hora}. ¡Gracias!`;
+        window.location.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensaje)}`;
+      } else {
+        setCitaCancelada(cita);
+        setCitas((prev) => prev.filter((c) => c.id !== cita.id));
+      }
     } catch (err) {
-      setError("No pudimos cancelar la cita. Intenta de nuevo.");
+      setError('No pudimos cancelar la cita. Intenta de nuevo.');
     }
     setCancelando('');
   };
