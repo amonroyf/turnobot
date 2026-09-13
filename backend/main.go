@@ -1171,6 +1171,14 @@ func deleteNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	ctx := r.Context()
 
+	// 0. Limpiar Google Calendar ANTES de destruir Firestore: encuentra todas
+	// las citas futuras del tenant (strings vacíos = sin filtro) y borra sus
+	// eventos para no dejar citas fantasma en la agenda de los profesionales.
+	// Debe ir primero porque necesita los calendar_event_id (reservas) y los
+	// refresh_token (empleados) que se borran abajo.
+	_, citasAfectadas := cascadeDeleteCitas(ctx, slug, "", "")
+	deleteCitasCalendarEvents(ctx, slug, citasAfectadas)
+
 	// Helper para borrar documentos en lotes (batch).
 	// Trocea en bloques de 400 para respetar el límite de 500 writes por commit
 	// y soportar tenants con miles de documentos sin colapsar.
