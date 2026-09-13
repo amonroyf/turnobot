@@ -2,9 +2,9 @@ export default function PhoneMockup() {
   return (
     <div className="relative mx-auto w-[280px] sm:w-[300px]">
       {/* Phone frame */}
-      <div className="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl shadow-black/30">
+      <div className="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl shadow-black/30 z-10">
         {/* Notch */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-10"></div>
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-20"></div>
         
         {/* Screen */}
         <div className="bg-white rounded-[2.2rem] overflow-hidden">
@@ -69,7 +69,7 @@ export default function PhoneMockup() {
       </div>
 
       {/* Floating notification */}
-      <div className="absolute -top-4 -right-8 bg-white rounded-2xl shadow-xl border border-gray-100 p-3 max-w-[180px] animate-bounce">
+      <div className="absolute top-24 -right-2 sm:-right-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-3 max-w-[180px] animate-bounce">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">📱</div>
           <div>
