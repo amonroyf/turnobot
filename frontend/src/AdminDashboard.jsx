@@ -58,9 +58,31 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   const agregarTurno = (dia) => {
     const actuales = horario[dia]?.turnos || [];
     if (actuales.length >= 4) return;
+
+    // Sugerencia inteligente: arrancar 1h después del fin del último turno
+    // (tope 22:00, fin tope 23:59) para no duplicar el estático 14:00-18:00.
+    const aMinutos = (h) => {
+      const [hh, mm] = String(h || '14:00').split(':').map(Number);
+      return hh * 60 + (mm || 0);
+    };
+    const aHHMM = (mins) => `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    let nuevoInicio = '14:00';
+    let nuevoFin = '18:00';
+    if (actuales.length > 0) {
+      const finUltimo = aMinutos(actuales[actuales.length - 1].fin);
+      if (finUltimo >= 14 * 60 && finUltimo < 21 * 60) {
+        const ini = Math.min(finUltimo + 60, 22 * 60);
+        const fin = Math.min(ini + 180, 23 * 60 + 59);
+        if (fin > ini) {
+          nuevoInicio = aHHMM(ini);
+          nuevoFin = aHHMM(fin);
+        }
+      }
+    }
+
     setHorario({
       ...horario,
-      [dia]: { ...horario[dia], turnos: [...actuales, { inicio: '14:00', fin: '18:00' }] },
+      [dia]: { ...horario[dia], turnos: [...actuales, { inicio: nuevoInicio, fin: nuevoFin }] },
     });
   };
 
@@ -82,14 +104,25 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
     setGuardando(false);
   };
 
-  // MEJORA 5: Prevención de errores humanos (Inicio >= Fin)
+  // MEJORA 5: Prevención de errores humanos (Inicio >= Fin y solapamientos)
   const errorValidacion = (() => {
     for (const dia of DIAS_SEMANA) {
       const data = horario[dia];
       if (data?.activo && data?.turnos) {
+        // Validación 1: Inicio vs Fin
         for (const t of data.turnos) {
           if (t.inicio && t.fin && t.inicio >= t.fin) {
             return `Revisa el ${dia}: La hora de fin debe ser posterior a la de inicio.`;
+          }
+        }
+
+        // Validación 2: solapamiento entre turnos (ordenados por inicio)
+        if (data.turnos.length > 1) {
+          const turnosOrdenados = [...data.turnos].sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+          for (let i = 0; i < turnosOrdenados.length - 1; i++) {
+            if (turnosOrdenados[i].fin > turnosOrdenados[i + 1].inicio) {
+              return `Revisa el ${dia}: Los turnos de trabajo no pueden solaparse.`;
+            }
           }
         }
       }
@@ -767,16 +800,22 @@ export default function AdminDashboard() {
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                 />
                 <div className="flex gap-2">
-                  <input
-                    type="number" required placeholder="Minutos" inputMode="numeric" value={nuevoServicio.duration_minutes}
-                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, duration_minutes: e.target.value })}
-                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                  />
-                  <input
-                    type="number" required placeholder="Precio" inputMode="numeric" value={nuevoServicio.price}
-                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
-                    className="w-1/3 p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                  />
+                  <label className="flex-1 min-w-0">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
+                    <input
+                      type="number" required min={1} placeholder="Ej. 30" inputMode="numeric" value={nuevoServicio.duration_minutes}
+                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, duration_minutes: e.target.value })}
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex-1 min-w-0">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
+                    <input
+                      type="number" required min={0} placeholder="Ej. 20000" inputMode="numeric" value={nuevoServicio.price}
+                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
                 </div>
                 <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   + Agregar Servicio
