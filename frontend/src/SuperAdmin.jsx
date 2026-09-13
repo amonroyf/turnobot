@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth, provider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import {
-  collection, getDocs, doc, updateDoc, onSnapshot, query, where,
+  collection, doc, updateDoc, onSnapshot, query, where,
 } from 'firebase/firestore';
 import { formatearTelefono } from './fecha.js';
 
@@ -34,7 +34,7 @@ function MetricCard({ icon, label, value, sub }) {
 // NegocioCard — con badge de suspensión y botón de acción
 // ──────────────────────────────────────────────────────────────
 
-function NegocioCard({ negocio, stats, onSelect, selected, onToggleSuspend }) {
+function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
   const suspended = negocio.suspended === true;
 
   return (
@@ -69,7 +69,7 @@ function NegocioCard({ negocio, stats, onSelect, selected, onToggleSuspend }) {
           </div>
           <div className="text-right shrink-0">
             <p className={`text-lg font-black ${selected ? 'text-white' : 'text-gray-900'}`}>
-              {stats?.reservas || 0}
+              {negocio.stats_citas_activas || 0}
             </p>
             <p className={`text-[10px] font-bold uppercase ${selected ? 'text-gray-400' : 'text-gray-400'}`}>
               citas
@@ -78,13 +78,10 @@ function NegocioCard({ negocio, stats, onSelect, selected, onToggleSuspend }) {
         </div>
         <div className={`flex gap-4 mt-3 pt-3 border-t ${selected ? 'border-gray-700' : 'border-gray-100'}`}>
           <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
-            👥 {stats?.clientes || 0} clientes
+            👥 {negocio.stats_total_clientes || 0} clientes
           </span>
           <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
-            💰 {formatDinero(stats?.ingresos || 0)}
-          </span>
-          <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
-            ✂️ {stats?.servicios || 0} servicios
+            💰 {formatDinero(negocio.stats_ingresos_totales || 0)}
           </span>
         </div>
       </button>
@@ -384,7 +381,6 @@ export default function SuperAdmin() {
   const [user, setUser] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [negocios, setNegocios] = useState([]);
-  const [stats, setStats] = useState({});
   const [selectedNegocio, setSelectedNegocio] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -397,44 +393,14 @@ export default function SuperAdmin() {
     return unsub;
   }, []);
 
-  // Cargar todos los negocios y sus métricas
+  // Cargar todos los negocios y sus métricas embebidas (Zero Extra Queries:
+  // el backend mantiene stats_* en cada doc, una sola lectura por negocio)
   useEffect(() => {
     if (!isSuperAdmin) return;
-
-    const unsubNegocios = onSnapshot(collection(db, 'negocios'), async (snap) => {
+    const unsubNegocios = onSnapshot(collection(db, 'negocios'), (snap) => {
       const negs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setNegocios(negs);
-
-      const newStats = {};
-      for (const neg of negs) {
-        const reservasSnap = await getDocs(
-          query(collection(db, 'reservas'), where('negocio_id', '==', neg.id)),
-        );
-        const clientesSnap = await getDocs(
-          query(collection(db, 'clientes'), where('negocio_id', '==', neg.id)),
-        );
-        const serviciosSnap = await getDocs(collection(db, `negocios/${neg.id}/servicios`));
-
-        const reservas = reservasSnap.docs.map((d) => d.data());
-        const clientes = clientesSnap.docs.map((d) => d.data());
-
-        const now = Date.now();
-        const citasActivas = reservas.filter((r) => {
-          const t = r.date_time?.seconds * 1000;
-          return t && t >= now && r.cancelled !== true;
-        });
-
-        newStats[neg.id] = {
-          reservas: citasActivas.length,
-          clientes: clientes.length,
-          servicios: serviciosSnap.size,
-          ingresos: clientes.reduce((sum, c) => sum + (c.total_spent || 0), 0),
-          totalReservas: reservas.length,
-        };
-      }
-      setStats(newStats);
     });
-
     return unsubNegocios;
   }, [isSuperAdmin]);
 
@@ -525,13 +491,15 @@ export default function SuperAdmin() {
     );
   }
 
-  // Métricas globales
+  // Métricas globales: cálculos instantáneos en memoria sobre los
+  // contadores embebidos (sin queries adicionales)
   const totalNegocios = negocios.length;
   const negociosActivos = negocios.filter((n) => n.suspended !== true).length;
   const negociosSuspendidos = negocios.filter((n) => n.suspended === true).length;
-  const totalReservas = Object.values(stats).reduce((sum, s) => sum + (s.reservas || 0), 0);
-  const totalClientes = Object.values(stats).reduce((sum, s) => sum + (s.clientes || 0), 0);
-  const totalIngresos = Object.values(stats).reduce((sum, s) => sum + (s.ingresos || 0), 0);
+
+  const totalReservas = negocios.reduce((sum, n) => sum + (n.stats_citas_activas || 0), 0);
+  const totalClientes = negocios.reduce((sum, n) => sum + (n.stats_total_clientes || 0), 0);
+  const totalIngresos = negocios.reduce((sum, n) => sum + (n.stats_ingresos_totales || 0), 0);
 
   const negocioSeleccionado = negocios.find((n) => n.id === selectedNegocio);
 
@@ -592,7 +560,6 @@ export default function SuperAdmin() {
                     <NegocioCard
                       key={neg.id}
                       negocio={neg}
-                      stats={stats[neg.id]}
                       onSelect={setSelectedNegocio}
                       selected={selectedNegocio === neg.id}
                       onToggleSuspend={handleToggleSuspend}

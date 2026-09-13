@@ -601,6 +601,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 					return errSlotConflict
 				}
 			}
+			// Lectura del cliente ANTES de cualquier escritura: Firestore
+			// prohíbe "read after write" dentro de una transacción.
+			cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
+			cliDoc, errCli := tx.Get(cliRef)
+			isNewClient := errCli != nil || !cliDoc.Exists()
+
 			if err := tx.Create(newRef, Booking{
 				NegocioID:      slug,
 				OwnerUID:       negocioInfo.OwnerUID,
@@ -617,8 +623,8 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			}); err != nil {
 				return err
 			}
-			cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
-			return tx.Set(cliRef, map[string]interface{}{
+			// 1. Cliente nuevo (ya leído arriba) suma al total general del negocio
+			if err := tx.Set(cliRef, map[string]interface{}{
 				"negocio_id":    slug,
 				"owner_uid":     negocioInfo.OwnerUID,
 				"cliente_phone": req.ClienteTelefono,
@@ -628,7 +634,19 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				"last_seen":     eventDateTime,
 				"last_date_str": eventDateTime.Format("2006-01-02"),
 				"updated_at":    time.Now(),
-			}, firestore.MergeAll)
+			}, firestore.MergeAll); err != nil {
+				return err
+			}
+
+			// 2. Actualizar contadores maestros del negocio (lee SuperAdmin sin queries extra)
+			negUpdates := []firestore.Update{
+				{Path: "stats_citas_activas", Value: firestore.Increment(1)},
+				{Path: "stats_ingresos_totales", Value: firestore.Increment(precioServicio)},
+			}
+			if isNewClient {
+				negUpdates = append(negUpdates, firestore.Update{Path: "stats_total_clientes", Value: firestore.Increment(1)})
+			}
+			return tx.Update(firestoreClient.Collection("negocios").Doc(slug), negUpdates)
 		})
 	}
 
@@ -836,6 +854,8 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	// CRM: reflejar la cancelación en el directorio de clientes (solo si era futura)
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
+	// SaaS: restar métricas maestras del negocio
+	updateNegocioStats(ctx, slug, -1, -b.Price)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -875,6 +895,26 @@ func decrementCliente(ctx context.Context, slug, phone string, price int) {
 	}
 }
 
+// updateNegocioStats mantiene actualizados los contadores maestros del tenant
+// para evitar escaneos masivos en el panel de SuperAdmin (una sola lectura
+// del doc en vez de N queries por negocio).
+// NOTA: no invalida negocioCache a propósito — getNegocioHandler es el endpoint
+// caliente y ningún consumidor del API lee estos stats; solo el SuperAdmin vía SDK.
+func updateNegocioStats(ctx context.Context, slug string, citasDelta int, priceDelta int) {
+	if slug == "" {
+		return
+	}
+	ref := firestoreClient.Collection("negocios").Doc(slug)
+	_, err := ref.Set(ctx, map[string]interface{}{
+		"stats_citas_activas":    firestore.Increment(citasDelta),
+		"stats_ingresos_totales": firestore.Increment(priceDelta),
+		"updated_at":             time.Now(),
+	}, firestore.MergeAll)
+	if err != nil {
+		log.Printf("Aviso: no se pudo actualizar stats del negocio %s: %v", slug, err)
+	}
+}
+
 // decrementClienteBulk refleja eliminaciones en cascada en el CRM, agregando
 // por teléfono para no hacer un write por cada cita (visits -= n,
 // total_spent -= suma de precios).
@@ -908,6 +948,15 @@ func decrementClienteBulk(ctx context.Context, slug string, citas []affectedBook
 			log.Printf("Aviso: no se pudo ajustar al cliente %s en %s: %v", phone, slug, err)
 		}
 	}
+
+	// SaaS: ajustar contadores maestros por la cascada (solo citas futuras).
+	totalAjusteCitas := 0
+	totalAjustePrecio := 0
+	for _, ab := range citas {
+		totalAjusteCitas++
+		totalAjustePrecio += ab.b.Price
+	}
+	updateNegocioStats(ctx, slug, -totalAjusteCitas, -totalAjustePrecio)
 }
 
 // isOwnerRequest verifica que el request traiga un ID token de Firebase válido

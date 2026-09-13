@@ -226,29 +226,44 @@ export default function AdminDashboard() {
             setProfesionales(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
           );
 
-          const qReservas = query(collection(db, 'reservas'), where('owner_uid', '==', currentUser.uid));
-          onSnapshot(qReservas, (snapshot) => {
-            const inicioHoy = new Date();
-            inicioHoy.setHours(0, 0, 0, 0);
+          // 1. AGENDA OPTIMIZADA: solo descarga de HOY en adelante con
+          // filtro nativo (requiere índice owner_uid + date_time).
+          const inicioHoy = new Date();
+          inicioHoy.setHours(0, 0, 0, 0);
 
+          const qReservas = query(
+            collection(db, 'reservas'),
+            where('owner_uid', '==', currentUser.uid),
+            where('date_time', '>=', inicioHoy)
+          );
+
+          onSnapshot(qReservas, (snapshot) => {
             const citas = snapshot.docs
               .map((d) => ({ id: d.id, ...d.data() }))
               .filter((c) => c.cancelled !== true)
-              .filter((c) => (c.date_time?.seconds * 1000 || 0) >= inicioHoy.getTime())
               .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
             setReservas(citas);
           }, (error) => console.error("Error consultando reservas:", error));
 
-          const qClientes = query(collection(db, 'clientes'), where('owner_uid', '==', currentUser.uid));
-          onSnapshot(qClientes, (snapshot) => {
-            setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-          }, (error) => console.error("Error consultando clientes:", error));
+          // NOTA: la suscripción pasiva de Clientes se eliminó de aquí; el
+          // CRM usa lazy loading en el useEffect de abajo.
         }
       }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
+
+  // 2. LAZY LOADING DEL CRM: solo descarga si el usuario entra a la vista
+  useEffect(() => {
+    if (user && view === 'clientes' && clientes.length === 0) {
+      const qClientes = query(collection(db, 'clientes'), where('owner_uid', '==', user.uid));
+      const unsub = onSnapshot(qClientes, (snapshot) => {
+        setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }, (error) => console.error("Error cargando CRM:", error));
+      return unsub;
+    }
+  }, [user, view, clientes.length]);
 
   const logout = () => signOut(auth);
 

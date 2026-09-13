@@ -76,6 +76,8 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	// CRM: restar visita y gasto del cliente por no-show
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
+	// SaaS: restar métricas maestras del negocio
+	updateNegocioStats(ctx, slug, -1, -b.Price)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
