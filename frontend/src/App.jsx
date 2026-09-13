@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary.jsx';
 
 // Lazy loading para code splitting — reduce el bundle inicial
+const LandingPage = lazy(() => import('./LandingPage.jsx'));
 const BookingApp = lazy(() => import('./BookingApp.jsx'));
 const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 const RegisterShop = lazy(() => import('./RegisterShop.jsx'));
@@ -25,6 +26,9 @@ export default function App() {
       <BrowserRouter>
         <Suspense fallback={<LoadingSpinner />}>
           <Routes>
+            {/* Landing page pública */}
+            <Route path="/" element={<LandingPage />} />
+
             {/* Ruta para clientes: extrae dinámicamente el slug del local */}
             <Route path="/shop/:slug" element={<BookingApp />} />
 
@@ -38,7 +42,7 @@ export default function App() {
             <Route path="/super-admin" element={<SuperAdmin />} />
 
             {/* Redirección por defecto */}
-            <Route path="*" element={<Navigate to="/register" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
       </BrowserRouter>
