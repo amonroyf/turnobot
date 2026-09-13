@@ -568,64 +568,82 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// El bloqueo de la agenda incluye el buffer: la cita siguiente no puede
 	// empezar antes de que termine la limpieza/preparación de esta.
 	eventEnd := eventDateTime.Add(time.Duration(duration) * time.Minute)
-	newRef := firestoreClient.Collection("reservas").NewDoc()
-	txnErr := firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-		// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
-		// largas previas que solapen con la nueva.
-		q := firestoreClient.Collection("reservas").
-			Where("negocio_id", "==", slug).
-			Where("emp_id", "==", req.EmpleadoID).
-			Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
-			Where("date_time", "<", eventEnd)
-		docs, err := tx.Documents(q).GetAll()
-		if err != nil {
-			return err
+	// bookTxn ejecuta UN intento transaccional. Se invoca dentro del loop
+	// de reintentos de abajo; newRef se crea por intento para no reutilizar
+	// IDs de intentos abortados.
+	bookTxn := func() error {
+		newRef := firestoreClient.Collection("reservas").NewDoc()
+		return firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+			// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
+			// largas previas que solapen con la nueva.
+			q := firestoreClient.Collection("reservas").
+				Where("negocio_id", "==", slug).
+				Where("emp_id", "==", req.EmpleadoID).
+				Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+				Where("date_time", "<", eventEnd)
+			docs, err := tx.Documents(q).GetAll()
+			if err != nil {
+				return err
+			}
+			for _, d := range docs {
+				if d.Data()["cancelled"] == true {
+					continue
+				}
+				var b Booking
+				if err := d.DataTo(&b); err != nil {
+					continue
+				}
+				dur := time.Duration(b.DurationMinute) * time.Minute
+				if dur <= 0 {
+					dur = 60 * time.Minute
+				}
+				if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
+					return errSlotConflict
+				}
+			}
+			if err := tx.Create(newRef, Booking{
+				NegocioID:      slug,
+				OwnerUID:       negocioInfo.OwnerUID,
+				EmpID:          req.EmpleadoID,
+				UserPhone:      req.ClienteTelefono,
+				ClientName:     req.ClienteNombre,
+				ServiceName:    serviceName,
+				DurationMinute: duration,
+				Price:          precioServicio,
+				DateTime:       eventDateTime,
+				CalendarEvt:    eventID,
+				CreatedAt:      time.Now(),
+				Notes:          req.ClienteNotas,
+			}); err != nil {
+				return err
+			}
+			cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
+			return tx.Set(cliRef, map[string]interface{}{
+				"negocio_id":    slug,
+				"owner_uid":     negocioInfo.OwnerUID,
+				"cliente_phone": req.ClienteTelefono,
+				"client_name":   req.ClienteNombre,
+				"visits":        firestore.Increment(1),
+				"total_spent":   firestore.Increment(precioServicio),
+				"last_seen":     eventDateTime,
+				"last_date_str": eventDateTime.Format("2006-01-02"),
+				"updated_at":    time.Now(),
+			}, firestore.MergeAll)
+		})
+	}
+
+	// Reintentos con backoff para contención transaccional ("Transaction lock
+	// timeout" bajo picos concurrentes sobre el mismo slot). errSlotConflict
+	// es un conflicto real de agenda: se devuelve 409 sin reintentar.
+	var txnErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		txnErr = bookTxn()
+		if txnErr == nil || errors.Is(txnErr, errSlotConflict) {
+			break
 		}
-		for _, d := range docs {
-			if d.Data()["cancelled"] == true {
-				continue
-			}
-			var b Booking
-			if err := d.DataTo(&b); err != nil {
-				continue
-			}
-			dur := time.Duration(b.DurationMinute) * time.Minute
-			if dur <= 0 {
-				dur = 60 * time.Minute
-			}
-			if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
-				return errSlotConflict
-			}
-		}
-		if err := tx.Create(newRef, Booking{
-			NegocioID:      slug,
-			OwnerUID:       negocioInfo.OwnerUID,
-			EmpID:          req.EmpleadoID,
-			UserPhone:      req.ClienteTelefono,
-			ClientName:     req.ClienteNombre,
-			ServiceName:    serviceName,
-			DurationMinute: duration,
-			Price:          precioServicio,
-			DateTime:       eventDateTime,
-			CalendarEvt:    eventID,
-			CreatedAt:      time.Now(),
-			Notes:          req.ClienteNotas,
-		}); err != nil {
-			return err
-		}
-		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, req.ClienteTelefono))
-		return tx.Set(cliRef, map[string]interface{}{
-			"negocio_id":    slug,
-			"owner_uid":     negocioInfo.OwnerUID,
-			"cliente_phone": req.ClienteTelefono,
-			"client_name":   req.ClienteNombre,
-			"visits":        firestore.Increment(1),
-			"total_spent":   firestore.Increment(precioServicio),
-			"last_seen":     eventDateTime,
-			"last_date_str": eventDateTime.Format("2006-01-02"),
-			"updated_at":    time.Now(),
-		}, firestore.MergeAll)
-	})
+		log.Printf("Reintentando transacción de reserva en %s (intento %d/3): %v", slug, attempt+1, txnErr)
+		time.Sleep(time.Duration(100*(attempt+1)) * time.Millisecond)
+	}
 	if txnErr != nil {
 		if errors.Is(txnErr, errSlotConflict) {
 			// Compensar: liberar el evento de Calendar creado fuera de la
@@ -835,16 +853,23 @@ func clienteDocID(slug, phone string) string {
 
 // decrementCliente refleja una cancelación en el directorio de clientes
 // (resta una visita y el valor del servicio cancelado).
+// Usa Set con MergeAll en vez de Update: si el documento fue purgado o la
+// reserva se sembró sin CRM (tests E2E), Update falla con "no entity to
+// update"; el merge con Increment lo crea/atualiza igual que el upsert de
+// bookHandler. Se incluyen negocio_id y cliente_phone para que el doc
+// siempre sea atribuible en las queries del CRM.
 func decrementCliente(ctx context.Context, slug, phone string, price int) {
 	if slug == "" || phone == "" {
 		return
 	}
 	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-	_, err := ref.Update(ctx, []firestore.Update{
-		{Path: "visits", Value: firestore.Increment(-1)},
-		{Path: "total_spent", Value: firestore.Increment(-price)},
-		{Path: "updated_at", Value: time.Now()},
-	})
+	_, err := ref.Set(ctx, map[string]interface{}{
+		"negocio_id":    slug,
+		"cliente_phone": phone,
+		"visits":        firestore.Increment(-1),
+		"total_spent":   firestore.Increment(-price),
+		"updated_at":    time.Now(),
+	}, firestore.MergeAll)
 	if err != nil {
 		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
 	}
@@ -870,11 +895,15 @@ func decrementClienteBulk(ctx context.Context, slug string, citas []affectedBook
 	}
 	for phone, a := range porTelefono {
 		ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-		_, err := ref.Update(ctx, []firestore.Update{
-			{Path: "visits", Value: firestore.Increment(-a.count)},
-			{Path: "total_spent", Value: firestore.Increment(-a.total)},
-			{Path: "updated_at", Value: time.Now()},
-		})
+		// Set con MergeAll (no Update): tolera documentos purgados sin
+		// romper la cascada con "no entity to update". Ver decrementCliente.
+		_, err := ref.Set(ctx, map[string]interface{}{
+			"negocio_id":    slug,
+			"cliente_phone": phone,
+			"visits":        firestore.Increment(-a.count),
+			"total_spent":   firestore.Increment(-a.total),
+			"updated_at":    time.Now(),
+		}, firestore.MergeAll)
 		if err != nil {
 			log.Printf("Aviso: no se pudo ajustar al cliente %s en %s: %v", phone, slug, err)
 		}
@@ -969,11 +998,11 @@ func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 		return
 	}
 
-type req struct {
-	Name          *string `json:"name,omitempty"`
-	DurationMinutes *int  `json:"duration_minutes,omitempty"`
-	Price         *string `json:"price,omitempty"`
-}
+	type req struct {
+		Name            *string `json:"name,omitempty"`
+		DurationMinutes *int    `json:"duration_minutes,omitempty"`
+		Price           *string `json:"price,omitempty"`
+	}
 	var payload req
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -1737,7 +1766,7 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 		}
 		var b Booking
 		d.DataTo(&b)
-		
+
 		dur := time.Duration(b.DurationMinute) * time.Minute
 		if dur <= 0 {
 			dur = 60 * time.Minute
