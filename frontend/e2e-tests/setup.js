@@ -1,8 +1,5 @@
 import admin from 'firebase-admin';
 
-// Usa Application Default Credentials: prioriza GOOGLE_APPLICATION_CREDENTIALS
-// (necesario en CI/CD); si no existe, google-auth-library cae a la ruta
-// well-known (~/.config/gcloud/application_default_credentials.json).
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.applicationDefault(),
@@ -13,20 +10,53 @@ if (!admin.apps.length) {
 export const db = admin.firestore();
 export const adminAuth = admin.auth();
 
-// Aislamiento de staging: TODOS los datos de pruebas usan slugs con este
-// prefijo (configurable). Nunca usar slugs de negocios reales.
-// Ver e2e-tests/cleanup-staging.mjs para borrarlos.
+export async function crearUsuarioYTema(email, nombre, slug) {
+  const password = 'Clave.123';
+  const userRecord = await adminAuth.createUser({ email, password, emailVerified: true });
+  const uid = userRecord.uid;
+
+  const negocioRef = db.collection('negocios').doc(slug);
+  await negocioRef.set({
+    name: nombre,
+    owner_uid: uid,
+    whatsapp: '',
+    direccion: '',
+    horario: '',
+    telefono: '',
+    calendar_id: 'primary',
+    timezone: 'America/Bogota',
+    updated_at: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { email, password };
+}
+
+export async function signInWithCustomToken(page, email, password) {
+  const key = "AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU";
+  await page.evaluate(async (payload) => {
+    const res = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${payload.key}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: true }) }
+    );
+    const data = await res.json();
+    if (data.idToken) {
+      const k = `firebase:authUser:${payload.key}:[DEFAULT]`;
+      localStorage.setItem(k, JSON.stringify({
+        stsTokenManager: { apiKey: payload.key, refreshToken: data.refreshToken, accessToken: data.idToken, expirationTime: Date.now() + 3600000 },
+        user: { uid: data.localId, displayName: null, email: payload.email, phoneNumber: null, photoURL: null, providerData: [{ uid: data.localId, displayName: null, email: payload.email, phoneNumber: null, photoURL: null, providerId: 'password' }], providerId: 'password' }
+      }));
+    }
+  }, { email, password, key });
+}
+
 export const E2E_PREFIX = process.env.E2E_SLUG_PREFIX || 'e2e';
 export const e2eSlug = (base) => `${E2E_PREFIX}-${base}`;
 
 const SLUG_E2E = e2eSlug('tienda');
 
-// Elimina todas las reservas de la tienda de prueba en bloques de máximo 400
-// documentos (límite de batch de Firestore) para empezar con agenda vacía.
 export const limpiarReservasE2E = async (slug = SLUG_E2E) => {
   const snapshot = await db.collection('reservas').where('negocio_id', '==', slug).get();
   if (snapshot.empty) return;
-
   for (let i = 0; i < snapshot.docs.length; i += 400) {
     const batch = db.batch();
     snapshot.docs.slice(i, i + 400).forEach((doc) => batch.delete(doc.ref));
@@ -34,9 +64,6 @@ export const limpiarReservasE2E = async (slug = SLUG_E2E) => {
   }
 };
 
-// Crea la tienda estática de pruebas (idempotente) con un servicio y un empleado
-// que NO tiene Google Calendar vinculado. Así el backend usa slots mock
-// deterministas y la doble reserva se detecta vía Firestore.
 export const garantizarTiendaE2E = async (slug = SLUG_E2E) => {
   const negocioRef = db.collection('negocios').doc(slug);
   await negocioRef.set(
@@ -53,38 +80,18 @@ export const garantizarTiendaE2E = async (slug = SLUG_E2E) => {
     },
     { merge: true },
   );
-
-  await db
-    .collection('negocios')
-    .doc(slug)
-    .collection('servicios')
-    .doc('svc_corte_barba')
-    .set({ name: 'Corte y Barba', duration_minutes: 30, price: '45000' });
-
-  await db
-    .collection('negocios')
-    .doc(slug)
-    .collection('empleados')
-    .doc('emp_alejandro')
-    .set({ name: 'Alejandro', calendar_id: '' });
+  await db.collection('negocios').doc(slug).collection('servicios').doc('svc_corte_barba').set({ name: 'Corte y Barba', duration_minutes: 30, price: '45000' });
+  await db.collection('negocios').doc(slug).collection('empleados').doc('emp_alejandro').set({ name: 'Alejandro', calendar_id: '' });
 };
 
-// Inserta una reserva directamente (para el test de "Mis citas").
 export const crearReservaE2E = async ({ slug = SLUG_E2E, phone, name, service, empId, dateTime }) => {
   await db.collection('reservas').add({
-    negocio_id: slug,
-    emp_id: empId,
-    user_phone: phone,
-    client_name: name,
-    service_name: service,
-    duration_minutes: 30,
-    date_time: dateTime,
+    negocio_id: slug, emp_id: empId, user_phone: phone, client_name: name,
+    service_name: service, duration_minutes: 30, date_time: dateTime,
     created_at: admin.firestore.FieldValue.serverTimestamp(),
   });
 };
 
-// Selecciona una fecha en el calendario en pantalla de BookingApp (paso 2).
-// Navega al mes destino si hace falta y toca el botón del día.
 export const elegirDiaEnCalendario = async (page, yyyymmdd) => {
   const [y, m, d] = yyyymmdd.split('-').map(Number);
   const hoy = new Date();
@@ -95,9 +102,6 @@ export const elegirDiaEnCalendario = async (page, yyyymmdd) => {
   await page.getByRole('button', { name: `Elegir ${yyyymmdd}` }).click();
 };
 
-// ---- Limpieza completa de entorno real (slug + usuario Auth de prueba) ----
-// Borra reservas, subcolecciones, el negocio y la cuenta de Firebase Auth del
-// usuario de prueba. Solo debe usarse con datos E2E (ambiente de staging).
 const borrarColeccion = async (ref) => {
   const snapshot = await ref.get();
   for (let i = 0; i < snapshot.docs.length; i += 400) {
@@ -111,14 +115,12 @@ export const limpiarEntornoReal = async (slug, testEmail) => {
   await borrarColeccion(db.collection('reservas').where('negocio_id', '==', slug));
   await borrarColeccion(db.collection(`negocios/${slug}/empleados`));
   await borrarColeccion(db.collection(`negocios/${slug}/servicios`));
+  await borrarColeccion(db.collection('clientes').where('negocio_id', '==', slug));
   await db.collection('negocios').doc(slug).delete().catch(() => {});
-
   try {
     const userRecord = await adminAuth.getUserByEmail(testEmail);
     await adminAuth.deleteUser(userRecord.uid);
   } catch (err) {
-    // Usuario no existente: OK. Errores por ADC sin quota project (identitytoolkit):
-    // no bloquean la limpieza del entorno, solo dejan el usuario de prueba en Auth.
     if (err.code !== 'auth/user-not-found') {
       console.warn('Limpieza de usuario Auth omitida:', err.code || err.message);
     }

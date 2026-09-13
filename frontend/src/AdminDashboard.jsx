@@ -169,7 +169,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
-  const [view, setView] = useState('agenda');
+  const [view, setView] = useState('ajustes');
   
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);

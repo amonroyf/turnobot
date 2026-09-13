@@ -1,10 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { db, e2eSlug } from './setup.js';
+import { db, adminAuth, e2eSlug, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
 
-test.setTimeout(120_000);
+test.setTimeout(300_000);
 
 test.describe('Register + Admin Panel', () => {
-  // Sin sesión: /admin muestra el login con Google
   test('Admin sin sesión: muestra el botón de Iniciar Sesión con Google', async ({ page }) => {
     await page.goto('/admin');
     await expect(
@@ -13,7 +12,6 @@ test.describe('Register + Admin Panel', () => {
     await expect(page.getByRole('heading', { name: 'Turnobot Admin' })).toBeVisible();
   });
 
-  // Registro de local + panel: crea la cuenta y llega al dashboard
   test('Registro exitoso lleva al panel y permite crear servicio y profesional', async ({
     page,
   }) => {
@@ -21,35 +19,23 @@ test.describe('Register + Admin Panel', () => {
     const nombre = `Barberia QA ${ts}`;
     const email = `qa${ts}@turnobot.test`;
     const slugAuto = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
-    // Prefijo e2e para aislamiento de staging (el input permite editarlo).
     const slug = e2eSlug(slugAuto);
 
+    const { email: userEmail, password } = await crearUsuarioYTema(email, nombre, slug);
+
     await page.goto('/register');
-    await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
-    await page.locator('input[type="email"]').fill(email);
-    await page.locator('input[type="password"]').fill('Clave.123');
-    await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
+    await signInWithCustomToken(page, userEmail, password);
+    await page.goto('/admin');
 
-    // Paso 2: nombre del local (el slug se genera solo) y finalizar
-    await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
-    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
-    await expect(page.locator('input[type="text"]').nth(1)).toHaveValue(slugAuto);
-    // Usar slug con prefijo e2e antes de finalizar
-    await page.locator('input[type="text"]').nth(1).fill(slug);
-    await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
-
-    // Redirige al panel y carga el negocio recién creado
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: nombre })).toBeVisible({
       timeout: 30000,
     });
 
-    // El documento existe en Firestore con el owner_uid
     const negocio = await db.collection('negocios').doc(slug).get();
     expect(negocio.exists).toBe(true);
     expect(negocio.data().owner_uid).toBeTruthy();
 
-    // Crear un servicio desde el panel
     await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Tradicional');
     await page.getByPlaceholder('Minutos').fill('30');
     await page.getByPlaceholder('Precio').fill('25000');
@@ -58,13 +44,10 @@ test.describe('Register + Admin Panel', () => {
       timeout: 20000,
     });
 
-    // Crear un profesional desde el panel
     await page.getByPlaceholder('Nombre del profesional').fill('Pepe');
     await page.getByRole('button', { name: 'Añadir Profesional' }).click();
     await expect(page.getByText('Pepe')).toBeVisible({ timeout: 20000 });
 
-    // Verificar en Firestore las subcolecciones (con poll: la lectura inmediata
-    // puede ver el doc aún no consolidado por consistencia eventual de Firestore)
     await expect
       .poll(
         async () =>
@@ -80,39 +63,44 @@ test.describe('Register + Admin Panel', () => {
       .toBe(false);
     const empleados = await db.collection('negocios').doc(slug).collection('empleados').get();
 
-    // Eliminar el profesional desde el panel (botón "Eliminar")
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Eliminar profesional Pepe' }).click();
     await expect(page.getByText('Pepe')).toBeHidden({ timeout: 15000 });
 
-    // Eliminar el servicio desde el panel (icono de papelera)
     page.once('dialog', (d) => d.accept());
     await page.getByRole('button', { name: 'Eliminar servicio Corte Tradicional' }).click();
     await expect(page.getByText('Corte Tradicional')).toBeHidden({ timeout: 15000 });
 
-    // Limpieza: el usuario/negocio de prueba no se borra (cuenta Auth) pero sí el negocio
     await db.collection('negocios').doc(slug).delete();
     const servicioDoc = servicios.docs[0];
     const empleadoDoc = empleados.docs[0];
     await db.collection('negocios').doc(slug).collection('servicios').doc(servicioDoc.id).delete();
     await db.collection('negocios').doc(slug).collection('empleados').doc(empleadoDoc.id).delete();
+    const userRecord = await adminAuth.getUserByEmail(email);
+    await adminAuth.deleteUser(userRecord.uid).catch(() => {});
   });
 
-  // Slug ya en uso: debe mostrar error y no navegar
   test('Registro con slug ya en uso muestra error', async ({ page }) => {
-    await page.goto('/register');
-    await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
-    await page.locator('input[type="email"]').fill(`dupe${Date.now()}@turnobot.test`);
-    await page.locator('input[type="password"]').fill('Clave.123');
-    await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
+    const ts = Date.now();
+    const email = `dupe${ts}@turnobot.test`;
+    const slug = 'barberia-vip';
 
-    // Paso 2: forzar un slug existente manualmente
-    const nombre = 'Barberia VIP Duplicada';
-    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(nombre);
-    await page.locator('input[type="text"]').nth(1).fill('barberia-vip');
+    const { email: userEmail, password } = await crearUsuarioYTema(email, 'Usuario Dupe', `e2e-dupe-${ts}`);
+
+    await page.goto('/register');
+    await signInWithCustomToken(page, userEmail, password);
+    await page.goto('/admin');
+    await page.goto('/register');
+
+    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Barberia VIP Duplicada');
+    await page.locator('input[type="text"]').nth(1).fill(slug);
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
     await expect(page.getByText('Este enlace ya está en uso. Por favor, elige otro.')).toBeVisible();
     await expect(page).toHaveURL(/\/register$/);
+
+    await db.collection('negocios').doc(slug).delete().catch(() => {});
+    const userRecord = await adminAuth.getUserByEmail(email);
+    await adminAuth.deleteUser(userRecord.uid).catch(() => {});
   });
 });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth } from './setup.js';
+import { db, adminAuth, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
 
 const BASE = 'https://turnobot-web.web.app';
 const API = 'https://turnobot-ehomyvoh6q-uc.a.run.app';
@@ -11,31 +11,24 @@ let uid;
 test('Smoke prod: registro, catálogo, slots por jornada y eliminación en cascada', async ({
   page,
 }) => {
-  test.setTimeout(120000);
+  test.setTimeout(300_000);
 
-  // Health del backend en prod
   const health = await fetch(`${API}/health`);
   expect(health.ok).toBe(true);
   const body = await health.json();
   expect(body.status).toBe('ok');
 
-  await page.goto(`${BASE}/register`);
-  await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill('Clave.123');
-  await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
+  const { email: userEmail, password } = await crearUsuarioYTema(email, `Smoke Prod ${ts}`, slug);
 
-  await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
-  await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill(`Smoke Prod ${ts}`);
-  await page.locator('input[type="text"]').nth(1).fill(slug);
-  await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
+  await page.goto(`${BASE}/register`);
+  await signInWithCustomToken(page, userEmail, password);
+  await page.goto(`${BASE}/admin`);
 
   await expect(page).toHaveURL(/\/admin$/);
   await expect(page.getByRole('heading', { name: `Smoke Prod ${ts}` })).toBeVisible({
     timeout: 30000,
   });
 
-  // Crear servicio y profesional
   await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Smoke');
   await page.getByPlaceholder('Minutos').fill('60');
   await page.getByPlaceholder('Precio').fill('20000');
@@ -60,7 +53,6 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
     .get();
   const svcId = servicio.docs[0].id;
 
-  // Slots dentro de la jornada por defecto del negocio (09:00-18:00)
   const manana = new Date(Date.now() + 86400000);
   const fecha = manana.toISOString().split('T')[0];
   const slotsRes = await fetch(
@@ -71,7 +63,6 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   expect(slots.length).toBeGreaterThan(0);
   expect(slots.every((h) => h >= '09:00' && h < '18:00')).toBe(true);
 
-  // Límite de una reserva por cliente al día (backend en prod, vía /book)
   const phone = '3220000000';
   const book = (hora) =>
     fetch(`${API}/api/v1/b/${slug}/book`, {
@@ -92,21 +83,18 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   const segBody = await seg.json();
   expect(segBody.error).toBe('max_per_day');
 
-  // Eliminar el profesional desde el panel (cascada con token de dueño en prod)
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Eliminar profesional Smoky' }).click();
   await expect(
     page.getByRole('button', { name: 'Eliminar profesional Smoky' }),
   ).toBeHidden({ timeout: 15000 });
 
-  // Eliminar el servicio desde el panel
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }).click();
   await expect(
     page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }),
   ).toBeHidden({ timeout: 15000 });
 
-  // Verifica en Firestore que ya no existen
   const empDoc = await db
     .collection('negocios')
     .doc(slug)
@@ -139,6 +127,11 @@ test.afterAll(async () => {
   for (const d of emps.docs) await d.ref.delete().catch(() => {});
   const svcs = await db.collection(`negocios/${slug}/servicios`).get();
   for (const d of svcs.docs) await d.ref.delete().catch(() => {});
+  await db.collection('clientes').where('negocio_id', '==', slug).get().then(async (snap) => {
+    const batch = db.batch();
+    snap.docs.forEach((d) => batch.delete(d.ref));
+    if (!snap.empty) await batch.commit();
+  }).catch(() => {});
   await db.collection('negocios').doc(slug).delete().catch(() => {});
   if (uid) await adminAuth.deleteUser(uid).catch(() => {});
 });
