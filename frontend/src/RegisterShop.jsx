@@ -10,7 +10,8 @@ import {
   query,
   where,
   getDocs,
-  runTransaction,
+  getDoc,
+  setDoc,
 } from 'firebase/firestore';
 import { auth, provider, db } from './firebase';
 
@@ -121,28 +122,25 @@ export default function RegisterShop() {
     }
 
     try {
-      // Transacción: verificar y crear atómicamente para que dos registros
-      // simultáneos con el mismo enlace no se sobrescriban entre sí.
-      await runTransaction(db, async (tx) => {
-        const docRef = doc(db, 'negocios', slug);
-        const docSnap = await tx.get(docRef);
-        if (docSnap.exists()) {
-          throw new Error('slug-en-uso');
-        }
-        tx.set(docRef, {
-          name: formData.name,
-          owner_uid: user.uid, // <-- Blindamos la regla de seguridad multi-tenant
-          whatsapp: '',
-          direccion: '',
-          horario: '',
-          telefono: '',
-          calendar_id: 'primary',
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          open_time: '09:00',
-          close_time: '18:00',
-          min_notice_minutes: 120,
-          created_at: new Date(),
-        });
+      // Verificar y crear (getDoc + setDoc) para evitar cuelgues de runTransaction en headless.
+      const docRef = doc(db, 'negocios', slug);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        throw new Error('slug-en-uso');
+      }
+      await setDoc(docRef, {
+        name: formData.name,
+        owner_uid: user.uid,
+        whatsapp: '',
+        direccion: '',
+        horario: '',
+        telefono: '',
+        calendar_id: 'primary',
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        open_time: '09:00',
+        close_time: '18:00',
+        min_notice_minutes: 120,
+        created_at: new Date(),
       });
 
       navigate('/admin');
