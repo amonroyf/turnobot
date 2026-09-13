@@ -71,6 +71,7 @@ type Negocio struct {
 	CalendarID   string `firestore:"calendar_id" json:"-"`   // Oculto en JSON
 	Whatsapp     string `firestore:"whatsapp" json:"whatsapp"`
 	Direccion    string `firestore:"direccion" json:"direccion"`
+	Horario      string `firestore:"horario" json:"horario"`
 	Telefono     string `firestore:"telefono" json:"telefono"`
 	TimeZone     string `firestore:"timezone" json:"timezone"`
 	OpenTime     string `firestore:"open_time" json:"open_time"`
