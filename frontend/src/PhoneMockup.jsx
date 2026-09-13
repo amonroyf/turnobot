@@ -68,8 +68,8 @@ export default function PhoneMockup() {
         </div>
       </div>
 
-      {/* Floating notification */}
-      <div className="absolute top-24 -right-2 sm:-right-8 z-30 bg-white rounded-2xl shadow-xl border border-gray-100 p-3 max-w-[180px] animate-bounce">
+      {/* Floating notification (FIX DEFINITIVO) */}
+      <div className="absolute top-12 -right-4 sm:-right-10 z-[100] bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 max-w-[180px] animate-bounce">
         <div className="flex items-center gap-2">
           <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">📱</div>
           <div>
