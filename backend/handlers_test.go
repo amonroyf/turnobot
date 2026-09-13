@@ -355,6 +355,11 @@ func TestBookMinNoticeConfigurable(t *testing.T) {
 	if !hora.After(now) {
 		hora = hora.Add(30 * time.Minute)
 	}
+	// Margen: con aviso de 10min, si el próximo slot está a <15min el backend
+	// lo rechaza correctamente; tomar el siguiente para probar el happy path.
+	if hora.Sub(now) < 15*time.Minute {
+		hora = hora.Add(30 * time.Minute)
+	}
 	// El slot debe existir en la jornada 09:00-18:00; si es de noche, usar mañana 09:30.
 	fecha := hora.Format("2006-01-02")
 	horaStr := hora.Format("15:04")

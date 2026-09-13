@@ -1182,41 +1182,69 @@ func deleteNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Helper para borrar documentos en lotes (batch).
 	// Trocea en bloques de 400 para respetar el límite de 500 writes por commit
 	// y soportar tenants con miles de documentos sin colapsar.
-	deleteDocs := func(docs []*firestore.DocumentSnapshot) {
+	// deleteDocs borra en commits de hasta 400 (límite Firestore: 500).
+	// Retorna error si algún commit falla, para que el loop paginado no
+	// reintente eternamente sobre los mismos documentos.
+	deleteDocs := func(docs []*firestore.DocumentSnapshot) error {
 		batch := firestoreClient.Batch()
 		count := 0
+		flush := func() error {
+			if count == 0 {
+				return nil
+			}
+			if _, err := batch.Commit(ctx); err != nil {
+				return err
+			}
+			batch = firestoreClient.Batch()
+			count = 0
+			return nil
+		}
 		for _, d := range docs {
 			batch.Delete(d.Ref)
 			count++
 			if count >= 400 {
-				if _, err := batch.Commit(ctx); err != nil {
-					log.Printf("Error en commit de borrado masivo de %s: %v", slug, err)
+				if err := flush(); err != nil {
+					return err
 				}
-				batch = firestoreClient.Batch()
-				count = 0
 			}
 		}
-		if count > 0 {
-			if _, err := batch.Commit(ctx); err != nil {
-				log.Printf("Error en commit final de borrado masivo de %s: %v", slug, err)
-			}
-		}
+		return flush()
 	}
+	// deleteQuery borra con paginación REAL: trae de a 400 y repite hasta
+	// vaciar, sin cargar la colección entera en RAM. Con GetAll() un tenant
+	// de 50k reservas tumbaría el contenedor de 512MB (OOM a medio borrar).
+	// Solo aplica a colecciones no acotadas (reservas, clientes).
 	deleteQuery := func(q firestore.Query) {
-		docs, err := q.Documents(ctx).GetAll()
-		if err != nil {
-			log.Printf("Error consultando para borrado masivo de %s: %v", slug, err)
-			return
+		for {
+			docs, err := q.Limit(400).Documents(ctx).GetAll()
+			if err != nil {
+				log.Printf("Error consultando para borrado masivo de %s: %v", slug, err)
+				break
+			}
+			if len(docs) == 0 {
+				break
+			}
+			if err := deleteDocs(docs); err != nil {
+				log.Printf("Error en commit de borrado masivo de %s: %v", slug, err)
+				break
+			}
+			if len(docs) < 400 {
+				break // última página
+			}
 		}
-		deleteDocs(docs)
 	}
 	deleteCollection := func(col *firestore.CollectionRef) {
+		// Subcolecciones acotadas por tamaño del equipo (servicios/empleados):
+		// GetAll es seguro aquí. (CollectionRef no expone Limit/Query para
+		// paginar; no usar col.Query — no existe en el SDK de Go.)
 		docs, err := col.Documents(ctx).GetAll()
 		if err != nil {
 			log.Printf("Error consultando para borrado masivo de %s: %v", slug, err)
 			return
 		}
-		deleteDocs(docs)
+		if err := deleteDocs(docs); err != nil {
+			log.Printf("Error en commit de borrado masivo de %s: %v", slug, err)
+		}
 	}
 
 	// 1. Borrar todas las reservas y clientes asociados al negocio

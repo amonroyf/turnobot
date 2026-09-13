@@ -568,6 +568,9 @@ export default function AdminDashboard() {
             <button onClick={copiarEnlace} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
               {enlaceCopiado ? '✅ ¡Enlace copiado!' : '🔗 Copiar mi Enlace de Reservas'}
             </button>
+            <p className="text-[11px] text-gray-400 font-medium text-center leading-relaxed">
+              Para cancelar una cita, hazlo siempre desde aquí. Si borras el evento desde Google Calendar, el espacio seguirá bloqueado en tu página de reservas.
+            </p>
 
             {reservas.length === 0 ? (
                <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-200 border-dashed">
@@ -655,12 +658,12 @@ export default function AdminDashboard() {
                           {formatearTelefono(c.cliente_phone)}
                         </a>
                         <p className="text-[10px] text-gray-400 font-bold mt-2 uppercase tracking-wider">
-                          {c.visits || 0} visitas • Última: {fechaUltimaVisita(c)}
+                          {Math.max(0, c.visits || 0)} visitas • Última: {fechaUltimaVisita(c)}
                         </p>
                       </div>
                       <div className="text-right flex flex-col items-end">
                         <span className="block text-sm font-black text-gray-900 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200">
-                          {formatDinero(c.total_spent)}
+                          {formatDinero(Math.max(0, c.total_spent || 0))}
                         </span>
                         <span className="text-[10px] text-gray-400 font-bold uppercase mt-1">LTV</span>
                       </div>
