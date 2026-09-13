@@ -365,12 +365,27 @@ export default function AdminDashboard() {
 
   const copiarEnlace = async () => {
     const url = `${window.location.origin}/shop/${negocio.id}`;
+    const mensajeWhatsApp = `¡Hola! 👋 Te compartimos nuestro enlace de agendamiento en línea de *${negocio.name}*\n\nAhora puedes elegir tu servicio, ver nuestros horarios disponibles en tiempo real y reservar tu cita en segundos sin esperar confirmación:\n👉 ${url}\n\n¡Te esperamos! ✨`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: negocio.name,
+          text: mensajeWhatsApp,
+          url: url,
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(mensajeWhatsApp);
       setEnlaceCopiado(true);
-      setTimeout(() => setEnlaceCopiado(false), 2000);
+      setTimeout(() => setEnlaceCopiado(false), 2500);
     } catch {
-      prompt('Copia tu enlace de reservas:', url);
+      prompt('Copia este mensaje para tus clientes:', mensajeWhatsApp);
     }
   };
 
