@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { db } from './setup.js';
 
-const API = process.env.API_BASE || 'http://localhost:8080';
+const API = process.env.API_BASE || 'https://turnobot-ehomyvoh6q-uc.a.run.app';
 const ts = Date.now();
 const SLUG = `e2e-horarios-${ts}`;
 const EMP_ID = 'emp_test';

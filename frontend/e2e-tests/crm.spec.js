@@ -70,6 +70,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
       });
 
       // 3. El panel muestra el directorio CRM en vivo (contador = 3 clientes)
+      await page.getByText('Clientes', { exact: true }).first().click();
       await expect(
         page.getByRole('heading', { name: /Directorio de Clientes \(3\)/ }),
       ).toBeVisible({ timeout: 15000 });

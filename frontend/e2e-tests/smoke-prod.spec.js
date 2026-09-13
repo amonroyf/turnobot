@@ -16,7 +16,8 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   // Health del backend en prod
   const health = await fetch(`${API}/health`);
   expect(health.ok).toBe(true);
-  expect(await health.text()).toContain('OK');
+  const body = await health.json();
+  expect(body.status).toBe('ok');
 
   await page.goto(`${BASE}/register`);
   await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
