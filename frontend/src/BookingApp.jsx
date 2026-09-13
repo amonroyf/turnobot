@@ -258,10 +258,47 @@ export default function BookingApp() {
 
   if (!negocio && !error) return <div className="p-8 text-center font-medium text-gray-500">Cargando negocio...</div>;
 
+  // Error fatal: el negocio no existe o el enlace está mal. Pantalla dedicada
+  // sin navegación inferior para no confundir (antes se mostraba el nav vacío).
+  if (!negocio && error) {
+    return (
+      <div className="min-h-screen bg-gray-100 font-sans antialiased">
+        <div className="max-w-md mx-auto bg-gray-50 min-h-screen shadow-sm border-x border-gray-200 flex flex-col">
+          <header className="p-4 bg-white border-b border-gray-100 text-center sticky top-0 z-40">
+            <h1 className="text-lg font-bold text-gray-900">TurnoBot</h1>
+            <p className="text-xs text-gray-400">Reserva tu cita en segundos</p>
+          </header>
+          <main className="p-4 flex-1 flex flex-col justify-center">
+            <div className="p-6 bg-white border border-red-200 rounded-2xl text-center shadow-sm">
+              <div className="text-4xl mb-3">🔍</div>
+              <h2 className="text-base font-bold text-gray-900 mb-2">No encontramos este negocio</h2>
+              <p className="text-xs text-red-600 font-medium mb-5">{error}</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="w-full py-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                >
+                  Reintentar
+                </button>
+                <a
+                  href="/register"
+                  className="block w-full py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs text-center active:scale-95 transition-transform"
+                >
+                  Crear mi negocio gratis
+                </a>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased">
+    <div className="min-h-screen bg-gray-100 font-sans antialiased">
+    <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 shadow-sm border-x border-gray-200">
       <header className="p-4 bg-white border-b border-gray-100 text-center sticky top-0 z-40 shadow-2xs">
-        <h1 className="text-lg font-bold text-gray-900">{negocio?.name || 'Turnobot'}</h1>
+        <h1 className="text-lg font-bold text-gray-900">{negocio?.name || 'TurnoBot'}</h1>
         <p className="text-xs text-gray-400">Reserva tu cita en segundos</p>
       </header>
 
@@ -598,8 +635,8 @@ export default function BookingApp() {
         )}
       </main>
 
-      {/* BOTTOM NAVIGATION BAR */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2 flex justify-around items-center z-50 shadow-lg">
+      {/* BOTTOM NAVIGATION BAR (centrada en desktop al ancho del contenido) */}
+      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-200 px-6 py-2 flex justify-around items-center z-50 shadow-lg">
         <button
           onClick={() => { setView('agendar'); setStep(1); }}
           className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
@@ -622,6 +659,7 @@ export default function BookingApp() {
           <span>Info Local</span>
         </button>
       </nav>
+    </div>
     </div>
   );
 }

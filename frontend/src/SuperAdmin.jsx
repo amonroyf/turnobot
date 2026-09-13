@@ -480,15 +480,23 @@ export default function SuperAdmin() {
   // No autenticado
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-        <h1 className="text-3xl font-extrabold mb-2 text-gray-900">TurnoBot SaaS</h1>
-        <p className="text-sm text-gray-500 mb-6">Panel de Administración</p>
-        <button
-          onClick={() => signInWithPopup(auth, provider)}
-          className="p-4 bg-black text-white font-bold rounded-2xl shadow-md w-full max-w-xs active:scale-95 transition-transform"
-        >
-          Iniciar Sesión con Google
-        </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
+          <h1 className="text-3xl font-extrabold text-gray-900">Panel SaaS</h1>
+          <p className="mt-2 text-sm text-gray-600">Administración de todos los negocios</p>
+        </div>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-6 shadow rounded-2xl border border-gray-100">
+            <button
+              onClick={() => signInWithPopup(auth, provider)}
+              className="w-full p-4 bg-black text-white font-bold rounded-xl shadow-md active:scale-95 transition-transform text-sm"
+            >
+              Iniciar Sesión con Google
+            </button>
+            <p className="mt-4 text-center text-xs text-gray-400">Solo el super administrador puede acceder.</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -496,18 +504,23 @@ export default function SuperAdmin() {
   // No es super admin
   if (!isSuperAdmin) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
-        <div className="text-5xl mb-4">🔒</div>
-        <h1 className="text-2xl font-bold mb-2 text-gray-900">Acceso Restringido</h1>
-        <p className="text-sm text-gray-500 mb-6 text-center max-w-sm">
-          Solo el administrador del sistema puede acceder a este panel.
-        </p>
-        <button
-          onClick={() => signOut(auth)}
-          className="px-6 py-3 bg-gray-200 text-gray-700 font-bold rounded-xl text-sm active:scale-95 transition-transform"
-        >
-          Cerrar Sesión
-        </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
+          <div className="text-5xl mb-4">🔒</div>
+          <h1 className="text-2xl font-extrabold text-gray-900">Acceso Restringido</h1>
+          <p className="mt-2 text-sm text-gray-600">Solo el administrador del sistema puede acceder a este panel.</p>
+        </div>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-6 shadow rounded-2xl border border-gray-100">
+            <button
+              onClick={() => signOut(auth)}
+              className="w-full px-6 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-sm active:scale-95 transition-transform"
+            >
+              Cerrar Sesión
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

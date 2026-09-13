@@ -502,22 +502,38 @@ export default function AdminDashboard() {
   if (loading) return <div className="p-8 text-center text-gray-500 font-medium">Cargando panel...</div>;
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
-        <h1 className="text-3xl font-bold mb-6 text-gray-800">Turnobot Admin</h1>
-        <button onClick={() => signInWithPopup(auth, provider)} className="p-4 bg-black text-white font-bold rounded-2xl shadow-md w-full max-w-xs active:scale-95 transition-transform">
-          Iniciar Sesión con Google
-        </button>
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
+          <h1 className="text-3xl font-extrabold text-gray-900">Panel del Negocio</h1>
+          <p className="mt-2 text-sm text-gray-600">Gestiona tus citas, servicios y equipo</p>
+        </div>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-6 shadow rounded-2xl border border-gray-100">
+            <button onClick={() => signInWithPopup(auth, provider)} className="w-full p-4 bg-black text-white font-bold rounded-xl shadow-md active:scale-95 transition-transform text-sm">
+              Iniciar Sesión con Google
+            </button>
+            <p className="mt-4 text-center text-xs text-gray-400">Solo el dueño del negocio puede acceder.</p>
+          </div>
+        </div>
       </div>
     );
   }
   if (!negocio) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
-        <h1 className="text-3xl font-bold mb-4 text-gray-800">Turnobot Admin</h1>
-        <p className="text-gray-600 mb-6 font-medium text-sm">Aún no has configurado tu negocio.</p>
-        <a href="/register" className="p-4 bg-black text-white font-bold rounded-2xl shadow-md w-full max-w-xs text-center active:scale-95 transition-transform">
-          Crear mi negocio
-        </a>
+      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
+          <h1 className="text-3xl font-extrabold text-gray-900">Panel del Negocio</h1>
+          <p className="mt-2 text-sm text-gray-600">Aún no has configurado tu negocio.</p>
+        </div>
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-6 shadow rounded-2xl border border-gray-100">
+            <a href="/register" className="block w-full p-4 bg-black text-white font-bold rounded-xl shadow-md text-center active:scale-95 transition-transform text-sm">
+              Crear mi negocio
+            </a>
+          </div>
+        </div>
       </div>
     );
   }

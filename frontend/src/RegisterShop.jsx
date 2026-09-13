@@ -158,6 +158,7 @@ export default function RegisterShop() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+        <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
         <h2 className="text-3xl font-extrabold text-gray-900">
           {step === 1 ? 'Crea tu Cuenta' : 'Configura tu Negocio'}
         </h2>
@@ -169,7 +170,7 @@ export default function RegisterShop() {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-2xl sm:px-10 border border-gray-100">
+        <div className="bg-white py-8 px-6 shadow rounded-2xl sm:px-10 border border-gray-100">
           {error && (
             <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm text-center">
               {error}
@@ -195,15 +196,15 @@ export default function RegisterShop() {
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-200" />
                 </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="bg-white px-3 text-gray-400">o</span>
+                <div className="relative flex justify-center text-[11px]">
+                  <span className="bg-white px-4 font-bold uppercase tracking-widest text-gray-400">o</span>
                 </div>
               </div>
 
               {!showPassword ? (
                 <button
                   onClick={() => setShowPassword(true)}
-                  className="w-full text-center text-sm font-semibold text-gray-500 hover:text-gray-700"
+                  className="w-full text-center text-sm font-bold text-gray-600 hover:text-black underline underline-offset-4 decoration-gray-300"
                 >
                   ¿Prefieres crear tu cuenta con correo y contraseña?
                 </button>
