@@ -293,10 +293,7 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 			listCitasHandler(w, r, slug)
 			return
 		}
-		if action == "settings" && r.Method == http.MethodPut {
-			updateSettingsHandler(w, r, slug)
-			return
-		}
+
 	}
 
 	if len(parts) == 3 && parts[1] == "citas" && r.Method == http.MethodDelete {
@@ -397,8 +394,6 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Agrega la lectura del servicio para calcular la rejilla según su duración
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
-	// El buffer del servicio NO cambia la rejilla: solo amplía la ventana
-	// bloqueada después de cada cita (ver firestoreBookedIntervals).
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
 
 	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
@@ -585,8 +580,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
-	// Verificación con la rejilla de duración pura: el buffer bloquea huecos
-	// tras las citas existentes, no los horarios de inicio ofrecidos.
+	// Verificación con la rejilla de duración pura.
 	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error verificando disponibilidad en el calendario: %v", err)
@@ -628,8 +622,6 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
 	// transacción para cerrar la race condition de doble reserva, y crea la
 	// reserva + el upsert del CRM de forma atómica.
-	// El bloqueo de la agenda incluye el buffer: la cita siguiente no puede
-	// empezar antes de que termine la limpieza/preparación de esta.
 	eventEnd := eventDateTime.Add(time.Duration(duration) * time.Minute)
 	// bookTxn ejecuta UN intento transaccional. Se invoca dentro del loop
 	// de reintentos de abajo; newRef se crea por intento para no reutilizar
@@ -1924,9 +1916,6 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	// Excluir los horarios ya reservados en Firestore (fuente de verdad local).
 	// Esto protege contra la doble reserva del mismo slot aunque el empleado no
 	// tenga Google Calendar vinculado (modo mock) o hay latencia en el freebusy.
-	// Los intervalos reservados incluyen el buffer vigente del servicio, así que
-	// la pausa de limpieza/preparación bloquea la cita siguiente sin cambiar la
-	// rejilla de horarios ofrecidos (paso = duración del servicio).
 	var bookStart, bookEnd time.Time
 	if len(shiftIntervals) > 0 {
 		bookStart = shiftIntervals[0][0]
@@ -2232,88 +2221,6 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Settings (reglas de reserva, solo dueño)
-// ---------------------------------------------------------------------------
-
-// SettingsRequest actualiza reglas de reserva del negocio. Campos en nil = sin cambio.
-type SettingsRequest struct {
-	MinNoticeMinutes          *int `json:"min_notice_minutes,omitempty"`
-	BookingWindowDays         *int `json:"booking_window_days,omitempty"`
-	MaxBookingsPerPhonePerDay *int `json:"max_bookings_per_phone_per_day,omitempty"`
-	ReminderDaysBefore        *int `json:"reminder_days_before,omitempty"`
-	ReminderHoursBefore       *int `json:"reminder_hours_before,omitempty"`
-}
-
-// PUT /api/v1/b/{slug}/settings -> actualiza las reglas de reserva del negocio.
-// Solo el dueño (Firebase ID token). Cada campo tiene cotas saneadas y los
-// defaults se aplican en lectura (helpers negocioXxx), así que guardar 0
-// equivale a "usar default".
-func updateSettingsHandler(w http.ResponseWriter, r *http.Request, slug string) {
-	if !isOwnerRequest(r, slug) {
-		http.Error(w, "No autorizado", http.StatusUnauthorized)
-		return
-	}
-
-	var req SettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Payload inválido", http.StatusBadRequest)
-		return
-	}
-
-	clamp := func(v, min, max int) int {
-		if v < min {
-			return min
-		}
-		if v > max {
-			return max
-		}
-		return v
-	}
-
-	updates := []firestore.Update{}
-	if req.MinNoticeMinutes != nil {
-		updates = append(updates, firestore.Update{Path: "min_notice_minutes", Value: clamp(*req.MinNoticeMinutes, 0, 60*24*14)})
-	}
-	if req.BookingWindowDays != nil {
-		updates = append(updates, firestore.Update{Path: "booking_window_days", Value: clamp(*req.BookingWindowDays, 1, 365)})
-	}
-	if req.MaxBookingsPerPhonePerDay != nil {
-		updates = append(updates, firestore.Update{Path: "max_bookings_per_phone_per_day", Value: clamp(*req.MaxBookingsPerPhonePerDay, 1, 20)})
-	}
-	if req.ReminderDaysBefore != nil {
-		updates = append(updates, firestore.Update{Path: "reminder_days_before", Value: clamp(*req.ReminderDaysBefore, 1, 30)})
-	}
-	if req.ReminderHoursBefore != nil {
-		updates = append(updates, firestore.Update{Path: "reminder_hours_before", Value: clamp(*req.ReminderHoursBefore, 1, 72)})
-	}
-
-	if len(updates) == 0 {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": true,
-			"message": "Sin cambios que aplicar",
-		})
-		return
-	}
-
-	updates = append(updates, firestore.Update{Path: "updated_at", Value: time.Now()})
-	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(r.Context(), updates); err != nil {
-		log.Printf("Error actualizando settings de %s: %v", slug, err)
-		http.Error(w, "Error guardando la configuración", http.StatusInternalServerError)
-		return
-	}
-
-	// Invalidar caché: los settings (ventana, antelación, recordatorios)
-	// afectan slots/book y deben verse reflejados de inmediato.
-	negocioCache.Invalidate(slug)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Configuración actualizada",
-	})
-}
-
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
