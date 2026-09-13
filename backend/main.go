@@ -306,43 +306,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 
 // GET /api/v1/b/{slug} -> datos del negocio, servicios y empleados
 func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
-	ctx := context.Background()
-
-	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	// Lectura vía caché TTL 5min (cache.go): reduce lecturas de Firestore en
+	// el endpoint más caliente. El objeto cacheado ya trae servicios y
+	// empleados poblados con slices no-nil.
+	negocio, err := getCachedNegocio(r.Context(), slug)
 	if err != nil {
 		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
 		return
-	}
-
-	var negocio Negocio
-	doc.DataTo(&negocio)
-	negocio.ID = doc.Ref.ID
-
-	// Asegurar que los arrays nunca sean null en el JSON (la UI hace .map
-	// directo; un negocio sin servicios/empleados debe entregar []).
-	negocio.Servicios = []Service{}
-	negocio.Empleados = []Employee{}
-
-	svcsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Documents(ctx).GetAll()
-	if err != nil {
-		log.Printf("Error cargando servicios de %s: %v", slug, err)
-	}
-	for _, d := range svcsDocs {
-		var svc Service
-		d.DataTo(&svc)
-		svc.ID = d.Ref.ID
-		negocio.Servicios = append(negocio.Servicios, svc)
-	}
-
-	empsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll()
-	if err != nil {
-		log.Printf("Error cargando empleados de %s: %v", slug, err)
-	}
-	for _, d := range empsDocs {
-		var emp Employee
-		d.DataTo(&emp)
-		emp.ID = d.Ref.ID
-		negocio.Empleados = append(negocio.Empleados, emp)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -350,6 +320,8 @@ func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 }
 
 // isBusinessSuspended verifica si un negocio tiene suspended=true en Firestore.
+// Lee directo (sin caché) a propósito: la suspensión la escribe el Super Admin
+// vía SDK y debe aplicarse de inmediato en slots/book.
 // Si el documento no se puede leer, devuelve false para no bloquear por falsos positivos.
 func isBusinessSuspended(ctx context.Context, slug string) bool {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
@@ -1175,6 +1147,9 @@ func deleteNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		http.Error(w, "Error eliminando el documento principal", http.StatusInternalServerError)
 		return
 	}
+
+	// Invalidar caché para no servir datos fantasma en lecturas subsecuentes.
+	negocioCache.Invalidate(slug)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2078,6 +2053,10 @@ func updateSettingsHandler(w http.ResponseWriter, r *http.Request, slug string) 
 		http.Error(w, "Error guardando la configuración", http.StatusInternalServerError)
 		return
 	}
+
+	// Invalidar caché: los settings (ventana, antelación, recordatorios)
+	// afectan slots/book y deben verse reflejados de inmediato.
+	negocioCache.Invalidate(slug)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

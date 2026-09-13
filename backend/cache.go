@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"log"
 	"sync"
 	"time"
 )
@@ -53,13 +55,20 @@ func (c *NegocioCache) Invalidate(slug string) {
 	delete(c.items, slug)
 }
 
-// getCachedNegocio obtiene el negocio del caché o de Firestore.
-func getCachedNegocio(slug string) (Negocio, error) {
+// getCachedNegocio obtiene el negocio completo (doc + subcolecciones) del
+// caché o de Firestore. Cachea la respuesta tal como la sirve
+// getNegocioHandler para que el endpoint no pegue a Firestore en cada request.
+// NOTA: no usar para checks de seguridad frescos (ej. suspended), que deben
+// leer Firestore directo o invalidarse explícitamente al cambiar.
+func getCachedNegocio(ctx context.Context, slug string) (Negocio, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	if neg, ok := negocioCache.Get(slug); ok {
 		return neg, nil
 	}
 
-	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(nil) // Background context
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
 	if err != nil {
 		return Negocio{}, err
 	}
@@ -67,6 +76,35 @@ func getCachedNegocio(slug string) (Negocio, error) {
 	var neg Negocio
 	doc.DataTo(&neg)
 	neg.ID = doc.Ref.ID
+
+	// Poblar subcolecciones para que el Set guarde la respuesta completa
+	// (el frontend espera servicios/empleados en la misma respuesta).
+	// Arrays nunca nil: la UI hace .map directo.
+	neg.Servicios = []Service{}
+	neg.Empleados = []Employee{}
+
+	if svcsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Documents(ctx).GetAll(); err != nil {
+		log.Printf("getCachedNegocio: error cargando servicios de %s: %v", slug, err)
+	} else {
+		for _, d := range svcsDocs {
+			var svc Service
+			d.DataTo(&svc)
+			svc.ID = d.Ref.ID
+			neg.Servicios = append(neg.Servicios, svc)
+		}
+	}
+
+	if empsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll(); err != nil {
+		log.Printf("getCachedNegocio: error cargando empleados de %s: %v", slug, err)
+	} else {
+		for _, d := range empsDocs {
+			var emp Employee
+			d.DataTo(&emp)
+			emp.ID = d.Ref.ID
+			neg.Empleados = append(neg.Empleados, emp)
+		}
+	}
+
 	negocioCache.Set(slug, neg)
 	return neg, nil
 }
