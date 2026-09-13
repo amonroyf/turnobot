@@ -121,7 +121,6 @@ export default function BookingApp() {
   const [negocio, setNegocio] = useState(null);
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
-  const [waConfirmado, setWaConfirmado] = useState(false);
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
@@ -195,7 +194,6 @@ export default function BookingApp() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
-        setWaConfirmado(false);
         setStep(5);
         return;
       }
@@ -575,56 +573,51 @@ export default function BookingApp() {
                   </div>
                 )}
 
-                {/* PANTALLA ÉXITO */}
+                {/* PANTALLA ÉXITO (PASO 5) — autónoma: la cita ya quedó en
+                    Firestore + Calendar con el 201. WhatsApp es opcional. */}
                 {step === 5 && (
                   <div id="step-success" className="text-center p-6 bg-white border border-gray-200 rounded-2xl shadow-sm space-y-4 mt-4 scroll-mt-24">
-                    {!waConfirmado ? (
-                      <>
-                        <div className="text-4xl">🎉</div>
-                        <h2 className="text-lg font-bold text-gray-900">¡Cita reservada con éxito!</h2>
-                        <p className="text-xs text-gray-500">
-                          Tu turno ya está en nuestra agenda. Para agilizar tu atención al llegar, envíanos este mensaje rápido por WhatsApp.
-                        </p>
-                        <div className="text-left bg-gray-50 rounded-xl p-3.5 space-y-1 text-xs text-gray-700 border border-gray-100">
-                          <p><strong>Servicio:</strong> {servicioElegido?.name}</p>
-                          <p><strong>Profesional:</strong> {empleadoElegido?.name}</p>
-                          <p><strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)} - {booking.hora}</p>
-                          {booking.clienteNotas && <p><strong>Notas:</strong> {booking.clienteNotas}</p>}
-                        </div>
-                        {negocio.whatsapp && (
-                          <a
-                            href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(`Hola, soy ${booking.clienteNombre}. Acabo de agendar ${servicioElegido?.name} con ${empleadoElegido?.name} el ${formatearFechaLarga(booking.fecha)} a las ${booking.hora}.`)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={() => setWaConfirmado(true)}
-                            className="block w-full py-3.5 bg-green-500 text-white font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
-                          >
-                            💬 Enviar mensaje por WhatsApp
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={descargarMiICS}
-                          className="block w-full py-3.5 bg-white border border-gray-200 text-gray-800 font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
+                    <div className="text-4xl">✅</div>
+                    <h2 className="text-xl font-bold text-gray-900">¡Cita confirmada!</h2>
+                    <p className="text-sm text-gray-500">
+                      Tu turno ha sido guardado exitosamente. Te esperamos el {formatearFechaLarga(booking.fecha)} a las {booking.hora}.
+                    </p>
+
+                    <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
+                      <p>💈 <strong>Servicio:</strong> {servicioElegido?.name}</p>
+                      <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name}</p>
+                      <p>📅 <strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)}</p>
+                      <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
+                      {booking.clienteNotas && <p>📝 <strong>Notas:</strong> {booking.clienteNotas}</p>}
+                    </div>
+
+                    <p className="mt-4 text-xs text-gray-500 font-medium">
+                      💡 Llega <strong>5 minutos antes</strong> de tu cita.
+                    </p>
+
+                    <div className="space-y-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={descargarMiICS}
+                        className="block w-full py-3.5 bg-black text-white font-bold rounded-xl text-center text-sm shadow-sm active:scale-95 transition-transform"
+                      >
+                        📅 Añadir al calendario (.ics)
+                      </button>
+
+                      {/* WhatsApp ahora es opcional para dudas, no obligatorio */}
+                      {negocio.whatsapp && (
+                        <a
+                          href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(`Hola, acabo de agendar una cita para el ${formatearFechaLarga(booking.fecha)} a las ${booking.hora}.`)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block w-full py-3.5 bg-green-50 text-green-700 font-bold rounded-xl text-center text-sm border border-green-200 active:scale-95 transition-transform"
                         >
-                          📅 Añadir al calendario (.ics)
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-4xl">✅</div>
-                        <h2 className="text-lg font-bold text-gray-900">¡Mensaje Enviado!</h2>
-                        <p className="text-xs text-gray-500">Te esperamos el {formatearFechaLarga(booking.fecha)} a las {booking.hora}.</p>
-                        <button
-                          type="button"
-                          onClick={descargarMiICS}
-                          className="block w-full py-3.5 bg-white border border-gray-200 text-gray-800 font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
-                        >
-                          📅 Añadir al calendario (.ics)
-                        </button>
-                      </>
-                    )}
-                    <button onClick={reiniciarAgendamiento} className="text-xs text-gray-500 font-semibold underline pt-2">
+                          💬 Tengo una duda (Escribir al local)
+                        </a>
+                      )}
+                    </div>
+
+                    <button onClick={reiniciarAgendamiento} className="text-xs text-gray-500 font-semibold underline pt-4 block w-full">
                       Volver al inicio
                     </button>
                   </div>
