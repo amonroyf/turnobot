@@ -89,9 +89,13 @@ type Negocio struct {
 	ReminderHoursBefore int `firestore:"reminder_hours_before" json:"reminder_hours_before"`
 	// Suspended marca un negocio suspendido por el super admin: no acepta
 	// reservas nuevas (slots y book responden 403).
-	Suspended bool       `firestore:"suspended" json:"suspended"`
-	Servicios []Service  `json:"servicios"`
-	Empleados []Employee `json:"empleados"`
+	Suspended            bool          `firestore:"suspended" json:"suspended"`
+	StatsCitasActivas    int           `firestore:"stats_citas_activas" json:"stats_citas_activas,omitempty"`
+	StatsTotalClientes   int           `firestore:"stats_total_clientes" json:"stats_total_clientes,omitempty"`
+	StatsIngresosTotales int64         `firestore:"stats_ingresos_totales" json:"stats_ingresos_totales,omitempty"`
+	CreatedAt            time.Time     `firestore:"created_at" json:"created_at,omitempty"`
+	Servicios            []Service     `json:"servicios"`
+	Empleados            []Employee    `json:"empleados"`
 }
 
 // Turno represents a single work shift within a day.
@@ -630,6 +634,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// bookTxn ejecuta UN intento transaccional. Se invoca dentro del loop
 	// de reintentos de abajo; newRef se crea por intento para no reutilizar
 	// IDs de intentos abortados.
+	var citaID string
 	bookTxn := func() error {
 		newRef := firestoreClient.Collection("reservas").NewDoc()
 		return firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
@@ -695,8 +700,9 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			}); err != nil {
 				return err
 			}
+			citaID = newRef.ID
 			// 1. Cliente nuevo (ya leído arriba) suma al total general del negocio
-			if err := tx.Set(cliRef, map[string]interface{}{
+			cliData := map[string]interface{}{
 				"negocio_id":    slug,
 				"owner_uid":     negocioInfo.OwnerUID,
 				"cliente_phone": req.ClienteTelefono,
@@ -706,7 +712,11 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				"last_seen":     eventDateTime,
 				"last_date_str": eventDateTime.Format("2006-01-02"),
 				"updated_at":    time.Now(),
-			}, firestore.MergeAll); err != nil {
+			}
+			if isNewClient {
+				cliData["created_at"] = time.Now()
+			}
+			if err := tx.Set(cliRef, cliData, firestore.MergeAll); err != nil {
 				return err
 			}
 
@@ -773,9 +783,13 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":  true,
-		"message":  "Cita agendada exitosamente",
-		"event_id": eventID,
+		"success":      true,
+		"message":      "Cita agendada exitosamente",
+		"cita_id":      citaID,
+		"event_id":     eventID,
+		"date_time":    eventDateTime.Format(time.RFC3339),
+		"service_name": serviceName,
+		"price":        precioServicio,
 	})
 }
 
@@ -838,6 +852,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	type citaJSON struct {
 		ID         string `json:"id"`
 		Servicio   string `json:"servicio"`
+		Price      int    `json:"price"`
 		Fecha      string `json:"fecha"`
 		Hora       string `json:"hora"`
 		EmpID      string `json:"emp_id"`
@@ -854,6 +869,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		citas = append(citas, citaJSON{
 			ID:         d.Ref.ID,
 			Servicio:   b.ServiceName,
+			Price:      b.Price,
 			Fecha:      b.DateTime.In(loc).Format("2006-01-02"),
 			Hora:       b.DateTime.In(loc).Format("15:04"),
 			EmpID:      b.EmpID,
@@ -945,8 +961,13 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "Cita cancelada exitosamente",
+		"success":      true,
+		"message":      "Cita cancelada exitosamente",
+		"cita_id":      citaID,
+		"client_name":  b.ClientName,
+		"user_phone":   b.UserPhone,
+		"service_name": b.ServiceName,
+		"date_time":    b.DateTime.Format(time.RFC3339),
 	})
 }
 
