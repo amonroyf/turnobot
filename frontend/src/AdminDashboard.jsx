@@ -535,6 +535,42 @@ export default function AdminDashboard() {
 
   const clientesCRM = [...clientes].sort((a, b) => (b.visits || 0) - (a.visits || 0));
 
+  const exportarClientesCSV = () => {
+    if (!clientesCRM || clientesCRM.length === 0) return;
+
+    const headers = [
+      'Nombre del Cliente',
+      'Telefono / WhatsApp',
+      'Numero de Visitas',
+      'Total Gastado (LTV)',
+      'Fecha de Ultima Cita',
+    ];
+
+    const rows = clientesCRM.map((c) => [
+      `"${(c.client_name || '').replace(/"/g, '""')}"`,
+      `"${(c.cliente_phone || '').replace(/"/g, '""')}"`,
+      c.visits || 0,
+      c.total_spent || 0,
+      `"${(fechaUltimaVisita(c) || 'N/A').replace(/"/g, '""')}"`,
+    ]);
+
+    const csvContent =
+      '\uFEFF' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute(
+      'download',
+      `clientes-${negocio.id}-${fechaHoyEnZona(negocio.timezone)}.csv`,
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Agrupación Hoy/Mañana/Próximas en la zona del negocio (no del dispositivo).
   const zonaNegocio = negocio?.timezone || 'America/Bogota';
   const keyHoy = fechaHoyEnZona(zonaNegocio);
@@ -757,9 +793,21 @@ export default function AdminDashboard() {
         {view === 'clientes' && (
           <div className="space-y-6">
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-lg font-bold text-gray-900 mb-1">Directorio de Clientes ({clientesCRM.length})</h2>
+              <div className="flex justify-between items-center mb-1">
+                <h2 className="text-lg font-bold text-gray-900">
+                  Directorio de Clientes ({clientesCRM.length})
+                </h2>
+                {clientesCRM.length > 0 && (
+                  <button
+                    onClick={exportarClientesCSV}
+                    className="py-2 px-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform"
+                  >
+                    📊 Descargar CSV
+                  </button>
+                )}
+              </div>
               <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">
-                Tus clientes más leales organizados por visitas y dinero invertido (LTV). Escríbeles para promociones.
+                Tus clientes más leales organizados por visitas y dinero invertido (LTV). Escríbeles para promociones o exporta la lista.
               </p>
               {clientesCRM.length === 0 ? (
                 <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
