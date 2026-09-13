@@ -51,18 +51,35 @@ service cloud.firestore {
 
     // 1. Colección principal: NEGOCIOS
     match /negocios/{slug} {
+      // Público: Los clientes necesitan leer el local para agendar
       allow read: if true;
-      allow create: if request.auth != null && request.resource.data.owner_uid == request.auth.uid;
-      allow update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
+      // Creación: el dueño autenticado crea el documento con su owner_uid
+      allow create: if request.auth != null &&
+                     request.resource.data.owner_uid == request.auth.uid;
 
+      // ACTUALIZACIÓN Y ELIMINACIÓN
+      // El dueño NO puede modificar los campos 'suspended' ni 'suspended_at'.
+      // El UID del Super Admin ('0FF1nrcBnSPIdB1rMgYocmRnYUb2') puede hacer todo.
+      allow update: if request.auth != null && (
+        (resource.data.owner_uid == request.auth.uid &&
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspended', 'suspended_at']))
+        || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+      );
+
+      allow delete: if request.auth != null && (
+        resource.data.owner_uid == request.auth.uid ||
+        request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+      );
+
+      // Subcolecciones: SERVICIOS y EMPLEADOS
       match /servicios/{servicioId} {
         allow read: if true;
-        allow write: if isOwner(slug);
+        allow write: if isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
       }
 
       match /empleados/{empId} {
         allow read: if true;
-        allow write: if isOwner(slug) && horarioIsValid();
+        allow write: if (isOwner(slug) && horarioIsValid()) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
       }
     }
 

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth, provider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import {
-  collection, getDocs, doc, deleteDoc, updateDoc, onSnapshot, query, where,
+  collection, getDocs, doc, updateDoc, onSnapshot, query, where,
 } from 'firebase/firestore';
 import { formatearTelefono } from './fecha.js';
 
@@ -178,57 +178,29 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
       `⚠️ ELIMINAR NEGOCIO "${negocioId}"\n\n` +
       `Esto eliminará:\n` +
       `• El documento del negocio\n` +
-      `• Todos sus servicios (${servicios.length})\n` +
-      `• Todos sus profesionales (${empleados.length})\n` +
-      `• Todas sus citas futuras (${reservas.length})\n` +
-      `• Los registros de clientes\n\n` +
-      `Esta acción NO se puede deshacer.`,
+      `• Todos sus servicios\n` +
+      `• Todos sus profesionales\n` +
+      `• Todas sus citas y clientes\n\n` +
+      `Esta acción NO se puede deshacer y el servidor la procesará en segundo plano.`
     );
     if (!confirmacion) return;
 
     setEliminando(true);
     try {
-      // 1. Eliminar reservas futuras del Firestore
-      const reservasSnap = await getDocs(
-        query(collection(db, 'reservas'), where('negocio_id', '==', negocioId)),
-      );
-      const batch1 = [];
-      for (const d of reservasSnap.docs) {
-        batch1.push(deleteDoc(d.ref));
-      }
-      await Promise.all(batch1);
+      // Usamos el token del usuario actual (que sabemos que es el SuperAdmin)
+      const token = await auth.currentUser.getIdToken();
 
-      // 2. Eliminar clientes
-      const clientesSnap = await getDocs(
-        query(collection(db, 'clientes'), where('negocio_id', '==', negocioId)),
-      );
-      const batch2 = [];
-      for (const d of clientesSnap.docs) {
-        batch2.push(deleteDoc(d.ref));
-      }
-      await Promise.all(batch2);
+      const res = await fetch(`${API_URL}/api/v1/b/${negocioId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
 
-      // 3. Eliminar servicios
-      const svcSnap = await getDocs(collection(db, `negocios/${negocioId}/servicios`));
-      const batch3 = [];
-      for (const d of svcSnap.docs) {
-        batch3.push(deleteDoc(d.ref));
+      if (!res.ok) {
+        throw new Error('No autorizado o error del servidor');
       }
-      await Promise.all(batch3);
-
-      // 4. Eliminar empleados
-      const empSnap = await getDocs(collection(db, `negocios/${negocioId}/empleados`));
-      const batch4 = [];
-      for (const d of empSnap.docs) {
-        batch4.push(deleteDoc(d.ref));
-      }
-      await Promise.all(batch4);
-
-      // 5. Eliminar el documento del negocio
-      await deleteDoc(doc(db, 'negocios', negocioId));
 
       alert(`✅ Negocio "${negocioId}" eliminado correctamente.`);
-      onDeleted();
+      onDeleted(); // Dispara la actualización de la lista de negocios en SuperAdmin
     } catch (err) {
       console.error('Error eliminando negocio:', err);
       alert('Error al eliminar el negocio. Intenta de nuevo.');

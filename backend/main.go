@@ -246,6 +246,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// NUEVA RUTA: Eliminación completa del negocio por parte del Super Admin
+	if len(parts) == 1 && r.Method == http.MethodDelete {
+		deleteNegocioHandler(w, r, slug)
+		return
+	}
+
 	if len(parts) == 2 {
 		action := parts[1]
 		if action == "slots" && r.Method == http.MethodGet {
@@ -1086,6 +1092,94 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 		"success":        true,
 		"message":        "Profesional eliminado",
 		"citas_borradas": deleted,
+	})
+}
+
+// isSuperAdminRequest valida que el token provenga exclusivamente de la cuenta raíz
+func isSuperAdminRequest(r *http.Request) bool {
+	if firebaseAuth == nil {
+		return false
+	}
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		return false
+	}
+	tok, err := firebaseAuth.VerifyIDToken(r.Context(), token)
+	if err != nil {
+		return false
+	}
+	// El UID hardcodeado de tu Super Admin en React
+	return tok.UID == "0FF1nrcBnSPIdB1rMgYocmRnYUb2"
+}
+
+// DELETE /api/v1/b/{slug} -> Borrado masivo (Batch) de todo el tenant
+func deleteNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if !isSuperAdminRequest(r) {
+		http.Error(w, "Acceso denegado: Se requiere rol de Super Administrador", http.StatusForbidden)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Helper para borrar documentos en lotes (batch).
+	// Trocea en bloques de 400 para respetar el límite de 500 writes por commit
+	// y soportar tenants con miles de documentos sin colapsar.
+	deleteDocs := func(docs []*firestore.DocumentSnapshot) {
+		batch := firestoreClient.Batch()
+		count := 0
+		for _, d := range docs {
+			batch.Delete(d.Ref)
+			count++
+			if count >= 400 {
+				if _, err := batch.Commit(ctx); err != nil {
+					log.Printf("Error en commit de borrado masivo de %s: %v", slug, err)
+				}
+				batch = firestoreClient.Batch()
+				count = 0
+			}
+		}
+		if count > 0 {
+			if _, err := batch.Commit(ctx); err != nil {
+				log.Printf("Error en commit final de borrado masivo de %s: %v", slug, err)
+			}
+		}
+	}
+	deleteQuery := func(q firestore.Query) {
+		docs, err := q.Documents(ctx).GetAll()
+		if err != nil {
+			log.Printf("Error consultando para borrado masivo de %s: %v", slug, err)
+			return
+		}
+		deleteDocs(docs)
+	}
+	deleteCollection := func(col *firestore.CollectionRef) {
+		docs, err := col.Documents(ctx).GetAll()
+		if err != nil {
+			log.Printf("Error consultando para borrado masivo de %s: %v", slug, err)
+			return
+		}
+		deleteDocs(docs)
+	}
+
+	// 1. Borrar todas las reservas y clientes asociados al negocio
+	deleteQuery(firestoreClient.Collection("reservas").Where("negocio_id", "==", slug))
+	deleteQuery(firestoreClient.Collection("clientes").Where("negocio_id", "==", slug))
+
+	// 2. Borrar las subcolecciones del negocio
+	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("servicios"))
+	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("empleados"))
+
+	// 3. Borrar el documento principal del negocio
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Delete(ctx)
+	if err != nil {
+		http.Error(w, "Error eliminando el documento principal", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Negocio y datos asociados eliminados correctamente",
 	})
 }
 
