@@ -530,9 +530,12 @@ export default function BookingApp() {
                       <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
                       
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>✨ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
+                        <p>✂️ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
                         <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
+                        {negocio?.direccion && (
+                          <p>📍 Dirección: <strong>{negocio.direccion}</strong></p>
+                        )}
                       </div>
 
                       <input

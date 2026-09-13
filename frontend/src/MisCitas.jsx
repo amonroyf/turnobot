@@ -147,9 +147,18 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
             const cancelable = c.cancelable !== false && !menosDe2Horas;
             return (
               <div key={c.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
-                <p className="font-bold text-gray-900 text-sm">✨ {c.servicio}</p>
-                <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
-                <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <p className="font-bold text-gray-900 text-sm">✂️ {c.servicio}</p>
+                    <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
+                    <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
+                  </div>
+                  {c.price > 0 && (
+                    <span className="text-xs font-black text-gray-900 bg-gray-100 px-2.5 py-1 rounded-lg shrink-0">
+                      ${Number(c.price).toLocaleString('es-CO')}
+                    </span>
+                  )}
+                </div>
                 {c.notes && <p className="text-xs text-gray-500 italic">📝 {c.notes}</p>}
                 
                 {!cancelable ? (

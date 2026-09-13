@@ -636,7 +636,9 @@ export default function AdminDashboard() {
         <div className="flex justify-between items-start gap-3">
           <div className={isPast && !isNoShow ? 'grayscale' : ''}>
             <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
-            <p className="text-xs text-gray-500 font-medium mt-1">✨ {r.service_name}</p>
+            <p className="text-xs font-bold text-green-700 mt-0.5">\n              📞 {formatearTelefono(r.user_phone)}
+            </p>
+            <p className="text-xs text-gray-500 font-medium mt-1">✂️ {r.service_name}</p>
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
             {r.notes && <p className="text-xs text-gray-600 mt-1 italic">📝 {r.notes}</p>}
           </div>
@@ -925,19 +927,36 @@ export default function AdminDashboard() {
             {/* GESTIÓN DE SERVICIOS */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-4">Servicios Activos</h2>
-              <ul className="space-y-2 mb-4">
+              <ul className="space-y-3 mb-4">
                 {servicios.length === 0 && <p className="text-sm font-medium text-gray-500 text-center py-4">No has agregado servicios.</p>}
-                {servicios.map((s) => (
-                  <li key={s.id} className="flex justify-between items-center p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm">
-                    <div>
-                      <p className="font-bold text-gray-900">{s.name}</p>
-                      <p className="text-xs font-medium text-gray-500">{s.duration_minutes} min</p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
-                    </div>
-                  </li>
-                ))}
+                {servicios.map((s) => {
+                  const encargados = profesionales.filter(
+                    (p) => !p.servicios_ids || p.servicios_ids.includes(s.id)
+                  );
+                  return (
+                    <li key={s.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className="font-bold text-gray-900">{s.name}</p>
+                          <p className="text-xs font-medium text-gray-500">{s.duration_minutes} min • {formatDinero(s.price)}</p>
+                        </div>
+                        <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">🗑️</button>
+                      </div>
+                      <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase">Especialistas:</span>
+                        {encargados.length === 0 ? (
+                          <span className="text-[10px] text-red-500 font-semibold">Sin personal asignado</span>
+                        ) : (
+                          encargados.map((p) => (
+                            <span key={p.id} className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
+                              👤 {p.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
 
               {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}

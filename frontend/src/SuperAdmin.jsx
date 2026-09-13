@@ -83,6 +83,11 @@ function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
           <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
             💰 {formatDinero(negocio.stats_ingresos_totales || 0)}
           </span>
+          {negocio.created_at?.seconds && (
+            <span className={`text-[10px] font-medium ml-auto ${selected ? 'text-gray-400' : 'text-gray-400'}`}>
+              Desde {new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' })}
+            </span>
+          )}
         </div>
       </button>
 
@@ -270,6 +275,26 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
           >
             {eliminando ? 'Eliminando...' : '🗑️ Eliminar Negocio'}
           </button>
+        </div>
+      </div>
+
+      {/* Datos de contacto y antigüedad */}
+      <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
+        <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-100 pb-2">
+          📋 Ficha Técnica del Propietario & Tenant
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
+          <p><strong>Owner UID:</strong> <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[11px] font-mono">{negocio?.owner_uid || 'N/A'}</code></p>
+          <p><strong>WhatsApp Local:</strong> {negocio?.whatsapp ? formatearTelefono(negocio.whatsapp) : 'Sin configurar'}</p>
+          <p><strong>Teléfono Contacto:</strong> {negocio?.telefono || 'N/A'}</p>
+          <p><strong>Dirección:</strong> {negocio?.direccion || 'N/A'}</p>
+          <p><strong>Zona Horaria:</strong> {negocio?.timezone || 'America/Bogota'}</p>
+          <p>
+            <strong>Fecha de Registro:</strong> {' '}
+            {negocio?.created_at?.seconds
+              ? new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
+              : 'N/A'}
+          </p>
         </div>
       </div>
 
