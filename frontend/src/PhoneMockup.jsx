@@ -5,7 +5,7 @@ export default function PhoneMockup() {
       <div className="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl shadow-black/30 z-10">
         {/* Notch */}
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-20"></div>
-        
+
         {/* Screen */}
         <div className="bg-white rounded-[2.2rem] overflow-hidden">
           {/* Status bar */}
