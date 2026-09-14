@@ -264,7 +264,7 @@ export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
-  const [view, setView] = useState('ajustes');
+  const [view, setView] = useState('agenda');
 
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
