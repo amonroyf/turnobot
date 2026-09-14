@@ -363,51 +363,52 @@ export default function AdminDashboard() {
 
   const logout = () => signOut(auth);
 
-  const copiarEnlace = async () => {
+  const copiarContenido = async (tipo) => {
     const url = `${window.location.origin}/shop/${negocio.id}`;
     const mensajeWhatsApp = `¡Hola! 👋 Te compartimos nuestro enlace de agendamiento en línea de *${negocio.name}*\n\nAhora puedes elegir tu servicio, ver nuestros horarios disponibles en tiempo real y reservar tu cita en segundos sin esperar confirmación:\n👉 ${url}\n\n¡Te esperamos! ✨`;
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: negocio.name,
-          text: mensajeWhatsApp,
-          url: url,
-        });
-        return;
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-
-    try {
-      await navigator.clipboard.writeText(mensajeWhatsApp);
-      setEnlaceCopiado(true);
-      setTimeout(() => setEnlaceCopiado(false), 2500);
-    } catch {
-      prompt('Copia este mensaje para tus clientes:', mensajeWhatsApp);
-    }
-  };
-
-  // Avisa al backend para limpiar su caché en RAM tras mutaciones vía SDK
-  // (addDoc/updateDoc no pasan por Go). Fire-and-forget: si falla, el TTL
-  // de 5 min lo corrige solo.
-  const copiarContenido = async (tipo) => {
-    try {
-      const token = await user.getIdToken();
-      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/cache/invalidate`, {
-        method: 'POST', headers: { Authorization: `Bearer ${token}` },
-      });
-    } catch (err) {
-      console.error('No se pudo invalidar caché:', err);
     const contenido = tipo === 'enlace' ? url : mensajeWhatsApp;
-    }
-    setGuardandoInfo(false);
+
+    try {
       await navigator.clipboard.writeText(contenido);
       setContenidoCopiado(tipo);
       setTimeout(() => setContenidoCopiado(''), 2500);
+    } catch {
+      prompt(
+        tipo === 'enlace' ? 'Copia este enlace para tus clientes:' : 'Copia este mensaje para tus clientes:',
+        contenido,
+      );
+    }
+  };
+
+  // Avisa al backend para limpiar su caché en RAM tras mutaciones vía SDK.
+  const invalidarCache = async () => {
+    try {
+      const token = await user.getIdToken();
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/cache/invalidate`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error('No se pudo invalidar caché:', err);
+    }
+  };
+
+  const handleGuardarInfoLocal = async (e) => {
     e.preventDefault();
-      prompt(tipo === 'enlace' ? 'Copia este enlace para tus clientes:' : 'Copia este mensaje para tus clientes:', contenido);
+    setGuardandoInfo(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
+      setNegocio({ ...negocio, ...infoLocal });
+      await invalidarCache();
+      alert('Información actualizada');
+    } catch (err) {
+      alert('No se pudo actualizar la información. Intenta nuevamente.');
+    }
+    setGuardandoInfo(false);
+  };
+
+  const handleGuardarWhatsApp = async (e) => {
+    e.preventDefault();
     const digitos = whatsApp.replace(/\D/g, '');
     const limpio = digitos.startsWith(codigoPais) ? digitos : codigoPais + digitos;
     if (limpio.length < 10) return alert('Ingresa el número local (ej. 3001234567)');
@@ -415,7 +416,7 @@ export default function AdminDashboard() {
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), { whatsapp: limpio });
       setNegocio({ ...negocio, whatsapp: limpio });
-      invalidarCache();
+      await invalidarCache();
       alert('WhatsApp actualizado');
     } catch (err) {
       alert('No se pudo actualizar el WhatsApp. Intenta nuevamente.');
