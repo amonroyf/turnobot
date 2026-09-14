@@ -284,7 +284,7 @@ export default function AdminDashboard() {
   const [whatsApp, setWhatsApp] = useState('');
   const [codigoPais, setCodigoPais] = useState('57');
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
-  const [enlaceCopiado, setEnlaceCopiado] = useState(false);
+  const [contenidoCopiado, setContenidoCopiado] = useState('');
 
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => {
@@ -392,7 +392,7 @@ export default function AdminDashboard() {
   // Avisa al backend para limpiar su caché en RAM tras mutaciones vía SDK
   // (addDoc/updateDoc no pasan por Go). Fire-and-forget: si falla, el TTL
   // de 5 min lo corrige solo.
-  const invalidarCache = async () => {
+  const copiarContenido = async (tipo) => {
     try {
       const token = await user.getIdToken();
       await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/cache/invalidate`, {
@@ -400,26 +400,14 @@ export default function AdminDashboard() {
       });
     } catch (err) {
       console.error('No se pudo invalidar caché:', err);
-    }
-  };
-
-  const handleGuardarInfoLocal = async (e) => {
-    e.preventDefault();
-    setGuardandoInfo(true);
-    try {
-      await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
-      setNegocio(prev => ({ ...prev, ...infoLocal }));
-      invalidarCache();
-      alert('Información del local actualizada');
-    } catch (err) {
-      alert('Error al actualizar la información');
+    const contenido = tipo === 'enlace' ? url : mensajeWhatsApp;
     }
     setGuardandoInfo(false);
-  };
-
-  const handleGuardarWhatsApp = async (e) => {
+      await navigator.clipboard.writeText(contenido);
+      setContenidoCopiado(tipo);
+      setTimeout(() => setContenidoCopiado(''), 2500);
     e.preventDefault();
-    if (!negocio) return;
+      prompt(tipo === 'enlace' ? 'Copia este enlace para tus clientes:' : 'Copia este mensaje para tus clientes:', contenido);
     const digitos = whatsApp.replace(/\D/g, '');
     const limpio = digitos.startsWith(codigoPais) ? digitos : codigoPais + digitos;
     if (limpio.length < 10) return alert('Ingresa el número local (ej. 3001234567)');
@@ -756,9 +744,14 @@ export default function AdminDashboard() {
         {/* PESTAÑA: AGENDA */}
         {view === 'agenda' && (
           <div className="space-y-6">
-            <button onClick={copiarEnlace} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
-              {enlaceCopiado ? '✅ ¡Enlace copiado!' : '🔗 Copiar mi Enlace de Reservas'}
-            </button>
+            <div className="grid sm:grid-cols-2 gap-3">
+              <button onClick={() => copiarContenido('enlace')} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
+                {contenidoCopiado === 'enlace' ? '✅ ¡Enlace copiado!' : '🔗 Copiar enlace limpio'}
+              </button>
+              <button onClick={() => copiarContenido('mensaje')} className="w-full py-4 bg-green-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
+                {contenidoCopiado === 'mensaje' ? '✅ ¡Mensaje copiado!' : '💬 Copiar mensaje para WhatsApp'}
+              </button>
+            </div>
             <p className="text-[11px] text-gray-400 font-medium text-center leading-relaxed">
               Para cancelar una cita, hazlo siempre desde aquí. Si borras el evento desde Google Calendar, el espacio seguirá bloqueado en tu página de reservas.
             </p>
