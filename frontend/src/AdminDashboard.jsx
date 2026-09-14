@@ -938,6 +938,22 @@ export default function AdminDashboard() {
               </form>
             </div>
 
+            {/* SOPORTE TURNOBOT */}
+            <div className="bg-green-50 p-5 rounded-3xl border border-green-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Soporte TurnoBot</h2>
+              <p className="text-[11px] font-medium text-gray-600 mb-4">
+                ¿Necesitas ayuda? Escríbenos directamente por WhatsApp.
+              </p>
+              <a
+                href="https://wa.me/573229124517?text=Hola%20TurnoBot%2C%20necesito%20ayuda%20con%20mi%20cuenta."
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-3.5 bg-green-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-sm"
+              >
+                💬 Contactar soporte · 322 912 4517
+              </a>
+            </div>
+
             {/* GESTIÓN DE SERVICIOS */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-4">Servicios Activos</h2>
