@@ -342,7 +342,7 @@ function PricingSection() {
         <FadeIn delay={200}>
           <div className="bg-gray-50 border-2 border-green-500 rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden">
             <div className="absolute top-0 right-0 bg-green-500 text-white text-xs font-bold px-4 py-1.5 rounded-bl-2xl uppercase tracking-wider">
-              30 DÍAS GRATIS
+              30 DÍAS DE PRUEBA
             </div>
             <div className="text-center mb-8">
               <h3 className="text-2xl font-black text-gray-900 mb-2">Plan Ilimitado</h3>
@@ -366,6 +366,67 @@ function PricingSection() {
             </div>
           </div>
         </FadeIn>
+      </div>
+    </section>
+  );
+}
+
+function FAQSection() {
+  const faqs = [
+    {
+      question: '¿Qué incluye el mes de prueba?',
+      answer: 'Acceso al Plan Ilimitado durante 30 días: profesionales, citas, CRM, enlace público, Google Calendar y métricas.',
+    },
+    {
+      question: '¿Mis clientes necesitan crear una cuenta?',
+      answer: 'No. Tus clientes reservan desde tu enlace público ingresando únicamente sus datos de contacto.',
+    },
+    {
+      question: '¿TurnoBot cobra comisión por cada reserva?',
+      answer: 'No. Pagas la suscripción mensual de $49.900 COP y no cobramos comisión por las citas que recibes.',
+    },
+    {
+      question: '¿Puedo administrar varios profesionales?',
+      answer: 'Sí. Cada profesional puede tener sus propios horarios, servicios y disponibilidad.',
+    },
+    {
+      question: '¿Puedo cancelar una cita?',
+      answer: 'Sí. Los clientes pueden cancelar con anticipación y el administrador puede gestionar las citas desde su panel.',
+    },
+    {
+      question: '¿Qué negocios pueden usar TurnoBot?',
+      answer: 'Cualquier negocio que trabaje con citas: barberías, salones, estética, consultorios, talleres, veterinarias y más.',
+    },
+  ];
+
+  return (
+    <section className="bg-white py-20 sm:py-28">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+        <FadeIn>
+          <div className="text-center max-w-3xl mx-auto mb-16">
+            <p className="text-sm font-bold text-green-600 uppercase tracking-wider mb-4">Preguntas frecuentes</p>
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-6">
+              Todo claro antes de empezar
+            </h2>
+            <p className="text-lg text-gray-500">
+              Lo esencial para decidir si TurnoBot encaja en tu negocio.
+            </p>
+          </div>
+        </FadeIn>
+
+        <div className="grid md:grid-cols-2 gap-4">
+          {faqs.map((faq, i) => (
+            <FadeIn key={faq.question} delay={i * 75}>
+              <details className="group h-full bg-gray-50 border border-gray-100 rounded-2xl p-5">
+                <summary className="cursor-pointer list-none flex items-center justify-between gap-4 text-sm font-bold text-gray-900">
+                  {faq.question}
+                  <span className="text-xl text-green-600 transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="text-sm text-gray-500 leading-relaxed mt-3">{faq.answer}</p>
+              </details>
+            </FadeIn>
+          ))}
+        </div>
       </div>
     </section>
   );
@@ -458,6 +519,7 @@ export default function LandingPage() {
       <FeaturesSection />
       <HowItWorksSection />
       <PricingSection />
+      <FAQSection />
       <TestimonialsSection />
       <CTASection />
       <Footer />
