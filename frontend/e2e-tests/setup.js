@@ -33,20 +33,20 @@ export async function crearUsuarioYTema(email, nombre, slug) {
 
 export async function signInWithCustomToken(page, email, password) {
   const key = "AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU";
-  await page.evaluate(async (payload) => {
-    const res = await fetch(
-      `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${payload.key}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: payload.email, password: payload.password, returnSecureToken: true }) }
-    );
-    const data = await res.json();
-    if (data.idToken) {
-      const k = `firebase:authUser:${payload.key}:[DEFAULT]`;
-      localStorage.setItem(k, JSON.stringify({
-        stsTokenManager: { apiKey: payload.key, refreshToken: data.refreshToken, accessToken: data.idToken, expirationTime: Date.now() + 3600000 },
-        user: { uid: data.localId, displayName: null, email: payload.email, phoneNumber: null, photoURL: null, providerData: [{ uid: data.localId, displayName: null, email: payload.email, phoneNumber: null, photoURL: null, providerId: 'password' }], providerId: 'password' }
-      }));
-    }
-  }, { email, password, key });
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${key}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, returnSecureToken: true }) },
+  );
+  const data = await res.json();
+  if (!res.ok || !data.idToken) throw new Error(`Firebase demo login failed: ${data.error?.message || 'AUTH_FAILED'}`);
+  await page.addInitScript(({ apiKey, authData }) => {
+    const storageKey = `firebase:authUser:${apiKey}:[DEFAULT]`;
+    localStorage.setItem(storageKey, JSON.stringify({
+      stsTokenManager: { apiKey, refreshToken: authData.refreshToken, accessToken: authData.idToken, expirationTime: Date.now() + Number(authData.expiresIn || 3600) * 1000 },
+      user: { uid: authData.localId, displayName: null, email: authData.email, phoneNumber: null, photoURL: null, providerData: [{ uid: authData.localId, displayName: null, email: authData.email, phoneNumber: null, photoURL: null, providerId: 'password' }], providerId: 'password' },
+    }));
+  }, { apiKey: key, authData: data });
+  await page.reload();
 }
 
 export const E2E_PREFIX = process.env.E2E_SLUG_PREFIX || 'e2e';

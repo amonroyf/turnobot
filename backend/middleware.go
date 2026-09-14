@@ -18,6 +18,11 @@ var allowedOrigins = map[string]bool{
 	"https://turnobot-web.web.app":             true,
 	"https://stalwart-coast-439901-d0.web.app": true,
 	"http://localhost:5173":                    true,
+	"http://localhost:5174":                    true,
+	"http://localhost:5175":                    true,
+	"http://127.0.0.1:5173":                  true,
+	"http://127.0.0.1:5174":                  true,
+	"http://127.0.0.1:5175":                  true,
 	"http://localhost:3000":                    true,
 }
 

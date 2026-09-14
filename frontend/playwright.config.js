@@ -8,9 +8,11 @@ export default defineConfig({
   globalSetup: './e2e-tests/global-setup.js',
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173', // Frontend en desarrollo (Vite + proxy /api -> backend local)
-    channel: 'chrome',
     trace: 'on-first-retry',
-    video: 'retain-on-failure',
+    video: 'on',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+    { name: 'Mobile Safari', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
+  ],
 });
