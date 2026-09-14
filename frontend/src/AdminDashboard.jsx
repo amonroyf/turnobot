@@ -135,7 +135,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
         <h3 className="text-lg font-bold mb-1 text-gray-900">Horario Laboral</h3>
         <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
-        
+
         {errorValidacion && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
             {errorValidacion}
@@ -186,9 +186,9 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
           <button onClick={onClose} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
             Cancelar
           </button>
-          <button 
-            onClick={guardarHorario} 
-            disabled={guardando || errorValidacion != null} 
+          <button
+            onClick={guardarHorario}
+            disabled={guardando || errorValidacion != null}
             className="px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-md"
           >
             {guardando ? 'Guardando...' : 'Guardar'}
@@ -265,7 +265,7 @@ export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
   const [view, setView] = useState('ajustes');
-  
+
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
   const [reservas, setReservas] = useState([]);
@@ -438,7 +438,7 @@ export default function AdminDashboard() {
     }
   };
 
-  
+
 
   const handleAddProfesional = async (e) => {
     e.preventDefault();
@@ -644,13 +644,13 @@ export default function AdminDashboard() {
             <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
             {r.notes && <p className="text-xs text-gray-600 mt-1 italic">📝 {r.notes}</p>}
           </div>
-          
+
           {r.price > 0 && (
             <span className="text-xs font-black text-gray-900 bg-gray-100 px-2.5 py-1 rounded-lg shrink-0">
               {formatDinero(r.price)}
             </span>
           )}
-          
+
           {isNoShow ? (
             <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
               ⚠️ No Show
@@ -767,7 +767,7 @@ export default function AdminDashboard() {
                 {citasHoy.length > 0 && (
                   <div>
                     <h3 className="text-sm font-black text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span> 
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
                       Hoy
                     </h3>
                     <div className="space-y-5">
@@ -787,7 +787,7 @@ export default function AdminDashboard() {
                 {citasManana.length > 0 && (
                   <div>
                     <h3 className="text-sm font-black text-gray-500 mb-4 flex items-center gap-2 uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span> 
+                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
                       Mañana
                     </h3>
                     <div className="space-y-5">
