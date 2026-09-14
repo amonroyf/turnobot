@@ -347,8 +347,8 @@ function PricingSection() {
             <div className="text-center mb-8">
               <h3 className="text-2xl font-black text-gray-900 mb-2">Plan Ilimitado</h3>
               <p className="text-sm text-gray-500 mb-6">Para locales y equipos que quieren facturar más.</p>
-              <p className="text-5xl font-black text-gray-900 mb-2">$39.900<span className="text-lg font-bold text-gray-400">/mes</span></p>
-              <p className="text-xs text-gray-500 font-medium">Menos de $1.400 COP al día. Cero comisiones.</p>
+              <p className="text-5xl font-black text-gray-900 mb-2">$49.900<span className="text-lg font-bold text-gray-400">/mes</span></p>
+              <p className="text-xs text-gray-500 font-medium">Menos de $1.700 COP al día. Cero comisiones.</p>
             </div>
             <div className="grid sm:grid-cols-2 gap-4 mb-10 max-w-2xl mx-auto">
               <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Profesionales ilimitados</div>
