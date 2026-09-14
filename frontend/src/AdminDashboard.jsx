@@ -875,37 +875,6 @@ export default function AdminDashboard() {
         {/* PESTAÑA: AJUSTES */}
         {view === 'ajustes' && (
           <div className="space-y-5">
-            {/* DATOS DEL LOCAL */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Información del Local</h2>
-              <p className="text-[11px] font-medium text-gray-500 mb-4">Estos datos se muestran en tu página pública.</p>
-              <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
-                <input
-                  type="text" required placeholder="Nombre del Negocio" value={infoLocal.name}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                />
-                <input
-                  type="text" placeholder="Dirección física" value={infoLocal.direccion}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                />
-                <input
-                  type="text" placeholder="Horario (Ej. Lun - Sáb: 9am a 7pm)" value={infoLocal.horario}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                />
-                <input
-                  type="tel" placeholder="Teléfono de contacto (Fijo o Móvil)" value={infoLocal.telefono}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                />
-                <button type="submit" disabled={guardandoInfo} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
-                  {guardandoInfo ? 'Guardando...' : 'Guardar Información'}
-                </button>
-              </form>
-            </div>
-
             {/* WHATSAPP DEL NEGOCIO */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-1">WhatsApp de Reservas</h2>
@@ -936,22 +905,6 @@ export default function AdminDashboard() {
                   {guardandoWhatsApp ? 'Guardando...' : 'Actualizar WhatsApp'}
                 </button>
               </form>
-            </div>
-
-            {/* SOPORTE TURNOBOT */}
-            <div className="bg-green-50 p-5 rounded-3xl border border-green-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Soporte TurnoBot</h2>
-              <p className="text-[11px] font-medium text-gray-600 mb-4">
-                ¿Necesitas ayuda? Escríbenos directamente por WhatsApp.
-              </p>
-              <a
-                href="https://wa.me/573229124517?text=Hola%20TurnoBot%2C%20necesito%20ayuda%20con%20mi%20cuenta."
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-3.5 bg-green-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-sm"
-              >
-                💬 Contactar soporte · 322 912 4517
-              </a>
             </div>
 
             {/* GESTIÓN DE SERVICIOS */}
@@ -1056,6 +1009,53 @@ export default function AdminDashboard() {
                 />
                 <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir Profesional</button>
               </form>
+            </div>
+
+            {/* DATOS DEL LOCAL */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Información del Local</h2>
+              <p className="text-[11px] font-medium text-gray-500 mb-4">Estos datos se muestran en tu página pública.</p>
+              <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
+                <input
+                  type="text" required placeholder="Nombre del Negocio" value={infoLocal.name}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                />
+                <input
+                  type="text" placeholder="Dirección física" value={infoLocal.direccion}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                />
+                <input
+                  type="text" placeholder="Horario (Ej. Lun - Sáb: 9am a 7pm)" value={infoLocal.horario}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                />
+                <input
+                  type="tel" placeholder="Teléfono de contacto (Fijo o Móvil)" value={infoLocal.telefono}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                />
+                <button type="submit" disabled={guardandoInfo} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                  {guardandoInfo ? 'Guardando...' : 'Guardar Información'}
+                </button>
+              </form>
+            </div>
+
+            {/* SOPORTE TURNOBOT */}
+            <div className="bg-green-50 p-5 rounded-3xl border border-green-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Soporte TurnoBot</h2>
+              <p className="text-[11px] font-medium text-gray-600 mb-4">
+                ¿Necesitas ayuda? Escríbenos directamente por WhatsApp.
+              </p>
+              <a
+                href="https://wa.me/573229124517?text=Hola%20TurnoBot%2C%20necesito%20ayuda%20con%20mi%20cuenta."
+                target="_blank"
+                rel="noreferrer"
+                className="w-full py-3.5 bg-green-600 text-white font-bold rounded-xl text-sm flex items-center justify-center gap-2 active:scale-95 transition-transform shadow-sm"
+              >
+                💬 Contactar soporte · 322 912 4517
+              </a>
             </div>
 
             {/* BOTÓN CERRAR SESIÓN */}
