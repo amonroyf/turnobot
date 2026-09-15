@@ -118,9 +118,38 @@ GCP_PROJECT_ID: stalwart-coast-439901-d0
 GOOGLE_CLIENT_ID: <tu-client-id>
 GOOGLE_CLIENT_SECRET: <tu-client-secret>
 REDIRECT_URL: https://turnobot-850305350371.us-central1.run.app/auth/google/callback
+CRON_SECRET: <secreto-aleatorio-64-hex>   # auth del cron check-reminders
 PORT: "8080"
 FRONTEND_URL: https://turnobot-web.web.app
 ```
+
+### Credenciales: qué pide cada despliegue y dónde viven
+
+| Despliegue | Credenciales necesarias | Dónde están |
+|------------|------------------------|-------------|
+| Backend (Cloud Run) | Todo el YAML de arriba (OAuth Google, `CRON_SECRET`) | `/tmp/opencode/env_full.yaml` (fuera del repo, no se versiona) |
+| Frontend (Hosting) | Ninguna (solo `VITE_API_URL`, que es pública) | Inline en el comando de build |
+| Scheduler `turnobot-reminders` | `CRON_SECRET` (header `X-Cron-Secret`) | Se lee del mismo YAML al crear el job |
+| Agregar un secreto nuevo | Añadir línea al YAML + redesplegar backend | Ej: `VAR: valor >> /tmp/opencode/env_full.yaml` y `gcloud run deploy...` |
+
+### Verificación: ningún secreto en GitHub
+
+Reglas que lo garantizan:
+
+- `.gitignore` excluye `.env`, `.env.local`, `.env.*.local`, `*.env` y `/tmp/` (el YAML real vive en `/tmp/opencode/`, fuera del repo).
+- En el repo solo hay placeholders: `backend/.env.example`, `frontend/.env.example` y `<tu-...>` en esta guía.
+- La API key `AIza...` del frontend **no es secreto**: va en el JS del navegador por diseño y se protege por dominios autorizados en Firebase Console.
+
+Comandos para auditar antes de `push`:
+
+```bash
+# ¿Algún secreto real en el árbol o en el historial?
+grep -rnE "GOCSPX-[A-Za-z0-9_-]{10,}" --exclude-dir=.git . ; echo "en árbol: $?"
+git log --all -p | grep -oE "GOCSPX-[A-Za-z0-9_-]{10,}" | sort -u ; echo "(vacío = limpio)"
+git log --all --oneline -- '*env_full*' '*credentials*' | head  # debe estar vacío
+```
+
+Si un secreto se filtra alguna vez: rotálo en Google Cloud Console (OAuth) o genera uno nuevo (`CRON_SECRET`), actualiza el YAML, redespliega y borra el commit del historial.
 
 ### Frontend (Firebase Hosting)
 
