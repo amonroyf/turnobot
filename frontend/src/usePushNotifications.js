@@ -25,23 +25,11 @@ export default function usePushNotifications(negocioId) {
     }
   }, [negocioId]);
 
-  // Escuchar mensajes cuando la app está en primer plano
+  // Escuchar mensajes cuando la app está en primer plano.
+  // No crear Notification manual: Webpush.Notification del backend ya la muestra.
   useEffect(() => {
     if (!messaging) return;
-    const unsubscribe = onMessage(messaging, (payload) => {
-      const { title, body } = payload.notification || {};
-      // Mostrar notificación in-app (toast o similar)
-      if (title) {
-        // Usar la API de notificación del navegador para consistencia
-        if (Notification.permission === 'granted') {
-          new Notification(title, {
-            body: body || '',
-            icon: '/icons/icon-192x192.png',
-            tag: negocioId || 'turnobot'
-          });
-        }
-      }
-    });
+    const unsubscribe = onMessage(messaging, () => {});
     return () => unsubscribe();
   }, [negocioId]);
 
