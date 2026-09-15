@@ -2,6 +2,22 @@
 
 ## 2026-09-15
 
+### Recordatorios push a clientes + resumen al dueño (cron)
+
+**Archivos nuevos:**
+- `backend/reminders.go` — `POST /api/v1/check-reminders`: busca citas próximas, push al cliente con token, un solo push resumen al dueño, marca `reminder_sent`
+
+**Archivos modificados:**
+- `backend/main.go` — campos `ClientPushToken`/`ReminderSent` en `Booking`, `clientePushToken` en `BookingRequest`, ruta `/api/v1/check-reminders`
+- `backend/push.go` — helper `sendPushToClient` (solo-data)
+- `frontend/src/BookingApp.jsx` — checkbox "🔔 Avísame antes de mi cita", adjunta token FCM al reservar
+- `DEPLOY.md` — sección del cron `turnobot-reminders`
+
+**Infraestructura:**
+- Job `turnobot-reminders` (Cloud Scheduler, cada 15 min, `America/Bogota`)
+- Secreto `CRON_SECRET` (header `X-Cron-Secret`; super admin como alternativa)
+- Ventana por negocio: `reminder_hours_before` (default 2h)
+
 ### Fix: notificaciones push duplicadas
 
 **Causa:** el backend enviaba payload `Webpush.Notification` y el service

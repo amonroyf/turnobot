@@ -127,6 +127,41 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 	log.Printf("sendPush: notificación enviada a %s (message_id=%s)", slug, resp)
 }
 
+// sendPushToClient envía un mensaje push solo-data a un token arbitrario.
+// Retorna true si FCM lo aceptó. Es la primitiva que usa el cron de
+// recordatorios tanto para clientes como para resúmenes del dueño.
+// Solo-data a propósito (ver nota en sendPushToOwner): el service worker
+// renderiza la notificación una sola vez leyendo payload.data.
+func sendPushToClient(ctx context.Context, token, title, body, url, tag string) bool {
+	if token == "" {
+		return false
+	}
+	fcmClient, err := firebaseApp.Messaging(ctx)
+	if err != nil {
+		log.Printf("sendPushToClient: error creando cliente FCM: %v", err)
+		return false
+	}
+	msg := &messaging.Message{
+		Token: token,
+		Webpush: &messaging.WebpushConfig{
+			Data: map[string]string{
+				"title": title,
+				"body":  body,
+				"icon":  "/icons/icon-192x192.png",
+				"url":   url,
+				"tag":   tag,
+			},
+		},
+	}
+	resp, err := fcmClient.Send(ctx, msg)
+	if err != nil {
+		log.Printf("sendPushToClient: error enviando push (tag=%s): %v", tag, err)
+		return false
+	}
+	log.Printf("sendPushToClient: notificación enviada (tag=%s message_id=%s)", tag, resp)
+	return true
+}
+
 // sendReminderToClient envía un recordatorio push al cliente (si tiene token).
 // Por ahora es un placeholder: los clientes no tienen token push registrado.
 // Se puede extender para SMS/WhatsApp en el futuro.

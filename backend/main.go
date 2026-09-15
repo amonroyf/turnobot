@@ -156,6 +156,10 @@ type BookingRequest struct {
 	ClienteTelefono string `json:"clienteTelefono"`
 	// ClienteNotas es la descripción opcional de lo que necesita (máx 500).
 	ClienteNotas string `json:"clienteNotas,omitempty"`
+	// ClientePushToken es el token FCM del navegador del cliente (opcional).
+	// Se envía si aceptó "avísame antes de mi cita" al reservar y sirve para
+	// el recordatorio del cron. Sin token no hay push al cliente.
+	ClientePushToken string `json:"clientePushToken,omitempty"`
 	// Website es un honeypot anti-bots: los humanos nunca lo llenan.
 	// Si trae valor, la reserva se finge exitosa sin escribir nada.
 	Website string `json:"website,omitempty"`
@@ -177,6 +181,11 @@ type Booking struct {
 	NoShow         bool      `firestore:"no_show" json:"no_show"`
 	// Notes es la descripción de lo que necesita el cliente.
 	Notes string `firestore:"notes,omitempty" json:"notes,omitempty"`
+	// ClientPushToken es el token FCM del dispositivo del cliente para el
+	// recordatorio previo a su cita (vacío = no aceptó avisos).
+	ClientPushToken string `firestore:"client_push_token,omitempty"`
+	// ReminderSent evita que el cron reenvíe el recordatorio.
+	ReminderSent bool `firestore:"reminder_sent"`
 }
 
 // ---------------------------------------------------------------------------
@@ -223,6 +232,8 @@ func main() {
 	http.HandleFunc("/auth/google/login", chainMiddleware(googleLoginHandler, apiLimiter))
 	http.HandleFunc("/auth/google/callback", chainMiddleware(googleCallbackHandler, apiLimiter))
 	http.HandleFunc("/health", chainMiddleware(healthHandler, apiLimiter))
+	// Cron de recordatorios (Cloud Scheduler con X-Cron-Secret, o super admin).
+	http.HandleFunc("/api/v1/check-reminders", chainMiddleware(checkRemindersHandler, apiLimiter))
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -634,6 +645,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// transacción para cerrar la race condition de doble reserva, y crea la
 	// reserva + el upsert del CRM de forma atómica.
 	eventEnd := eventDateTime.Add(time.Duration(duration) * time.Minute)
+	// Token push del cliente (opcional): se sanea aquí, fuera de la
+	// transacción. Tokens absurdos (>512 chars) se descartan.
+	clientPushToken := strings.TrimSpace(req.ClientePushToken)
+	if len(clientPushToken) > 512 {
+		clientPushToken = ""
+	}
 	// bookTxn ejecuta UN intento transaccional. Se invoca dentro del loop
 	// de reintentos de abajo; newRef se crea por intento para no reutilizar
 	// IDs de intentos abortados.
@@ -696,11 +713,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				ServiceName:    serviceName,
 				DurationMinute: duration,
 				Price:          precioServicio,
-				DateTime:       eventDateTime,
-				CalendarEvt:    eventID,
-				CreatedAt:      time.Now(),
-				Notes:          req.ClienteNotas,
-			}); err != nil {
+		DateTime:       eventDateTime,
+			CalendarEvt:    eventID,
+			CreatedAt:      time.Now(),
+			Notes:          req.ClienteNotas,
+			ClientPushToken: clientPushToken,
+		}); err != nil {
 				return err
 			}
 			citaID = newRef.ID

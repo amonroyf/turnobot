@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { getToken } from 'firebase/messaging';
+import { messaging } from './firebase';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS } from './fecha.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
@@ -134,6 +136,9 @@ export default function BookingApp() {
     clienteTelefono: '',
     clienteNotas: '',
     website: '',
+    // avisarme: si el cliente acepta, se registra su token FCM con la reserva
+    // para enviarle el recordatorio push antes de su cita.
+    avisarme: true,
   });
 
   useEffect(() => {
@@ -189,10 +194,29 @@ export default function BookingApp() {
     setLoading(true);
     setError('');
 
+    // Token push del cliente (opcional): si aceptó el aviso, se pide permiso
+    // y se adjunta el token FCM para el recordatorio del cron. Si lo niega
+    // o falla, la reserva sigue sin token (sin recordatorio push).
+    let clientePushToken = '';
+    if (booking.avisarme && messaging && typeof Notification !== 'undefined') {
+      try {
+        if (Notification.permission === 'default') {
+          await Notification.requestPermission();
+        }
+        if (Notification.permission === 'granted') {
+          clientePushToken = await getToken(messaging, { vapidKey: undefined });
+        }
+      } catch {
+        clientePushToken = '';
+      }
+    }
+
     const payload = {
       ...booking,
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
+      clientePushToken,
     };
+    delete payload.avisarme;
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
         method: 'POST',
@@ -245,7 +269,7 @@ export default function BookingApp() {
     });
   };
 
-  const reiniciarAgendamiento = () => {    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '' });
+  const reiniciarAgendamiento = () => {    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '', avisarme: true });
     setSlots([]);
     setError('');
     setStep(1);
@@ -570,6 +594,17 @@ export default function BookingApp() {
                         onChange={e => setBooking({ ...booking, clienteNotas: e.target.value })}
                         className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black resize-none"
                       />
+                      <label className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-100 rounded-xl cursor-pointer active:scale-[0.99] transition-transform">
+                        <input
+                          type="checkbox"
+                          checked={booking.avisarme !== false}
+                          onChange={(e) => setBooking({ ...booking, avisarme: e.target.checked })}
+                          className="w-5 h-5 accent-black shrink-0"
+                        />
+                        <span className="text-xs font-semibold text-gray-700">
+                          🔔 Avísame antes de mi cita en este dispositivo
+                        </span>
+                      </label>
                       {/* Honeypot anti-bots: invisible para humanos */}
                       <input
                         type="text" tabIndex={-1} autoComplete="off" aria-hidden="true"

@@ -316,12 +316,45 @@ gcloud run services logs tail turnobot --region us-central1
 | `/api/v1/b/{slug}/empleados/{id}` | DELETE | 60/min | Eliminar empleado |
 | `/auth/google/login` | GET | 60/min | OAuth Google Calendar |
 | `/auth/google/callback` | GET | 60/min | Callback OAuth |
+| `/api/v1/check-reminders` | POST | Cron + secret | Recordatorios push a clientes + resumen al dueño |
 
 ### Middleware (cadena de seguridad)
 
 Cada request pasa por esta cadena:
 ```
 Security Headers → CORS → Rate Limiting → Logging → Handler
+```
+
+### Cron de recordatorios (`turnobot-reminders`)
+
+Job de Cloud Scheduler cada 15 min (`America/Bogota`) que dispara los
+recordatorios push: al **cliente** (si registró token al reservar) y un
+**resumen al dueño** con sus citas próximas. Marca `reminder_sent=true`
+para no repetir.
+
+| Parámetro | Valor |
+|-----------|-------|
+| Job | `turnobot-reminders` |
+| Región | `us-central1` |
+| Schedule | `*/15 * * * *` |
+| Endpoint | `POST https://turnobot-850305350371.us-central1.run.app/api/v1/check-reminders` |
+| Auth | Header `X-Cron-Secret` = valor de `CRON_SECRET` en el env del backend |
+
+```bash
+# Recrear el job (el secreto vive en el YAML de entorno, no se versiona)
+SECRET=$(awk '/^CRON_SECRET:/{print $2}' /tmp/opencode/env_full.yaml)
+gcloud scheduler jobs create http turnobot-reminders \
+  --location=us-central1 \
+  --schedule="*/15 * * * *" \
+  --time-zone="America/Bogota" \
+  --uri="https://turnobot-850305350371.us-central1.run.app/api/v1/check-reminders" \
+  --http-method=POST \
+  --headers="X-Cron-Secret=$SECRET" \
+  --project=stalwart-coast-439901-d0
+
+# Probar sin enviar (requiere el secreto o ser super admin)
+curl -s -X POST -H "X-Cron-Secret: $SECRET" \
+  "https://turnobot-850305350371.us-central1.run.app/api/v1/check-reminders?dry_run=true"
 ```
 
 ---
@@ -464,9 +497,9 @@ TOKEN=$(gcloud auth print-access-token) \
 
 ## 9. Backups (manuales)
 
-> Ya no hay jobs de Cloud Scheduler. Los jobs de recordatorios se eliminaron
-> junto con las notificaciones push, y el backup diario automático también se
-> dio de baja. Los backups se hacen manualmente con el script.
+> El backup diario automático está dado de baja (backups manuales con el
+> script). El único job activo de Cloud Scheduler es `turnobot-reminders`
+> (recordatorios push cada 15 min, ver sección 6).
 
 ### Backup manual
 

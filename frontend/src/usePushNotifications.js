@@ -26,7 +26,8 @@ export default function usePushNotifications(negocioId) {
   }, [negocioId]);
 
   // Escuchar mensajes cuando la app está en primer plano.
-  // No crear Notification manual: Webpush.Notification del backend ya la muestra.
+  // No crear Notification manual: el backend envía solo-data y el service
+  // worker la muestra en background (doble render si se duplica aquí).
   useEffect(() => {
     if (!messaging) return;
     const unsubscribe = onMessage(messaging, () => {});
