@@ -105,6 +105,7 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 				Title: title,
 				Body:  body,
 				Icon:  "/icons/icon-192x192.png",
+				Vibrate: []int{200, 100, 200},
 				Actions: []*messaging.WebpushNotificationAction{
 					{Action: "open", Title: "Ver agenda"},
 				},
