@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { db, adminAuth, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
 
 const BASE = 'https://turnobot-web.web.app';
-const API = 'https://turnobot-ehomyvoh6q-uc.a.run.app';
+const API = 'https://turnobot-850305350371.us-central1.run.app';
 const ts = Date.now();
 const slug = `e2e-smokeprod${ts}`;
 const email = `smoke${ts}@turnobot.test`;

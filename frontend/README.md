@@ -33,7 +33,7 @@ Despliegue a Firebase Hosting desde la raíz: `ENV_FILE=... ./deploy.sh only-fro
 cd frontend
 npx playwright test                    # suite completa (requiere backend en :8080)
 npx playwright test e2e-tests/horarios.spec.js
-API_BASE=https://turnobot-ehomyvoh6q-uc.a.run.app npx playwright test e2e-tests/reglas-negocio.spec.js
+API_BASE=https://turnobot-850305350371.us-central1.run.app npx playwright test e2e-tests/reglas-negocio.spec.js
 ```
 
 Los specs `horarios` y `reglas-negocio` validan el motor de turnos por empleado y las reglas de negocio contra el backend.

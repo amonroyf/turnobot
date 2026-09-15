@@ -1,5 +1,27 @@
 # Changelog — Turnobot
 
+## 2026-09-15
+
+### Fix: notificaciones push duplicadas
+
+**Causa:** el backend enviaba payload `Webpush.Notification` y el service
+worker volvía a mostrarla con `showNotification` en `onBackgroundMessage`
+(doble render del mismo mensaje).
+
+**Archivos modificados:**
+- `backend/push.go` — mensaje solo-data (`title/body/icon/url/tag` en `Data`, sin `Webpush.Notification`)
+- `frontend/public/firebase-messaging-sw.js` — lee `payload.data`, `tag: "new-booking"` + `renotify: false`
+- `frontend/src/BookingApp.jsx` — guard `enviandoRef` contra doble submit en `confirmarCita` (evita crear dos reservas y dos pushes)
+
+### Cambio de URL del backend (Cloud Run recreado)
+
+- Nueva URL: `https://turnobot-850305350371.us-central1.run.app`
+- Actualizados: `DEPLOY.md`, `deploy.sh`, `scripts/load-test.js`, `frontend/README.md`, e2e specs (`smoke-prod`, `horarios`)
+- Nota: si se usa Google OAuth, registrar el nuevo `REDIRECT_URL`
+  (`.../auth/google/callback`) en la consola de Google Cloud
+
+---
+
 ## 2026-09-10
 
 ### Documentación y Auditoría de Producción

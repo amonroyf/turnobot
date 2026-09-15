@@ -56,7 +56,7 @@ Documentación completa de todos los procesos de despliegue, infraestructura y c
 | Servicio | URL | Descripción |
 |----------|-----|-------------|
 | **Frontend** | `https://turnobot-web.web.app` | App web para clientes y admin |
-| **Backend API** | `https://turnobot-ehomyvoh6q-uc.a.run.app` | API REST (Go) |
+| **Backend API** | `https://turnobot-850305350371.us-central1.run.app` | API REST (Go) |
 | **Firebase Console** | `https://console.firebase.google.com/project/stalwart-coast-439901-d0` | Gestión |
 | **GCP Console** | `https://console.cloud.google.com/project/stalwart-coast-439901-d0` | Infraestructura |
 
@@ -117,7 +117,7 @@ Formato YAML para `--env-vars-file`:
 GCP_PROJECT_ID: stalwart-coast-439901-d0
 GOOGLE_CLIENT_ID: <tu-client-id>
 GOOGLE_CLIENT_SECRET: <tu-client-secret>
-REDIRECT_URL: https://turnobot-ehomyvoh6q-uc.a.run.app/auth/google/callback
+REDIRECT_URL: https://turnobot-850305350371.us-central1.run.app/auth/google/callback
 PORT: "8080"
 FRONTEND_URL: https://turnobot-web.web.app
 ```
@@ -126,12 +126,12 @@ FRONTEND_URL: https://turnobot-web.web.app
 
 | Variable | Valor | Dónde se usa |
 |----------|-------|--------------|
-| `VITE_API_URL` | `https://turnobot-ehomyvoh6q-uc.a.run.app` | URL del backend API |
+| `VITE_API_URL` | `https://turnobot-850305350371.us-central1.run.app` | URL del backend API |
 
 Se configuran en `frontend/.env.production` o como variables de build:
 
 ```bash
-VITE_API_URL="https://turnobot-ehomyvoh6q-uc.a.run.app" \
+VITE_API_URL="https://turnobot-850305350371.us-central1.run.app" \
 npm run build
 ```
 
@@ -141,7 +141,7 @@ Para CI/CD automático, configurar en GitHub → Settings → Secrets:
 
 | Secret | Valor |
 |--------|-------|
-| `VITE_API_URL` | `https://turnobot-ehomyvoh6q-uc.a.run.app` |
+| `VITE_API_URL` | `https://turnobot-850305350371.us-central1.run.app` |
 | `WIF_PROVIDER` | Workload Identity Federation provider |
 | `WIF_SERVICE_ACCOUNT` | Service account para CI/CD |
 
@@ -341,13 +341,23 @@ Security Headers → CORS → Rate Limiting → Logging → Handler
 ```bash
 cd frontend
 
-# 1. Build
-VITE_API_URL="https://turnobot-ehomyvoh6q-uc.a.run.app" \
+# 1. Build apuntando al backend de producción
+VITE_API_URL="https://turnobot-850305350371.us-central1.run.app" \
 npm run build
 
-# 2. Deploy
+# 2. Deploy con el script (DESDE LA RAÍZ: resuelve frontend/dist solo)
+cd ..
 export TOKEN=$(gcloud auth print-access-token)
 SITE=turnobot-web node scripts/deploy-hosting.mjs
+```
+
+Alternativa con Firebase CLI (desde `frontend/`, donde vive el
+`firebase.json` de Hosting):
+
+```bash
+cd frontend
+VITE_API_URL="https://turnobot-850305350371.us-central1.run.app" npm run build
+firebase deploy --only hosting --project stalwart-coast-439901-d0
 ```
 
 ### Estructura del build
@@ -371,16 +381,27 @@ Los componentes principales se cargan bajo demanda:
 - `RegisterShop` → solo en `/register`
 - `MisCitas` → solo en `/mis-citas`
 
-### Firebase.json
+### Firebase.json (Hosting, en `frontend/`)
 
 ```json
 {
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+  "hosting": {
+    "site": "turnobot-web",
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      { "source": "**", "destination": "/index.html" }
+    ]
   }
 }
 ```
+
+> El `firebase.json` de la raíz solo configura Firestore (rules + indexes).
+> El de Hosting vive en `frontend/`.
 
 ---
 
@@ -488,7 +509,7 @@ gcloud scheduler jobs create http firestore-backup-daily \
 ### Health check endpoint
 
 ```bash
-curl https://turnobot-ehomyvoh6q-uc.a.run.app/health
+curl https://turnobot-850305350371.us-central1.run.app/health
 ```
 
 Respuesta OK:
@@ -633,7 +654,7 @@ gcloud run services describe turnobot --region us-central1
 gcloud run services logs read turnobot --region us-central1 --limit 20 2>&1 | grep -i error
 
 # Verificar health
-curl https://turnobot-ehomyvoh6q-uc.a.run.app/health
+curl https://turnobot-850305350371.us-central1.run.app/health
 ```
 
 ### Rate limiting bloquea requests
@@ -678,7 +699,7 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 
 ```bash
 # Health check
-curl https://turnobot-ehomyvoh6q-uc.a.run.app/health
+curl https://turnobot-850305350371.us-central1.run.app/health
 
 # Logs
 gcloud run services logs tail turnobot --region us-central1
@@ -729,7 +750,7 @@ gcloud run services logs read turnobot --region us-central1 --limit 50 2>&1 | gr
 gcloud run services describe turnobot --region us-central1 --format="value(spec.template.spec.containers[0].env)"
 
 # Verificar CORS
-curl -I -X OPTIONS https://turnobot-ehomyvoh6q-uc.a.run.app/api/v1/b/test \
+curl -I -X OPTIONS https://turnobot-850305350371.us-central1.run.app/api/v1/b/test \
   -H "Origin: https://turnobot-web.web.app" \
   -H "Access-Control-Request-Method: GET"
 ```

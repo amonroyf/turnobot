@@ -7,7 +7,7 @@
 // Uso:
 //   k6 run scripts/load-test.js
 //   BASE_URL=http://localhost:8080 SLUG=barberia-vip k6 run scripts/load-test.js
-//   k6 run -e BASE_URL=https://turnobot-ehomyvoh6q-uc.a.run.app -e SLUG=mi-tienda scripts/load-test.js
+//   k6 run -e BASE_URL=https://turnobot-850305350371.us-central1.run.app -e SLUG=mi-tienda scripts/load-test.js
 //
 // Requiere: https://k6.io/docs/get-started/installation/
 
