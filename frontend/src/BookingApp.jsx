@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS } from './fecha.js';
@@ -118,6 +118,10 @@ export default function BookingApp() {
   const [view, setView] = useState('agendar');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  // Guard contra doble envío: un doble clic rápido puede disparar dos submits
+  // antes de que React re-renderice el botón deshabilitado. Sin esto, el
+  // backend crearía dos reservas (y dos pushes) para la misma cita.
+  const enviandoRef = useRef(false);
   const [negocio, setNegocio] = useState(null);
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
@@ -180,6 +184,8 @@ export default function BookingApp() {
 
   const confirmarCita = async (e) => {
     e.preventDefault();
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
     setLoading(true);
     setError('');
 
@@ -202,7 +208,6 @@ export default function BookingApp() {
         setError(data.message);
         if (data.error === 'max_per_day') {
           setStep(4);
-          setLoading(false);
           return;
         }
         setStep(3);
@@ -213,14 +218,15 @@ export default function BookingApp() {
       // se muestra el motivo sin perder el formulario.
       if (data?.message) {
         setError(data.message);
-        setLoading(false);
         return;
       }
       setError("Hubo un problema al agendar. Intenta de nuevo.");
     } catch (err) {
       setError("Hubo un problema al agendar");
+    } finally {
+      enviandoRef.current = false;
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const descargarMiICS = () => {

@@ -74,6 +74,11 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 // un cliente reserva una cita. Lee el token FCM del documento del negocio
 // y usa Firebase Admin SDK para enviar el mensaje.
 // Es fire-and-forget: si falla, solo loguea el error (no bloquea la reserva).
+// NOTA: el mensaje es solo-data (sin Webpush.Notification). Con payload
+// "notification" el SDK de FCM muestra la notificación automáticamente en
+// background Y el service worker la vuelve a mostrar en onBackgroundMessage,
+// lo que producía notificaciones duplicadas. Solo-data + render manual en
+// firebase-messaging-sw.js = una sola notificación.
 func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, dateStr, timeStr string) {
 	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
 	if err != nil {
@@ -98,21 +103,18 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 	title := fmt.Sprintf("📅 Nueva reserva de %s", clientName)
 	body := fmt.Sprintf("%s — %s a las %s", serviceName, dateStr, timeStr)
 
+	// Solo-data: el service worker (firebase-messaging-sw.js) renderiza la
+	// notificación manualmente leyendo payload.data. No usar
+	// Webpush.Notification (ver nota en el comentario de la función).
 	msg := &messaging.Message{
 		Token: neg.PushToken,
 		Webpush: &messaging.WebpushConfig{
-			Notification: &messaging.WebpushNotification{
-				Title: title,
-				Body:  body,
-				Icon:  "/icons/icon-192x192.png",
-				Vibrate: []int{200, 100, 200},
-				Actions: []*messaging.WebpushNotificationAction{
-					{Action: "open", Title: "Ver agenda"},
-				},
-			},
 			Data: map[string]string{
-				"url": "/admin",
-				"tag": "new-booking",
+				"title": title,
+				"body":  body,
+				"icon":  "/icons/icon-192x192.png",
+				"url":   "/admin",
+				"tag":   "new-booking",
 			},
 		},
 	}

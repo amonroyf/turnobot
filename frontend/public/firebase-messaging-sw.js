@@ -16,16 +16,25 @@ firebase.initializeApp({
 const messaging = firebase.messaging();
 
 // Handle background messages
+// El backend envía mensajes solo-data (sin payload "notification"): el SDK
+// NO muestra nada automáticamente, así que este showNotification manual es
+// la ÚNICA vía de visualización (una sola notificación por mensaje).
+// Si el backend volviera a enviar Webpush.Notification, NO llamar
+// showNotification aquí o las notificaciones saldrían duplicadas.
 messaging.onBackgroundMessage((payload) => {
-  const { title, body, icon, data } = payload.notification || {};
-  const notificationTitle = title || 'Turnobot';
+  const data = payload.data || {};
+  const notificationTitle = data.title || 'Turnobot';
   const notificationOptions = {
-    body: body || '',
-    icon: icon || '/icons/icon-192x192.png',
+    body: data.body || '',
+    icon: data.icon || '/icons/icon-192x192.png',
     badge: '/icons/icon-192x192.png',
-    tag: data?.tag || 'turnobot-notification',
-    data: data || {},
-    actions: data?.url ? [{ action: 'open', title: 'Abrir' }] : []
+    // Tag fijo por tipo de evento: una nueva reserva reemplaza la anterior
+    // en vez de apilarse en la bandeja de notificaciones.
+    tag: data.tag || 'turnobot-notification',
+    renotify: false,
+    vibrate: [200, 100, 200],
+    data: { url: data.url || '/admin' },
+    actions: [{ action: 'open', title: 'Ver agenda' }]
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);
