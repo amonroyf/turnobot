@@ -89,7 +89,7 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 		return
 	}
 
-	fcmClient, err := messaging.NewClient(ctx, nil)
+	fcmClient, err := firebaseApp.Messaging(ctx)
 	if err != nil {
 		log.Printf("sendPush: error creando cliente FCM: %v", err)
 		return
@@ -100,10 +100,6 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 
 	msg := &messaging.Message{
 		Token: neg.PushToken,
-		Notification: &messaging.Notification{
-			Title: title,
-			Body:  body,
-		},
 		Webpush: &messaging.WebpushConfig{
 			Notification: &messaging.WebpushNotification{
 				Title: title,

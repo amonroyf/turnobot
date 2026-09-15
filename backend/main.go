@@ -34,6 +34,7 @@ var (
 	firestoreClient *firestore.Client
 	googleOauthCfg  *oauth2.Config
 	firebaseAuth    *auth.Client
+	firebaseApp     *firebase.App
 )
 
 // errSlotConflict indica que el horario se ocupó entre la verificación y la
@@ -202,6 +203,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error inicializando Firebase App: %v", err)
 	}
+	firebaseApp = fbApp
 	firebaseAuth, err = fbApp.Auth(ctx)
 	if err != nil {
 		log.Fatalf("Error inicializando Firebase Auth: %v", err)
