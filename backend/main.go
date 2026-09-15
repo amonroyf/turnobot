@@ -90,6 +90,9 @@ type Negocio struct {
 	// Suspended marca un negocio suspendido por el super admin: no acepta
 	// reservas nuevas (slots y book responden 403).
 	Suspended            bool          `firestore:"suspended" json:"suspended"`
+	// PushToken almacena el token FCM del dispositivo del dueño para
+	// recibir notificaciones push cuando un cliente reserva.
+	PushToken            string        `firestore:"push_token" json:"-"`
 	StatsCitasActivas    int           `firestore:"stats_citas_activas" json:"stats_citas_activas,omitempty"`
 	StatsTotalClientes   int           `firestore:"stats_total_clientes" json:"stats_total_clientes,omitempty"`
 	StatsIngresosTotales int64         `firestore:"stats_ingresos_totales" json:"stats_ingresos_totales,omitempty"`
@@ -318,6 +321,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 3 && parts[1] == "empleados" && r.Method == http.MethodDelete {
 		deleteEmpleadoHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Registro de token push del dueño (FCM)
+	if len(parts) == 2 && parts[1] == "register-push-token" && r.Method == http.MethodPost {
+		registerPushTokenHandler(w, r, slug)
 		return
 	}
 
@@ -783,7 +792,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		"service_name": serviceName,
 		"price":        precioServicio,
 	})
+
+	// Push notification fire-and-forget: notificar al dueño que hay reserva nueva
+	go sendPushToOwner(context.Background(), slug, req.ClienteNombre, serviceName,
+		eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04"))
 }
+
 
 // GET /api/v1/b/{slug}/citas?telefono=3001234567 -> citas activas del cliente
 func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {

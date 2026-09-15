@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { auth, provider, db } from './firebase';
+import usePushNotifications from './usePushNotifications';
 import {
   signInWithPopup,
   signOut,
@@ -265,6 +266,7 @@ export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
   const [view, setView] = useState('agenda');
+  const pushNotifications = usePushNotifications(negocio?.id);
 
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
@@ -905,6 +907,39 @@ export default function AdminDashboard() {
                   {guardandoWhatsApp ? 'Guardando...' : 'Actualizar WhatsApp'}
                 </button>
               </form>
+            </div>
+
+            {/* NOTIFICACIONES PUSH */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">🔔 Notificaciones Push</h2>
+              <p className="text-[11px] font-medium text-gray-500 mb-4">Recibe alertas al instante cuando un cliente reserve una cita.</p>
+              {pushNotifications.permission === 'denied' ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
+                  <p className="text-xs font-medium text-red-700">
+                    ❌ Las notificaciones están bloqueadas. Habilita los permisos en la configuración de tu navegador.
+                  </p>
+                </div>
+              ) : pushNotifications.isSubscribed ? (
+                <div className="space-y-3">
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
+                    <p className="text-xs font-bold text-green-800">✅ Notificaciones activas</p>
+                    <p className="text-[10px] text-green-600 mt-1">Recibirás alertas cuando haya nuevas reservas.</p>
+                  </div>
+                  <button
+                    onClick={pushNotifications.unsubscribe}
+                    className="w-full py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                  >
+                    Desactivar notificaciones
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={pushNotifications.subscribe}
+                  className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
+                >
+                  🔔 Activar notificaciones
+                </button>
+              )}
             </div>
 
             {/* GESTIÓN DE SERVICIOS */}
