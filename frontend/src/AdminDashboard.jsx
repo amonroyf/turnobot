@@ -1207,6 +1207,9 @@ export default function AdminDashboard() {
                       <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
                       <button onClick={() => setPinModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 PIN</button>
                     </div>
+                    <p className="text-[10px] text-gray-400 pt-1 border-t border-gray-100 truncate">
+                      Portal: <span className="font-mono">{window.location.origin}/employee/{negocio.id}</span>
+                    </p>
                   </li>
                 ))}
               </ul>
