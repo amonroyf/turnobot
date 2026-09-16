@@ -770,7 +770,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Acciones */}
-          {!isPast && !isNoShow && !isCancelled && (
+          {!isNoShow && !isCancelled && (
             <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80 gap-2">
               <button
                 onClick={() => handleMarcarNoShow(r.id)}
