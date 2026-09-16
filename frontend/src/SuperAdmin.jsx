@@ -176,6 +176,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
   const suspended = negocio?.suspended === true;
 
   const handleEliminarNegocio = async () => {
+    // Primera confirmación: window.confirm
     const confirmacion = window.confirm(
       `⚠️ ELIMINAR NEGOCIO "${negocioId}"\n\n` +
       `Esto eliminará:\n` +
@@ -183,9 +184,20 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
       `• Todos sus servicios\n` +
       `• Todos sus profesionales\n` +
       `• Todas sus citas y clientes\n\n` +
-      `Esta acción NO se puede deshacer y el servidor la procesará en segundo plano.`
+      `Esta acción NO se puede deshacer.\n¿Continuar?`
     );
     if (!confirmacion) return;
+
+    // Segunda confirmación: escribir el ID exacto
+    const idIngresado = window.prompt(
+      `🔴 CONFIRMACIÓN FINAL\n\n` +
+      `Para eliminar "${negocioId}" y TODA su data, escribe el ID exacto abajo:`
+    );
+    if (idIngresado === null) return; // Canceló
+    if (idIngresado !== negocioId) {
+      alert('El ID no coincide. Operación cancelada.');
+      return;
+    }
 
     setEliminando(true);
     try {
@@ -408,6 +420,7 @@ export default function SuperAdmin() {
   const [negocios, setNegocios] = useState([]);
   const [selectedNegocio, setSelectedNegocio] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
@@ -580,27 +593,52 @@ export default function SuperAdmin() {
 
             {/* Lista de Negocios */}
             <div>
-              <h2 className="text-sm font-bold text-gray-900 mb-3 uppercase tracking-wider">
-                Negocios Registrados ({totalNegocios})
-              </h2>
-              {negocios.length === 0 ? (
-                <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 border-dashed">
-                  <div className="text-4xl mb-3">🏢</div>
-                  <p className="text-sm font-medium text-gray-500">No hay negocios registrados aún.</p>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
+                <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
+                  Negocios Registrados ({totalNegocios})
+                </h2>
+                <div className="relative w-full sm:w-64">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-400">🔍</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Buscar por nombre o ID..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="block w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black"
+                  />
                 </div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {negocios.map((neg) => (
-                    <NegocioCard
-                      key={neg.id}
-                      negocio={neg}
-                      onSelect={setSelectedNegocio}
-                      selected={selectedNegocio === neg.id}
-                      onToggleSuspend={handleToggleSuspend}
-                    />
-                  ))}
-                </div>
-              )}
+              </div>
+              {(() => {
+                const filtered = negocios.filter(n =>
+                  n.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  n.id.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+                if (filtered.length === 0) {
+                  return (
+                    <div className="text-center py-12 bg-white rounded-2xl border border-gray-200 border-dashed">
+                      <div className="text-4xl mb-3">{searchTerm ? '🔍' : '🏢'}</div>
+                      <p className="text-sm font-medium text-gray-500">
+                        {searchTerm ? 'No se encontraron negocios.' : 'No hay negocios registrados aún.'}
+                      </p>
+                    </div>
+                  );
+                }
+                return (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {filtered.map((neg) => (
+                      <NegocioCard
+                        key={neg.id}
+                        negocio={neg}
+                        onSelect={setSelectedNegocio}
+                        selected={selectedNegocio === neg.id}
+                        onToggleSuspend={handleToggleSuspend}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           </>
         )}

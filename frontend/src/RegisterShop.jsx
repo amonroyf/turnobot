@@ -278,12 +278,15 @@ export default function RegisterShop() {
                     onChange={(e) =>
                       setFormData({
                         ...formData,
-                        slug: e.target.value.toLowerCase(),
+                        slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                       })
                     }
                     className="flex-1 block w-full min-w-0 p-3 border border-gray-300 rounded-none rounded-r-xl focus:ring-black focus:border-black"
                   />
                 </div>
+                <p className="mt-2 text-[10px] text-gray-500">
+                  Usa solo minúsculas, números y guiones. Ejemplo: <i>barberia-vip-medellin</i>
+                </p>
               </div>
 
               <button
