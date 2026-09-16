@@ -772,13 +772,15 @@ export default function AdminDashboard() {
           {/* Acciones */}
           {!isNoShow && !isCancelled && (
             <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80 gap-2">
-              <button
-                onClick={() => handleMarcarNoShow(r.id)}
-                disabled={noShowMarking === r.id}
-                className="text-[11px] text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
-              >
-                {noShowMarking === r.id ? 'Marcando...' : 'No Llegó'}
-              </button>
+              {(isPast || (r.date_time?.seconds * 1000 <= ahora)) && (
+                <button
+                  onClick={() => handleMarcarNoShow(r.id)}
+                  disabled={noShowMarking === r.id}
+                  className="text-[11px] text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
+                >
+                  {noShowMarking === r.id ? 'Marcando...' : 'No Llegó'}
+                </button>
+              )}
               <button
                 onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}
                 className="text-[11px] text-red-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100"
