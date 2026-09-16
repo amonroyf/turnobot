@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { formatearFechaLarga, horaEnZona } from './fecha.js';
+import useEmployeePushNotifications from './useEmployeePushNotifications.js';
+import { messaging } from './firebase.js';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -10,10 +12,13 @@ export default function EmployeeDashboard() {
   const [empSeleccionado, setEmpSeleccionado] = useState(null);
   const [pin, setPin] = useState('');
   const [token, setToken] = useState(null);
+  const [empId, setEmpId] = useState(null);
   const [citas, setCitas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [negocio, setNegocio] = useState(null);
+
+  const pushNotifications = useEmployeePushNotifications(slug, token, empId);
 
   useEffect(() => {
     const fetchNegocio = async () => {
@@ -50,6 +55,7 @@ export default function EmployeeDashboard() {
       }
       const data = await res.json();
       setToken(data.token);
+      setEmpId(data.emp_id);
       localStorage.setItem(`emp_token_${slug}`, data.token);
       localStorage.setItem(`emp_id_${slug}`, data.emp_id);
       localStorage.setItem(`emp_name_${slug}`, data.name);
@@ -79,6 +85,7 @@ export default function EmployeeDashboard() {
     const savedName = localStorage.getItem(`emp_name_${slug}`);
     if (savedToken && savedEmpId) {
       setToken(savedToken);
+      setEmpId(savedEmpId);
       setEmpSeleccionado(savedEmpId);
       setLoading(true);
       cargarCitas(savedToken, savedEmpId).finally(() => setLoading(false));
@@ -172,9 +179,23 @@ export default function EmployeeDashboard() {
             <h1 className="text-lg font-black text-gray-900">{negocio?.name || slug}</h1>
             <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{empName}</p>
           </div>
-          <button onClick={handleLogout} className="text-[11px] text-gray-500 font-semibold underline">
-            Salir
-          </button>
+          <div className="flex items-center gap-2">
+            {messaging && typeof Notification !== 'undefined' && (
+              pushNotifications.isSubscribed ? (
+                <span className="text-[10px] text-green-600 font-bold">🔔 Activo</span>
+              ) : (
+                <button
+                  onClick={pushNotifications.subscribe}
+                  className="text-[10px] text-blue-600 font-bold underline"
+                >
+                  🔔 Activar notificaciones
+                </button>
+              )
+            )}
+            <button onClick={handleLogout} className="text-[11px] text-gray-500 font-semibold underline">
+              Salir
+            </button>
+          </div>
         </div>
       </header>
 

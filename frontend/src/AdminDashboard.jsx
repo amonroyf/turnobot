@@ -1207,9 +1207,27 @@ export default function AdminDashboard() {
                       <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
                       <button onClick={() => setPinModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 PIN</button>
                     </div>
-                    <p className="text-[10px] text-gray-400 pt-1 border-t border-gray-100 truncate">
-                      Portal: <span className="font-mono">{window.location.origin}/employee/{negocio.id}</span>
-                    </p>
+                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+                      <span className="text-[10px] text-gray-400 shrink-0">🔗 Portal:</span>
+                      <a
+                        href={`/employee/${negocio.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate flex-1"
+                      >
+                        {window.location.origin}/employee/{negocio.id}
+                      </a>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/employee/${negocio.id}`);
+                          setContenidoCopiado(p.id);
+                          setTimeout(() => setContenidoCopiado(''), 2000);
+                        }}
+                        className="text-[10px] text-gray-500 hover:text-gray-700 font-semibold px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 shrink-0"
+                      >
+                        {contenidoCopiado === p.id ? '✓' : 'Copiar'}
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

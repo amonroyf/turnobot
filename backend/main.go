@@ -356,6 +356,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Registrar push token del empleado: POST /api/v1/b/{slug}/employee/{empId}/register-push-token
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "register-push-token" && r.Method == http.MethodPost {
+		employeeRegisterPushTokenHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Asignar PIN al empleado: POST /api/v1/b/{slug}/empleados/{empleadoID}/pin
 	if len(parts) == 4 && parts[1] == "empleados" && parts[3] == "pin" && r.Method == http.MethodPost {
 		setEmployeePinHandler(w, r, slug, parts[2])
@@ -2480,6 +2486,44 @@ func setEmployeePinHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "PIN actualizado",
+	})
+}
+
+// POST /api/v1/b/{slug}/employee/{empId}/register-push-token
+func employeeRegisterPushTokenHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID != empID {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	var req registerPushTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "token_requerido",
+			"message": "El campo token es requerido",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	_, err = firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+		{Path: "push_token", Value: req.Token},
+	})
+	if err != nil {
+		log.Printf("Error guardando push token para empleado %s/%s: %v", slug, empID, err)
+		http.Error(w, "Error guardando token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Token push registrado",
 	})
 }
 
