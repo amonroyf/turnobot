@@ -262,6 +262,69 @@ export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose
   );
 }
 
+function PinEmpleadoModal({ negocioId, empleado, onClose }) {
+  const [pin, setPin] = useState('');
+  const [guardando, setGuardando] = useState(false);
+  const [exito, setExito] = useState(false);
+
+  const handleGuardar = async (e) => {
+    e.preventDefault();
+    if (pin.length < 4) return;
+    setGuardando(true);
+    try {
+      const user = auth.currentUser;
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocioId}/empleados/${empleado.id}/pin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pin }),
+      });
+      if (res.ok) {
+        setExito(true);
+        setTimeout(onClose, 1500);
+      } else {
+        alert('Error al guardar el PIN.');
+      }
+    } catch {
+      alert('Error de conexión.');
+    }
+    setGuardando(false);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">PIN de {empleado.name}</h3>
+        <p className="text-xs text-gray-500 mb-4">El empleado usará este PIN para acceder a su agenda.</p>
+        {exito ? (
+          <div className="text-center py-4">
+            <p className="text-sm font-bold text-green-600">✓ PIN guardado</p>
+          </div>
+        ) : (
+          <form onSubmit={handleGuardar} className="space-y-3">
+            <input
+              type="password"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="••••"
+              value={pin}
+              onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              className="w-full p-3.5 border border-gray-200 rounded-xl text-sm text-center tracking-[0.5em] focus:border-black focus:outline-none"
+              autoFocus
+            />
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs">Cancelar</button>
+              <button type="submit" disabled={guardando || pin.length < 4} className="flex-1 py-2.5 bg-black text-white font-bold rounded-xl text-xs active:scale-95 disabled:opacity-50">
+                {guardando ? 'Guardando...' : 'Guardar'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminDashboard() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
@@ -283,6 +346,7 @@ export default function AdminDashboard() {
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
   const [serviciosModal, setServiciosModal] = useState(null);
+  const [pinModal, setPinModal] = useState(null);
   const [whatsApp, setWhatsApp] = useState('');
   const [codigoPais, setCodigoPais] = useState('57');
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
@@ -1139,6 +1203,7 @@ export default function AdminDashboard() {
                       )}
                       <button onClick={() => setServiciosModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Especialidad</button>
                       <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
+                      <button onClick={() => setPinModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 PIN</button>
                     </div>
                   </li>
                 ))}
@@ -1232,6 +1297,7 @@ export default function AdminDashboard() {
 
       {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => { setHorarioModal(null); invalidarCache(); }} />}
       {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
+      {pinModal && <PinEmpleadoModal negocioId={negocio.id} empleado={pinModal} onClose={() => setPinModal(null)} />}
     </div>
   );
 }

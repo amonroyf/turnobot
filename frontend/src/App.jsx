@@ -8,6 +8,7 @@ const BookingApp = lazy(() => import('./BookingApp.jsx'));
 const AdminDashboard = lazy(() => import('./AdminDashboard.jsx'));
 const RegisterShop = lazy(() => import('./RegisterShop.jsx'));
 const SuperAdmin = lazy(() => import('./SuperAdmin.jsx'));
+const EmployeeDashboard = lazy(() => import('./EmployeeDashboard.jsx'));
 
 function LoadingSpinner() {
   return (
@@ -34,6 +35,9 @@ export default function App() {
 
             {/* Ruta privada para los dueños de negocios */}
             <Route path="/admin" element={<AdminDashboard />} />
+
+            {/* Portal del empleado (login con PIN) */}
+            <Route path="/employee/:slug" element={<EmployeeDashboard />} />
 
             {/* Registro de primer dueño */}
             <Route path="/register" element={<RegisterShop />} />

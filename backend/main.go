@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,6 +23,7 @@ import (
 
 	"cloud.google.com/go/firestore"
 	"github.com/nyaruka/phonenumbers"
+	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
@@ -136,6 +140,9 @@ type Employee struct {
 	// (empleados antiguos sin el campo). Se expone en JSON para que el
 	// frontend filtre el paso 2.
 	ServiciosIDs []string `firestore:"servicios_ids" json:"servicios_ids"`
+	// LoginPIN es el PIN hasheado con bcrypt para login del empleado.
+	// json:"-" evita que se envíe en la API pública.
+	LoginPIN string `firestore:"login_pin" json:"-"`
 }
 
 // Service offered by a business.
@@ -334,6 +341,24 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 
 	if len(parts) == 3 && parts[1] == "empleados" && r.Method == http.MethodDelete {
 		deleteEmpleadoHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Login de empleado con PIN: POST /api/v1/b/{slug}/employee-login
+	if len(parts) == 2 && parts[1] == "employee-login" && r.Method == http.MethodPost {
+		employeeLoginHandler(w, r, slug)
+		return
+	}
+
+	// Citas del empleado: GET /api/v1/b/{slug}/employee/{empId}/citas
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "citas" && r.Method == http.MethodGet {
+		employeeCitasHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Asignar PIN al empleado: POST /api/v1/b/{slug}/empleados/{empleadoID}/pin
+	if len(parts) == 4 && parts[1] == "empleados" && parts[3] == "pin" && r.Method == http.MethodPost {
+		setEmployeePinHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -2264,6 +2289,199 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 // Health
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Employee Login & Dashboard
+// ---------------------------------------------------------------------------
+
+// employeeTokenSigningKey firma los tokens de sesión de empleados.
+var employeeTokenKey = []byte("turnobot-employee-token-key-2026")
+
+// signEmployeeToken genera un token HMAC-SHA256 con expiración de 12 horas.
+func signEmployeeToken(slug, empID string) string {
+	exp := time.Now().Add(12 * time.Hour).Unix()
+	payload := fmt.Sprintf("%s|%s|%d", slug, empID, exp)
+	mac := hmac.New(sha256.New, employeeTokenKey)
+	mac.Write([]byte(payload))
+	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return base64.RawURLEncoding.EncodeToString([]byte(payload)) + "." + sig
+}
+
+// verifyEmployeeToken valida el token y retorna slug, empID o error.
+func verifyEmployeeToken(token string) (string, string, error) {
+	parts := strings.SplitN(token, ".", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("token inválido")
+	}
+	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		return "", "", fmt.Errorf("token inválido")
+	}
+	sigBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return "", "", fmt.Errorf("token inválido")
+	}
+	mac := hmac.New(sha256.New, employeeTokenKey)
+	mac.Write(payloadBytes)
+	if !hmac.Equal(sigBytes, mac.Sum(nil)) {
+		return "", "", fmt.Errorf("token inválido")
+	}
+	payload := string(payloadBytes)
+	parts2 := strings.SplitN(payload, "|", 3)
+	if len(parts2) != 3 {
+		return "", "", fmt.Errorf("token inválido")
+	}
+	exp, _ := strconv.ParseInt(parts2[2], 10, 64)
+	if time.Now().Unix() > exp {
+		return "", "", fmt.Errorf("token expirado")
+	}
+	return parts2[0], parts2[1], nil
+}
+
+// POST /api/v1/b/{slug}/employee-login
+func employeeLoginHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	var req struct {
+		EmpID string `json:"emp_id"`
+		Pin   string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.EmpID == "" || req.Pin == "" {
+		http.Error(w, "Datos inválidos", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpID).Get(ctx)
+	if err != nil {
+		http.Error(w, "Empleado no encontrado", http.StatusNotFound)
+		return
+	}
+
+	var emp Employee
+	doc.DataTo(&emp)
+
+	if emp.LoginPIN == "" {
+		http.Error(w, "Este empleado no tiene PIN configurado", http.StatusForbidden)
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(emp.LoginPIN), []byte(req.Pin)); err != nil {
+		http.Error(w, "PIN incorrecto", http.StatusUnauthorized)
+		return
+	}
+
+	token := signEmployeeToken(slug, req.EmpID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"token":  token,
+		"emp_id": req.EmpID,
+		"name":   emp.Name,
+	})
+}
+
+// GET /api/v1/b/{slug}/employee/{empId}/citas
+func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID != empID {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	loc, _ := time.LoadLocation("America/Bogota")
+
+	q := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", empID).
+		OrderBy("date_time", firestore.Asc)
+
+	docs, err := q.Documents(ctx).GetAll()
+	if err != nil {
+		http.Error(w, "Error consultando citas", http.StatusInternalServerError)
+		return
+	}
+
+	type empCitaJSON struct {
+		ID        string `json:"id"`
+		Servicio  string `json:"servicio"`
+		Cliente   string `json:"cliente"`
+		Telefono  string `json:"telefono"`
+		Precio    int    `json:"precio"`
+		Fecha     string `json:"fecha"`
+		Hora      string `json:"hora"`
+		Iso       string `json:"iso"`
+		Notes     string `json:"notes,omitempty"`
+		NoShow    bool   `json:"no_show"`
+		Cancelled bool   `json:"cancelled"`
+	}
+
+	now := time.Now()
+	citas := []empCitaJSON{}
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		d.DataTo(&b)
+		if b.DateTime.Before(now.AddDate(0, 0, -1)) {
+			continue
+		}
+		citas = append(citas, empCitaJSON{
+			ID:        d.Ref.ID,
+			Servicio:  b.ServiceName,
+			Cliente:   b.ClientName,
+			Telefono:  b.UserPhone,
+			Precio:    b.Price,
+			Fecha:     b.DateTime.In(loc).Format("2006-01-02"),
+			Hora:      b.DateTime.In(loc).Format("15:04"),
+			Iso:       b.DateTime.In(loc).Format(time.RFC3339),
+			Notes:     b.Notes,
+			NoShow:    b.NoShow,
+			Cancelled: d.Data()["cancelled"] == true,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(citas)
+}
+
+// POST /api/v1/b/{slug}/empleados/{empleadoID}/pin
+func setEmployeePinHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Pin string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Pin) < 4 || len(req.Pin) > 6 {
+		http.Error(w, "PIN debe tener 4-6 dígitos", http.StatusBadRequest)
+		return
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Pin), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Error procesando PIN", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+	_, err = firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+		{Path: "login_pin", Value: string(hash)},
+	})
+	if err != nil {
+		http.Error(w, "Error guardando PIN", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "PIN actualizado",
+	})
+}
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
