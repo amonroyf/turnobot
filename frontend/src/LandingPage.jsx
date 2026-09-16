@@ -112,7 +112,7 @@ function ChartSVG() {
 const features = [
   { icon: '📅', title: 'Calendario Anti-Errores', desc: 'Sincronizado con Google Calendar. Dile adiós a los turnos cruzados y a los huecos en la agenda.', svg: CalendarSVG },
   { icon: '💰', title: 'Catálogo de Servicios', desc: 'Muestra tus precios y duraciones claramente. El cliente sabe exactamente qué va a pagar.' },
-  { icon: '👥', title: 'Multi-Profesional', desc: 'Cada barbero, esteticista o médico tiene su propia agenda y especialidad en un solo enlace.', svg: PeopleSVG },
+  { icon: '👥', title: 'Multi-Profesional', desc: 'Cada profesional tiene su propia agenda y especialidad en un solo enlace.', svg: PeopleSVG },
   { icon: '📓', title: 'Base de Datos (CRM)', desc: 'TurnoBot guarda el nombre y teléfono de todos tus clientes. Descárgalo en Excel cuando quieras.' },
   { icon: '📊', title: 'Panel Administrativo', desc: 'Controla tu negocio desde el celular. Revisa cuántas citas tienes hoy y cuánto vas a facturar.', svg: ChartSVG },
   { icon: '🔔', title: 'Notificaciones Push', desc: 'Recibe una alerta inmediata en tu celular cada vez que un cliente confirma un turno nuevo.' },
@@ -120,7 +120,7 @@ const features = [
 
 const steps = [
   { num: '1', title: 'Crea tu negocio', desc: 'Registra tu local en 2 minutos. Nombre, dirección y horarios.' },
-  { num: '2', title: 'Agrega servicios', desc: 'Consultas, cortes, terapias o revisiones... con precios y duración.' },
+  { num: '2', title: 'Agrega servicios', desc: 'Servicios personalizados con precios y duración.' },
   { num: '3', title: 'Configura tu equipo', desc: 'Cada profesional con sus horarios y especialidades.' },
   { num: '4', title: 'Comparte tu enlace', desc: 'Un link único para que tus clientes reserven 24/7.' },
 ];
@@ -163,7 +163,7 @@ function HeroSection() {
                 <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25">
                   Iniciar Mes de Prueba
                 </a>
-                <a href="/shop/barberia-vip" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10">
+                <a href="/shop/demo" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10">
                   Ver demo interactiva
                 </a>
               </div>
@@ -393,7 +393,7 @@ function FAQSection() {
     },
     {
       question: '¿Qué negocios pueden usar TurnoBot?',
-      answer: 'Cualquier negocio que trabaje con citas: barberías, salones, estética, consultorios, talleres, veterinarias y más.',
+      answer: 'Cualquier negocio que trabaje con citas: consultorios, salones, clínicas, talleres, veterinarias y más.',
     },
   ];
 

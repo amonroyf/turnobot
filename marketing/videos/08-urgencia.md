@@ -22,10 +22,10 @@
 
 **[Escena 4 - 0:20-0:28]**
 *Texto:* "Que SABE que tu tiempo vale más que estar pegado al celular"
-*Visual:* Barbero trabajando tranquilo mientras suena una notificación
+*Visual:* profesional trabajando tranquilo mientras suena una notificación
 
 **[Escena 5 - 0:28-0:35]**
-*Texto:* "TurnoBot 🗓️ Hecho para barberos, por alguien que entiende"
+*Texto:* "TurnoBot 🗓️ Hecho para profesionales, por alguien que entiende"
 *Texto:* "Link en bio"
 
 ---
@@ -42,17 +42,17 @@ Lo creó alguien que SABE:
 
 Por eso TurnoBot es diferente:
 ✅ Entiende tus horarios reales
-✅ Respeta tus barberos
+✅ Respeta tus profesionales
 ✅ Te devuelves tu tiempo
 
-Creado para barberos. Por alguien que entiende. 💈
+Creado para profesionales. Por alguien que entiende. 📋
 
 Link en bio 👇
 ```
 
 ## #️⃣ HASHTAGS
 ```
-#Barberia #TurnoBot #CreadoParaBarberos #HechoEnColombia
-#Barbero #Emprendimiento #NegociosColombia #OrgulloColombiano
+#Negocio #TurnoBot #CreadoParaProfesionales #HechoEnColombia
+#Profesional #Emprendimiento #NegociosColombia #OrgulloColombiano
 #Pymes #SoluciónLocal #Colombia #AppColombiana
 ```

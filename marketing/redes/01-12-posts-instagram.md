@@ -30,8 +30,8 @@ Con TurnoBot:
 
 **Hashtags:**
 ```
-#Barberia #SalonDeBelleza #TurnoBot #CitasOnline #NegociosColombia
-#Emprendimiento #Barbero #Peluqueria #GestiónDeCitas #Colombia
+#Negocio #SalonDeBelleza #TurnoBot #CitasOnline #NegociosColombia
+#Emprendimiento #Profesional #Servicios #GestiónDeCitas #Colombia
 ```
 
 ---
@@ -45,19 +45,19 @@ Con TurnoBot:
 Así de fácil reservan tus clientes 👇
 
 1️⃣ Eligen el servicio
-2️⃣ Eligen al barbero
+2️⃣ Eligen al profesional
 3️⃣ Eligen fecha y hora
 4️⃣ ¡Listo!
 
-Tu barbería abierta 24/7 sin que hagas nada 🗓️
+Tu negocio abierto 24/7 sin que hagas nada 🗓️
 
 Probado → link en bio
 ```
 
 **Hashtags:**
 ```
-#Barberia #ReservaOnline #TurnoBot #AgendaOnline #NegociosColombia
-#Barbero #App #Tecnología #CitasBarberia #Colombia
+#Negocio #ReservaOnline #TurnoBot #AgendaOnline #NegociosColombia
+#Profesional #App #Tecnología #CitasNegocio #Colombia
 ```
 
 ---
@@ -83,8 +83,8 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#DineroPerdido #Barberia #TurnoBot #NegociosColombia #Emprendimiento
-#Barbero #Inversión #Pymes #Colombia #GestiónDeCitas
+#DineroPerdido #Negocio #TurnoBot #NegociosColombia #Emprendimiento
+#Profesional #Inversión #Pymes #Colombia #GestiónDeCitas
 ```
 
 ---
@@ -104,15 +104,15 @@ DESPUÉS 😎 → Citas automáticas, agenda limpia, 0 clientes perdidos
 
 ¿Cuál prefieres?
 
-TurnoBot transforma tu barbería en un negocio digital 🚀
+TurnoBot transforma tu negocio en un negocio digital 🚀
 
 Link en bio 👇
 ```
 
 **Hashtags:**
 ```
-#AntesYDespues #Barberia #TurnoBot #Transformación #NegociosColombia
-#Barbero #Digitalización #Colombia #Pymes #Emprendimiento
+#AntesYDespues #Negocio #TurnoBot #Transformación #NegociosColombia
+#Profesional #Digitalización #Colombia #Pymes #Emprendimiento
 ```
 
 ---
@@ -140,7 +140,7 @@ Link en bio para empezar
 
 **Hashtags:**
 ```
-#Barberia #TurnoBot #Oferta #Barato #NegociosColombia #Barbero
+#Negocio #TurnoBot #Oferta #Barato #NegociosColombia #Profesional
 #Pymes #AgendaOnline #Colombia #SoluciónNegocios
 ```
 
@@ -154,7 +154,7 @@ Link en bio para empezar
 ```
 "Yo perdía como 3 o 4 clientes al día porque no contestaba WhatsApp"
 
-Carlos tiene una barbería en Bogotá. Desde que usa TurnoBot:
+Carlos tiene un negocio en Bogotá. Desde que usa TurnoBot:
 ✅ Sus clientes reservan solos 24/7
 ✅ No pierde ni una cita
 ✅ Solo llega y trabaja
@@ -166,19 +166,19 @@ Empieza gratis 👇 link en bio
 
 **Hashtags:**
 ```
-#Testimonio #Barberia #TurnoBot #ExitoEmpresarial #NegociosColombia
-#Barbero #Colombia #PymesColombia #AgendaOnline
+#Testimonio #Negocio #TurnoBot #ExitoEmpresarial #NegociosColombia
+#Profesional #Colombia #PymesColombia #AgendaOnline
 ```
 
 ---
 
-## POST 7 — Feature destacada: Horarios por barbero
+## POST 7 — Feature destacada: Horarios por profesional
 **Tipo:** Imagen o video corto
 **Mejor día:** Miércoles
 
 **Copy:**
 ```
-Cada barbero tiene sus propios horarios 📅
+Cada profesional tiene sus propios horarios 📅
 
 Con TurnoBot:
 👷 Alejandro: Lun-Vie 9am-6pm
@@ -194,8 +194,8 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#Barberia #TurnoBot #Horarios #GestiónDeCitas #NegociosColombia
-#Barbero #AgendaInteligente #Colombia #Organización
+#Negocio #TurnoBot #Horarios #GestiónDeCitas #NegociosColombia
+#Profesional #AgendaInteligente #Colombia #Organización
 ```
 
 ---
@@ -225,8 +225,8 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#CRM #Barberia #TurnoBot #Fidelización #NegociosColombia
-#Barbero #Datos #Marketing #Colombia #Pymes
+#CRM #Negocio #TurnoBot #Fidelización #NegociosColombia
+#Profesional #Datos #Marketing #Colombia #Pymes
 ```
 
 ---
@@ -238,12 +238,12 @@ Link en bio 👇
 **Copy:**
 ```
 🇺🇸 Silicon Valley crea apps para gigantes
-🇨🇴 TurnoBot crea soluciones para barberos colombianos
+🇨🇴 TurnoBot crea soluciones para profesionales colombianos
 
 No es una app gringa genérica.
 
 Es una solución HECHA para:
-✅ Horarios de barberías colombianas
+✅ Horarios de negocios colombianas
 ✅ Precios en pesos
 ✅ WhatsApp como canal principal
 ✅ Realidad de pymes colombianas
@@ -255,7 +255,7 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#HechoEnColombia #Barberia #TurnoBot #OrgulloColombiano #Pymes
+#HechoEnColombia #Negocio #TurnoBot #OrgulloColombiano #Pymes
 #Emprendimiento #NegociosColombia #AppColombiana #Colombia
 ```
 
@@ -265,11 +265,11 @@ Link en bio 👇
 **Tipo:** Imagen con pregunta
 **Mejor día:** Jueves
 
-**Imagen:** "Pregunta para barberos 💈" sobre fondo llamativo
+**Imagen:** "Pregunta para profesionales 📋" sobre fondo llamativo
 
 **Copy:**
 ```
-Pregunta para barberos 💈
+Pregunta para profesionales 📋
 
 ¿Cuántas citas pierdes al día por no contestar WhatsApp?
 
@@ -285,8 +285,8 @@ Comenta tu respuesta 👇
 
 **Hashtags:**
 ```
-#Pregunta #Barberia #TurnoBot #Engagement #NegociosColombia
-#Barbero #Comentarios #Colombia #Pymes
+#Pregunta #Negocio #TurnoBot #Engagement #NegociosColombia
+#Profesional #Comentarios #Colombia #Pymes
 ```
 
 ---
@@ -317,8 +317,8 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#Tiempo #Barberia #TurnoBot #Urgencia #NegociosColombia
-#Barbero #Oportunidad #Colombia #Emprendimiento
+#Tiempo #Negocio #TurnoBot #Urgencia #NegociosColombia
+#Profesional #Oportunidad #Colombia #Emprendimiento
 ```
 
 ---
@@ -347,6 +347,6 @@ Link en bio 👇
 
 **Hashtags:**
 ```
-#Domingo #Barberia #TurnoBot #NegocioDigital #NegociosColombia
-#Barbero #Automatización #Colombia #Emprendimiento #Descanso
+#Domingo #Negocio #TurnoBot #NegocioDigital #NegociosColombia
+#Profesional #Automatización #Colombia #Emprendimiento #Descanso
 ```

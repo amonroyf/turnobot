@@ -9,14 +9,14 @@ const mañana = () => {
 };
 
 // Lleva la página del cliente hasta el paso 4 (formulario de confirmación),
-// eligiendo automáticamente servicio, barbero, fecha y dejando los slots cargados.
+// eligiendo automáticamente servicio, profesional, fecha y dejando los slots cargados.
 async function llegarAConfirmacion(page) {
   await page.goto(`/shop/${SLUG}`);
   await expect(page.getByRole('button', { name: /Agendar/ })).toBeVisible();
   await page.getByRole('button', { name: /Agendar/ }).click();
 
-  await expect(page.getByText('Corte y Barba').first()).toBeVisible();
-  await page.getByText('Corte y Barba').first().click();
+  await expect(page.getByText('Consulta General').first()).toBeVisible();
+  await page.getByText('Consulta General').first().click();
 
   await expect(page.getByText('Alejandro').first()).toBeVisible();
   await page.getByText('Alejandro', { exact: true }).click();
@@ -106,7 +106,7 @@ test.describe('Turnobot E2E Suite', () => {
       slug: SLUG,
       phone,
       name: 'Ana E2E',
-      service: 'Corte y Barba',
+      service: 'Consulta General',
       empId: 'emp_alejandro',
       dateTime: dt,
     });
@@ -117,7 +117,7 @@ test.describe('Turnobot E2E Suite', () => {
     await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(phone);
     await page.getByRole('button', { name: 'Ver mis citas' }).click();
 
-    await expect(page.getByText('Corte y Barba').first()).toBeVisible();
+    await expect(page.getByText('Consulta General').first()).toBeVisible();
 
     page.on('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Cancelar cita' }).click();

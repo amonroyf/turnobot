@@ -9,7 +9,7 @@
 
 **Bio:**
 ```
-Tu barbería online 24/7 🗓️
+Tu negocio online 24/7 🗓️
 Tus clientes reservan solos, tú solo trabajas 📅
 
 ✅ Sin comisión por reserva
@@ -30,7 +30,7 @@ Tus clientes reservan solos, tú solo trabajas 📅
 
 **Bio:**
 ```
-Barberías que reservan solas 💈
+Negocios que reservan solos 📋
 Citas automáticas. Sin WhatsApp. Sin perderte nada.
 
 Link para empezar 👇
@@ -40,12 +40,12 @@ Link para empezar 👇
 
 ## Facebook
 
-**Nombre:** TurnoBot — Agendamiento para Barberías
+**Nombre:** TurnoBot — Agendamiento para Negocios
 **Usuario:** @turnobotapp
 
 **Descripción:**
 ```
-TurnoBot es la plataforma de agendamiento en línea diseñada para barberías y salones de belleza en Colombia.
+TurnoBot es la plataforma de agendamiento en línea diseñada para negocios y locales de belleza en Colombia.
 
 📅 Reservas 24/7
 💰 Servicios y precios online
@@ -64,7 +64,7 @@ Tus clientes reservan solos. Tú solo llegas y trabajas.
 **Nombre:** TurnoBot
 **Descripción:**
 ```
-🗓️ Agendamiento en línea para barberías y salones.
+🗓️ Agendamiento en línea para negocios y locales.
 Tus clientes reservan solos 24/7.
 Sin comisión. Sin contrato.
 Empieza gratis: turnobot-web.web.app
@@ -79,8 +79,8 @@ Empieza gratis: turnobot-web.web.app
 
 **Bio:**
 ```
-Barberías que reservan solas 💈
-Citas automáticas 24/7 para salones y barberías en Colombia 🇨🇴
+Negocios que reservan solos 📋
+Citas automáticas 24/7 para locales y negocios en Colombia 🇨🇴
 Sin comisión. Sin contrato.
 🔗 turnobot-web.web.app
 ```
@@ -92,11 +92,11 @@ Sin comisión. Sin contrato.
 **Nombre:** TurnoBot
 **Descripción del canal:**
 ```
-TurnoBot — Agendamiento en línea para barberías y salones de belleza en Colombia.
+TurnoBot — Agendamiento en línea para negocios y locales de belleza en Colombia.
 
 En este canal encontrarás:
 📱 Demos del sistema
-💡 Tips para digitalizar tu barbería
+💡 Tips para digitalizar tu negocio
 📊 Casos de éxito
 🎓 Tutoriales de uso
 

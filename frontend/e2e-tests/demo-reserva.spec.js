@@ -7,9 +7,9 @@ test('Grabar demo de reserva', async ({ page }) => {
   const cliente = `Cliente Demo ${suffix}`;
   const telefono = `300123${String(suffix).padStart(4, '0')}`;
 
-  await page.goto('/shop/barberia-vip');
+  await page.goto('/shop/mi-negocio');
 
-  await page.getByText('Corte de Cabello', { exact: true }).click();
+  await page.getByText('Consulta General', { exact: true }).click();
   await page.screenshot({ path: screenshotPath('01-servicio'), fullPage: true });
   await page.getByText('Alejandro', { exact: true }).click();
   await page.screenshot({ path: screenshotPath('02-profesional'), fullPage: true });

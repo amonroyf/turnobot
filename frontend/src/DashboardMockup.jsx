@@ -17,7 +17,7 @@ export default function DashboardMockup() {
       <div className="bg-gray-50 border-x border-b border-gray-200 rounded-b-2xl p-4 sm:p-6">
         {/* Header */}
         <div className="text-center mb-4">
-          <p className="text-sm font-black text-gray-900">Barbería VIP</p>
+          <p className="text-sm font-black text-gray-900">Mi Negocio</p>
           <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Modo Administrador</p>
         </div>
 
@@ -50,9 +50,9 @@ export default function DashboardMockup() {
         <div className="space-y-2">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">HOY</p>
           {[
-            { name: 'Carlos Pérez', service: 'Corte + Barba', time: '10:00', price: '$35.000', status: 'Confirmada' },
-            { name: 'María López', service: 'Corte clásico', time: '11:30', price: '$25.000', status: 'Confirmada' },
-            { name: 'Andrés Ruiz', service: 'Cejas', time: '14:00', price: '$15.000', status: 'Pendiente' },
+            { name: 'Carlos Pérez', service: 'Consulta General', time: '10:00', price: '$35.000', status: 'Confirmada' },
+            { name: 'María López', service: 'Limpieza', time: '11:30', price: '$25.000', status: 'Confirmada' },
+            { name: 'Andrés Ruiz', service: 'Revisión', time: '14:00', price: '$15.000', status: 'Pendiente' },
           ].map((a, i) => (
             <div key={i} className="bg-white border border-gray-200 rounded-xl p-2.5 flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -61,7 +61,7 @@ export default function DashboardMockup() {
                 </div>
                 <div>
                   <p className="text-[10px] font-bold text-gray-900">{a.name}</p>
-                  <p className="text-[8px] text-gray-500">✂️ {a.service} · ⏰ {a.time}</p>
+                  <p className="text-[8px] text-gray-500">📋 {a.service} · ⏰ {a.time}</p>
                 </div>
               </div>
               <div className="text-right">

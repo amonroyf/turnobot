@@ -36,7 +36,7 @@ Tranquilo. Si sabes usar WhatsApp, sabes usar TurnoBot.
 
 📱 Es MÁS FÁCIL que mandar un mensaje
 🆓 Te ayudamos a configurarlo GRATIS
-⏱️ En 10 minutos tu barbería está online
+⏱️ En 10 minutos tu negocio está online
 
 No necesitas ser experto. Solo necesitas querer crecer 💪
 
@@ -45,7 +45,7 @@ Link en bio 👇
 
 ## #️⃣ HASHTAGS
 ```
-#Barberia #TurnoBot #FácilDeUsar #SinMiedo #Emprendimiento
-#NegociosColombia #Barbero #TecnologíaAccesible #Pymes
+#Negocio #TurnoBot #FácilDeUsar #SinMiedo #Emprendimiento
+#NegociosColombia #Profesional #TecnologíaAccesible #Pymes
 #Colombia #Digitalización #Simple
 ```

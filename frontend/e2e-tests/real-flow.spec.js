@@ -15,7 +15,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await limpiarEntornoReal(SLUG_REAL, EMAIL_REAL);
   });
 
-  test('El dueño se registra y crea el catálogo de su barbería', async ({ page }) => {
+  test('El dueño se registra y crea el catálogo de su negocio', async ({ page }) => {
     // 1. Registro real en Firebase Auth (paso 1: correo/contraseña)
     await page.goto('/register');
     await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
@@ -25,55 +25,55 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
 
     // 2. Paso 2: nombre y slug del negocio
     await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
-    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Barbería E2E');
+    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Negocio E2E');
     await page.locator('input[type="text"]').nth(1).fill(SLUG_REAL);
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 
     // 3. Acceso al Dashboard y correo persistido
     await expect(page).toHaveURL(/\/admin$/);
-    await expect(page.getByRole('heading', { name: 'Barbería E2E' })).toBeVisible({
+    await expect(page.getByRole('heading', { name: 'Negocio E2E' })).toBeVisible({
       timeout: 30000,
     });
 
     // 3. Crear servicio en Firestore real
-    await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Premium');
+    await page.getByPlaceholder('Nombre (ej. Consulta, Limpieza, Terapia)').fill('Consulta Premium');
     await page.getByPlaceholder('Minutos').fill('45');
     await page.getByPlaceholder('Precio').fill('35000');
     await page.getByRole('button', { name: /Agregar Servicio/ }).click();
-    await expect(page.getByText('Corte Premium')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Consulta Premium')).toBeVisible({ timeout: 20000 });
 
     // 4. Crear profesional en Firestore real
-    await page.getByPlaceholder('Nombre del profesional').fill('Barbero E2E');
+    await page.getByPlaceholder('Nombre del profesional').fill('Profesional E2E');
     await page.getByRole('button', { name: 'Añadir Profesional' }).click();
-    await expect(page.getByText('Barbero E2E')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Profesional E2E')).toBeVisible({ timeout: 20000 });
 
     // Verificación directa en la BD
     const doc = await db.collection('negocios').doc(SLUG_REAL).get();
     expect(doc.exists).toBe(true);
-    expect(doc.data().name).toBe('Barbería E2E');
+    expect(doc.data().name).toBe('Negocio E2E');
     const svc = await db
       .collection('negocios')
       .doc(SLUG_REAL)
       .collection('servicios')
       .get();
-    expect(svc.docs.map((d) => d.data().name)).toContain('Corte Premium');
+    expect(svc.docs.map((d) => d.data().name)).toContain('Consulta Premium');
     const emp = await db
       .collection('negocios')
       .doc(SLUG_REAL)
       .collection('empleados')
       .get();
-    expect(emp.docs.map((d) => d.data().name)).toContain('Barbero E2E');
+    expect(emp.docs.map((d) => d.data().name)).toContain('Profesional E2E');
   });
 
   test('El cliente agenda exitosamente a través del embudo público', async ({ page }) => {
     await page.goto(`/shop/${SLUG_REAL}`);
     await page.getByRole('button', { name: /Agendar/ }).click();
 
-    await expect(page.getByText('Corte Premium').first()).toBeVisible();
-    await page.getByText('Corte Premium').first().click();
+    await expect(page.getByText('Consulta Premium').first()).toBeVisible();
+    await page.getByText('Consulta Premium').first().click();
 
-    await expect(page.getByText('Barbero E2E', { exact: true }).first()).toBeVisible();
-    await page.getByText('Barbero E2E', { exact: true }).first().click();
+    await expect(page.getByText('Profesional E2E', { exact: true }).first()).toBeVisible();
+    await page.getByText('Profesional E2E', { exact: true }).first().click();
 
     await expect(page.getByRole('button', { name: 'Mes siguiente' })).toBeVisible();
     await elegirDiaEnCalendario(page, mañana());

@@ -22,14 +22,14 @@ export default function PhoneMockup() {
             {/* Header */}
             <div className="text-center mb-2">
               <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">TurnoBot</p>
-              <p className="text-sm font-bold text-gray-900">Barbería VIP</p>
+               <p className="text-sm font-bold text-gray-900">Mi Negocio</p>
             </div>
 
             {/* Service card */}
             <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
               <div className="flex justify-between items-center">
                 <div>
-                  <p className="text-xs font-bold text-gray-900">✂️ Corte clásico</p>
+                  <p className="text-xs font-bold text-gray-900">📋 Consulta General</p>
                   <p className="text-[10px] text-gray-500">30 min</p>
                 </div>
                 <span className="text-xs font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">$25.000</span>
@@ -74,7 +74,7 @@ export default function PhoneMockup() {
           <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">📱</div>
           <div>
             <p className="text-[10px] font-bold text-gray-900">Nueva reserva</p>
-            <p className="text-[8px] text-gray-500">Juan - Corte - Viernes 11am</p>
+            <p className="text-[8px] text-gray-500">Juan - Consulta - Viernes 11am</p>
           </div>
         </div>
       </div>

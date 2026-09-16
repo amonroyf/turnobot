@@ -80,7 +80,7 @@ export const garantizarTiendaE2E = async (slug = SLUG_E2E) => {
     },
     { merge: true },
   );
-  await db.collection('negocios').doc(slug).collection('servicios').doc('svc_corte_barba').set({ name: 'Corte y Barba', duration_minutes: 30, price: '45000' });
+  await db.collection('negocios').doc(slug).collection('servicios').doc('svc_consulta').set({ name: 'Consulta General', duration_minutes: 30, price: '45000' });
   await db.collection('negocios').doc(slug).collection('empleados').doc('emp_alejandro').set({ name: 'Alejandro', calendar_id: '' });
 };
 

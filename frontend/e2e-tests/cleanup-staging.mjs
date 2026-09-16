@@ -11,7 +11,7 @@ import admin from 'firebase-admin';
 //   node e2e-tests/cleanup-staging.mjs --yes --include-legacy  # + prefijos viejos
 //   E2E_SLUG_PREFIX=qa node e2e-tests/cleanup-staging.mjs --yes
 //
-// NUNCA toca slugs fuera del prefijo (negocios reales como peluqueriarisos).
+// NUNCA toca slugs fuera del prefijo (negocios reales).
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -36,9 +36,9 @@ const LEGACY_PREFIXES = [
   'horarios',
   'eptest',
   'smokeprod',
-  'barberia-qa-',
+  'negocio-qa-',
   'cliente-qa-',
-  'barberia-prod-',
+  'negocio-prod-',
 ];
 
 const matchSlug = (id) =>

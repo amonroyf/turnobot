@@ -3,7 +3,7 @@ import { adminAuth, db } from './setup.js';
 
 const timestamp = Date.now();
 const email = `demo-admin-${timestamp}@turnobot.test`;
-const slug = 'barberia-vip';
+const slug = 'mi-negocio';
 const password = 'Clave.123';
 let uid;
 let originalOwnerUid;
@@ -34,18 +34,18 @@ test('Grabar módulos del panel Admin con sesión demo', async ({ page }) => {
   await db.collection('negocios').doc(slug).update({ owner_uid: uid });
   await page.goto('/admin');
 
-  await expect(page.getByRole('heading', { name: /Barberia VIP/i })).toBeVisible({ timeout: 30000 });
-  await page.screenshot({ path: 'test-results/demo-barberia-vip-agenda.png', fullPage: true });
+  await expect(page.getByRole('heading', { name: /Mi Negocio/i })).toBeVisible({ timeout: 30000 });
+  await page.screenshot({ path: 'test-results/demo-mi-negocio-agenda.png', fullPage: true });
   await page.waitForTimeout(1500);
 
   await page.getByRole('button', { name: 'Clientes' }).click();
   await expect(page.getByText(/Directorio de Clientes/)).toBeVisible();
-  await page.screenshot({ path: 'test-results/demo-barberia-vip-clientes.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/demo-mi-negocio-clientes.png', fullPage: true });
   await page.waitForTimeout(1500);
 
   await page.getByRole('button', { name: 'Ajustes' }).click();
   await expect(page.getByText('Información del Local')).toBeVisible();
-  await page.screenshot({ path: 'test-results/demo-barberia-vip-ajustes.png', fullPage: true });
+  await page.screenshot({ path: 'test-results/demo-mi-negocio-ajustes.png', fullPage: true });
 
   await page.waitForTimeout(3000);
 });

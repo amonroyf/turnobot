@@ -21,7 +21,7 @@
 *Visual:* Transición a pantalla del celular mostrando TurnoBot en acción
 
 **[Escena 4 - 0:20-0:28]**
-*Texto en pantalla:* "TurnoBot — Tu barbería online 🗓️"
+*Texto en pantalla:* "TurnoBot — Tu negocio online 🗓️"
 *Visual:* Logo + link en bio
 *Audio:* Sonido satisfactorio / ding
 
@@ -41,8 +41,8 @@ Con TurnoBot tus clientes agendan solos, 24/7, sin que hagas nada.
 
 ## #️⃣ HASHTAGS
 ```
-#Barberia #SalonDeBelleza #Peluqueria #TurnoBot #AgendamientoOnline
-#CitasOnline #NegociosColombia #Emprendimiento #Barbero #Estilista
+#Negocio #SalonDeBelleza #Servicios #TurnoBot #AgendamientoOnline
+#CitasOnline #NegociosColombia #Emprendimiento #Profesional #Estilista
 #GestiónDeCitas #WhatsApp #Negocio #Pyme #Colombia
 ```
 

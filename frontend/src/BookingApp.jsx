@@ -584,7 +584,7 @@ export default function BookingApp() {
                       <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
                       
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>✂️ Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
+                        <p>📋 Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
                         <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
@@ -659,7 +659,7 @@ export default function BookingApp() {
                     </p>
 
                     <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
-                      <p>💈 <strong>Servicio:</strong> {servicioElegido?.name}</p>
+                      <p>📋 <strong>Servicio:</strong> {servicioElegido?.name}</p>
                       <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name}</p>
                       <p>📅 <strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)}</p>
                       <p>🕐 <strong>Hora:</strong> {booking.hora}</p>

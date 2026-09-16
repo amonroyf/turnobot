@@ -9,7 +9,7 @@
 ## 📱 GUIÓN (Formato talking head)
 
 **[Escena 1 - 0:00-0:05]**
-*Texto:* "Lo que dice Carlos, dueño de una barbería en Bogotá"
+*Texto:* "Lo que dice Carlos, dueño de un negocio en Bogotá"
 *Visual:* Persona hablando a cámara (puede ser actor/friend)
 
 **[Escena 2 - 0:05-0:20]**
@@ -32,7 +32,7 @@
 ```
 "Yo perdía 4 clientes al día por no contestar WhatsApp" 😤
 
-Carlos tiene una barbería en Bogotá. Desde que usa TurnoBot:
+Carlos tiene un negocio en Bogotá. Desde que usa TurnoBot:
 ✅ Sus clientes reservan solos 24/7
 ✅ No pierde ni una cita
 ✅ Tranquilo, solo llega y trabaja
@@ -44,7 +44,7 @@ Empieza gratis 👇 link en bio
 
 ## #️⃣ HASHTAGS
 ```
-#Testimonio #Barberia #TurnoBot #Emprendimiento #NegociosColombia
-#Barbero #Peluqueria #AgendaOnline #CitasOnline #Colombia
+#Testimonio #Negocio #TurnoBot #Emprendimiento #NegociosColombia
+#Profesional #Servicios #AgendaOnline #CitasOnline #Colombia
 #ExitoEmpresarial #PymesColombia
 ```

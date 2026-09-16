@@ -29,11 +29,11 @@ func main() {
 	log.Println("Conectando a Firestore e insertando datos de prueba...")
 
 	// El slug del negocio es el que el frontend usa en la URL /api/v1/b/{slug}
-	negocioID := "barberia-vip"
+	negocioID := "mi-negocio"
 
 	// 1. Crear el documento del Negocio
 	_, err = client.Collection("negocios").Doc(negocioID).Set(ctx, map[string]interface{}{
-		"name":        "Barbería VIP",
+		"name":        "Mi Negocio Demo",
 		"calendar_id": "primary",
 		"whatsapp":    "573001234567",
 		"direccion":   "Calle 123 # 45-67, Bogotá",
@@ -52,9 +52,9 @@ func main() {
 		duration int
 		price    string
 	}{
-		{"svc_corte", "Corte de Cabello", 30, "30000"},
-		{"svc_barba", "Arreglo de Barba", 20, "20000"},
-		{"svc_combo", "Corte + Barba", 50, "45000"},
+		{"svc_consulta", "Consulta General", 30, "30000"},
+		{"svc_limpieza", "Limpieza", 20, "20000"},
+		{"svc_revision", "Revisión", 50, "45000"},
 	}
 
 	for _, s := range servicios {

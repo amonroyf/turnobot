@@ -16,7 +16,7 @@ test.describe('Register + Admin Panel', () => {
     page,
   }) => {
     const ts = Date.now();
-    const nombre = `Barberia QA ${ts}`;
+    const nombre = `Negocio QA ${ts}`;
     const email = `qa${ts}@turnobot.test`;
     const slugAuto = nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-');
     const slug = e2eSlug(slugAuto);
@@ -36,11 +36,11 @@ test.describe('Register + Admin Panel', () => {
     expect(negocio.exists).toBe(true);
     expect(negocio.data().owner_uid).toBeTruthy();
 
-    await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Tradicional');
+    await page.getByPlaceholder('Nombre (ej. Consulta, Limpieza, Terapia)').fill('Consulta Tradicional');
     await page.getByPlaceholder('Minutos').fill('30');
     await page.getByPlaceholder('Precio').fill('25000');
     await page.getByRole('button', { name: /Agregar Servicio/ }).click();
-    await expect(page.getByText('Corte Tradicional')).toBeVisible({
+    await expect(page.getByText('Consulta Tradicional')).toBeVisible({
       timeout: 20000,
     });
 
@@ -68,8 +68,8 @@ test.describe('Register + Admin Panel', () => {
     await expect(page.getByText('Pepe')).toBeHidden({ timeout: 15000 });
 
     page.once('dialog', (d) => d.accept());
-    await page.getByRole('button', { name: 'Eliminar servicio Corte Tradicional' }).click();
-    await expect(page.getByText('Corte Tradicional')).toBeHidden({ timeout: 15000 });
+    await page.getByRole('button', { name: 'Eliminar servicio Consulta Tradicional' }).click();
+    await expect(page.getByText('Consulta Tradicional')).toBeHidden({ timeout: 15000 });
 
     await db.collection('negocios').doc(slug).delete();
     const servicioDoc = servicios.docs[0];
@@ -83,7 +83,7 @@ test.describe('Register + Admin Panel', () => {
   test('Registro con slug ya en uso muestra error', async ({ page }) => {
     const ts = Date.now();
     const email = `dupe${ts}@turnobot.test`;
-    const slug = 'barberia-vip';
+    const slug = 'mi-negocio';
 
     const { email: userEmail, password } = await crearUsuarioYTema(email, 'Usuario Dupe', `e2e-dupe-${ts}`);
 
@@ -92,7 +92,7 @@ test.describe('Register + Admin Panel', () => {
     await page.goto('/admin');
     await page.goto('/register');
 
-    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Barberia VIP Duplicada');
+    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Mi Negocio Duplicada');
     await page.locator('input[type="text"]').nth(1).fill(slug);
     await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
 

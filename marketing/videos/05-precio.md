@@ -9,7 +9,7 @@
 ## 📱 GUIÓN
 
 **[Escena 1 - 0:00-0:04]**
-*Texto:* "¿Cuánto cuesta tener tu barbería online 24/7?"
+*Texto:* "¿Cuánto cuesta tener tu negocio online 24/7?"
 *Audio:* Música de suspenso
 
 **[Escena 2 - 0:04-0:08]**
@@ -39,7 +39,7 @@
 ✅ Reservas ilimitadas
 ✅ Sin comisión
 ✅ Sin contrato
-✅ Tu barbería 24/7
+✅ Tu negocio 24/7
 
 ¿Aún reservas por WhatsApp? 😅
 Link en bio 👇
@@ -47,7 +47,7 @@ Link en bio 👇
 
 ## #️⃣ HASHTAGS
 ```
-#Barberia #TurnoBot #Pymes #Emprendimiento #NegociosColombia
-#Barbero #AgendaOnline #CitasOnline #Colombia #Oferta
+#Negocio #TurnoBot #Pymes #Emprendimiento #NegociosColombia
+#Profesional #AgendaOnline #CitasOnline #Colombia #Oferta
 #SolucionNegocios #DigitalizaTuNegocio
 ```

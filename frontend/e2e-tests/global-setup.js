@@ -5,9 +5,9 @@ export default async function globalSetup() {
   await garantizarTiendaE2E();
   await limpiarReservasE2E();
 
-  const negocioRef = admin.firestore().collection('negocios').doc('barberia-vip');
+  const negocioRef = admin.firestore().collection('negocios').doc('mi-negocio');
   await negocioRef.set({
-    name: 'Barberia VIP Duplicada',
+    name: 'Mi Negocio Duplicada',
     owner_uid: 'e2e-owner',
     whatsapp: '',
     direccion: '',

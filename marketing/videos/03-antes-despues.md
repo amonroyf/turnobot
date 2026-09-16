@@ -30,7 +30,7 @@
 *Texto:* "0 mensajes perdidos"
 
 **[Escena 5 - 0:22-0:28]**
-*Texto:* "Tu barbería trabaja mientras duermes 🌙"
+*Texto:* "Tu negocio trabaja mientras duermes 🌙"
 *Visual:* Logo TurnoBot
 *Texto:* "Link en bio"
 
@@ -54,7 +54,7 @@ DESPUÉS 😎:
 
 ## #️⃣ HASHTAGS
 ```
-#AntesYDespues #Barberia #Salon #TurnoBot #CitasOnline
-#NegociosColombia #Barbero #Emprendimiento #Pymes #Colombia
+#AntesYDespues #Negocio #Salon #TurnoBot #CitasOnline
+#NegociosColombia #Profesional #Emprendimiento #Pymes #Colombia
 #GestiónDeCitas #AgendaOnline #Productividad
 ```

@@ -688,7 +688,7 @@ export default function AdminDashboard() {
               </div>
               <div className="space-y-1 mt-2">
                 <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
-                  <span className="text-gray-400">✂️</span> {r.service_name}
+                  <span className="text-gray-400">📋</span> {r.service_name}
                 </p>
                 <p className="text-xs text-gray-600 flex items-center gap-1.5">
                   <span className="text-gray-400">👤</span> {profesional?.name || 'Sin Asignar'}
@@ -1116,7 +1116,7 @@ export default function AdminDashboard() {
               {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
               <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
                 <input
-                  type="text" required placeholder="Nombre del servicio (ej. Corte clásico)" value={nuevoServicio.name}
+                  type="text" required placeholder="Nombre del servicio (ej. Consulta, Limpieza, Terapia)" value={nuevoServicio.name}
                   onChange={(e) => setNuevoServicio({ ...nuevoServicio, name: e.target.value })}
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                 />
@@ -1161,7 +1161,7 @@ export default function AdminDashboard() {
                       ) : (
                         <a href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`} className="flex-1 text-center py-2 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm">🔗 Vincular Calendar</a>
                       )}
-                      <button onClick={() => setServiciosModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">✂️ Especialidad</button>
+                      <button onClick={() => setServiciosModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Especialidad</button>
                       <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
                     </div>
                   </li>

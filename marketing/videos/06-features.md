@@ -9,7 +9,7 @@
 ## 📱 GUIÓN (Formato lista con transiciones)
 
 **[Escena 1 - 0:00-0:03]**
-*Texto:* "Todo lo que TurnoBot hace por tu barbería 👇"
+*Texto:* "Todo lo que TurnoBot hace por tu negocio 👇"
 
 **[Escena 2 - 0:03-0:08]**
 *Visual:* Calendario con fechas
@@ -20,8 +20,8 @@
 *Texto:* "💰 Tus servicios y precios en la web"
 
 **[Escena 4 - 0:13-0:18]**
-*Visual:* Perfiles de barberos
-*Texto:* "👤 Tus barberos con sus horarios individuales"
+*Visual:* Perfiles de profesionales
+*Texto:* "👤 Tus profesionales con sus horarios individuales"
 
 **[Escena 5 - 0:18-0:23]**
 *Visual:* Panel de clientes
@@ -40,11 +40,11 @@
 ## 📝 COPY PARA PUBLICAR
 
 ```
-Todo lo que TurnoBot incluye para tu barbería:
+Todo lo que TurnoBot incluye para tu negocio:
 
 📅 Calendario con horarios reales
 💰 Servicios y precios online
-👤 Horarios individuales por barbero
+👤 Horarios individuales por profesional
 👥 CRM automático (visitas + gasto)
 📱 Notificaciones al instante
 📊 Panel de administración
@@ -52,12 +52,12 @@ Todo lo que TurnoBot incluye para tu barbería:
 
 Todo por una cuota fija. Sin comisiones.
 
-¿Listo para digitalizar tu barbería? 👇
+¿Listo para digitalizar tu negocio? 👇
 ```
 
 ## #️⃣ HASHTAGS
 ```
-#Barberia #TurnoBot #Features #AppBarberia #GestiónDeCitas
-#NegociosColombia #Barbero #Emprendimiento #Tecnología
+#Negocio #TurnoBot #Features #AppNegocio #GestiónDeCitas
+#NegociosColombia #Profesional #Emprendimiento #Tecnología
 #SoluciónDigital #Colombia #Pymes
 ```

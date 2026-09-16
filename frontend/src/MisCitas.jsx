@@ -150,7 +150,7 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
                 <div className="flex justify-between items-start">
                   <div>
                     <div className="flex items-center gap-2">
-                       <p className="font-bold text-gray-900 text-sm">✂️ {c.servicio}</p>
+                       <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
                        {c.status === 'pending' && (
                          <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
                            Pendiente de Aprobación

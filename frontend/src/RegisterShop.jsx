@@ -285,7 +285,7 @@ export default function RegisterShop() {
                   />
                 </div>
                 <p className="mt-2 text-[10px] text-gray-500">
-                  Usa solo minúsculas, números y guiones. Ejemplo: <i>barberia-vip-medellin</i>
+                  Usa solo minúsculas, números y guiones. Ejemplo: <i>mi-negocio-bogota</i>
                 </p>
               </div>
 

@@ -41,7 +41,7 @@
 | Día | Tipo | Contenido | Archivo |
 |-----|------|-----------|---------|
 | **Lunes** | Video Reel | Video 4: Testimonio | `04-testimonio-falso.md` |
-| **Miércoles** | Imagen | Post 7: Feature horarios por barbero | `01-12-posts-instagram.md` |
+| **Miércoles** | Imagen | Post 7: Feature horarios por profesional | `01-12-posts-instagram.md` |
 | **Viernes** | Video Reel | Video 6: Todo lo que incluye | `06-features.md` |
 
 **Objetivo:** Generar confianza con testimonios y mostrar funcionalidades.
@@ -54,7 +54,7 @@
 |-----|------|-----------|---------|
 | **Lunes** | Video Reel | Video 7: "No sé de tecnología" | `07-miedo-cambio.md` |
 | **Miércoles** | Imagen | Post 10: Pregunta engagement | `01-12-posts-instagram.md` |
-| **Viernes** | Video Reel | Video 8: "Creado para barberos" | `08-urgencia.md` |
+| **Viernes** | Video Reel | Video 8: "Creado para profesionales" | `08-urgencia.md` |
 
 **Objetivo:** Superar objeciones y cerrar con identidad de marca.
 
@@ -75,16 +75,16 @@
 ## 🎯 Hashtags Principales (usar siempre)
 
 ```
-#Barberia #TurnoBot #NegociosColombia #Barbero
+#Negocio #TurnoBot #NegociosColombia #Profesional
 #AgendaOnline #CitasOnline #Emprendimiento #Colombia
 ```
 
 ## 🎯 Hashtags Secundarios (rotar)
 
 ```
-#Peluqueria #SalonDeBelleza #GestiónDeCitas #Pymes
+#Servicios #SalonDeBelleza #GestiónDeCitas #Pymes
 #NegocioDigital #SoluciónNegocios #HechoEnColombia
-#BarberoProfesional #Estilista #App #Tecnología
+#Profesional #Estilista #App #Tecnología
 ```
 
 ---
