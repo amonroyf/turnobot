@@ -110,12 +110,12 @@ function ChartSVG() {
 }
 
 const features = [
-  { icon: '📅', title: 'Calendario Inteligente', desc: 'Horarios reales por especialista. Sin doble reserva. Sin confusiones.', svg: CalendarSVG },
-  { icon: '💰', title: 'Servicios y Precios', desc: 'Tus clientes ven todo antes de reservar. Transparencia total.' },
-  { icon: '👥', title: 'Equipo Organizado', desc: 'Cada profesional con su agenda, servicios y especialidad.', svg: PeopleSVG },
-  { icon: '👥', title: 'CRM Automático', desc: 'Directorio automático con registro de visitas y gasto por cliente.' },
-  { icon: '📊', title: 'Panel de Control', desc: 'Agenda, clientes, servicios y estadísticas en un solo lugar.', svg: ChartSVG },
-  { icon: '📱', title: 'Notificaciones', desc: 'Alerta al momento de cada reserva. Sin perderte nada.' },
+  { icon: '📅', title: 'Calendario Anti-Errores', desc: 'Sincronizado con Google Calendar. Dile adiós a los turnos cruzados y a los huecos en la agenda.', svg: CalendarSVG },
+  { icon: '💰', title: 'Catálogo de Servicios', desc: 'Muestra tus precios y duraciones claramente. El cliente sabe exactamente qué va a pagar.' },
+  { icon: '👥', title: 'Multi-Profesional', desc: 'Cada barbero, esteticista o médico tiene su propia agenda y especialidad en un solo enlace.', svg: PeopleSVG },
+  { icon: '📓', title: 'Base de Datos (CRM)', desc: 'TurnoBot guarda el nombre y teléfono de todos tus clientes. Descárgalo en Excel cuando quieras.' },
+  { icon: '📊', title: 'Panel Administrativo', desc: 'Controla tu negocio desde el celular. Revisa cuántas citas tienes hoy y cuánto vas a facturar.', svg: ChartSVG },
+  { icon: '🔔', title: 'Notificaciones Push', desc: 'Recibe una alerta inmediata en tu celular cada vez que un cliente confirma un turno nuevo.' },
 ];
 
 const steps = [
@@ -145,18 +145,17 @@ function HeroSection() {
             <FadeIn>
               <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold px-4 py-2 rounded-full mb-6 uppercase tracking-wider">
                 <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-                Agendamiento inteligente para negocios de servicios
+                La agenda que trabaja por ti 24/7
               </div>
             </FadeIn>
             <FadeIn delay={100}>
               <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black leading-tight mb-6">
-                Tu negocio <span className="text-green-400">nunca cierra</span>
+                Deja de perder clientes por no contestar <span className="text-green-400">WhatsApp</span>
               </h1>
             </FadeIn>
             <FadeIn delay={200}>
               <p className="text-lg text-gray-400 max-w-lg mb-8 leading-relaxed">
-                Tus clientes reservan solos, 24/7, sin WhatsApp.
-                Tú solo llegas y trabajas. <span className="text-white font-semibold">Sin comisiones por reserva.</span>
+                Tus clientes reservan solos, tú solo llegas y atiendes. Comparte tu enlace de TurnoBot en Instagram o WhatsApp y olvídate de cuadrar horarios manualmente. <span className="text-white font-semibold">Cero comisiones por reserva.</span>
               </p>
             </FadeIn>
             <FadeIn delay={300}>
@@ -226,22 +225,21 @@ function ProblemSection() {
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="text-center max-w-3xl mx-auto mb-16">
-            <p className="text-sm font-bold text-green-600 uppercase tracking-wider mb-4">El problema</p>
+            <p className="text-sm font-bold text-green-600 uppercase tracking-wider mb-4">El Problema</p>
             <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-6">
-              ¿Cuántas citas pierdes al día?
+              ¿Cuánta plata pierdes al día por estar ocupado?
             </h2>
             <p className="text-lg text-gray-500">
-              El 60% de los clientes elige al primero que responde.
-              Si no contestas WhatsApp en minutos, se van con la competencia.
+              Mientras cortas el cabello o atiendes un paciente, no puedes responder el celular. El cliente se aburre, no espera y se va con la competencia.
             </p>
           </div>
         </FadeIn>
 
         <div className="grid sm:grid-cols-3 gap-6">
           {[
-            { icon: '😤', stat: '60%', label: 'de clientes eligen al primero que responde', delay: 0 },
-            { icon: '💸', stat: '$25.000', label: 'pierdes por cada cliente perdido', delay: 150 },
-            { icon: '⏰', stat: '24/7', label: 'reservan cuando tú duermes', delay: 300 },
+            { icon: '⏳', stat: '60%', label: 'de los clientes agendan con el primero que responde.', delay: 0 },
+            { icon: '💸', stat: '$25.000', label: 'pierdes por cada cliente que se va sin reservar.', delay: 150 },
+            { icon: '🌙', stat: '24/7', label: 'tus clientes quieren reservar incluso a las 11 PM.', delay: 300 },
           ].map((item, i) => (
             <FadeIn key={i} delay={item.delay}>
               <div className="bg-white border border-gray-100 rounded-3xl p-8 text-center hover:shadow-lg transition-shadow">
@@ -346,9 +344,9 @@ function PricingSection() {
             </div>
             <div className="text-center mb-8">
               <h3 className="text-2xl font-black text-gray-900 mb-2">Plan Ilimitado</h3>
-              <p className="text-sm text-gray-500 mb-6">Para locales y equipos que quieren facturar más.</p>
+              <p className="text-sm text-gray-500 mb-6">La herramienta definitiva para organizar tu local.</p>
               <p className="text-5xl font-black text-gray-900 mb-2">$49.900<span className="text-lg font-bold text-gray-400">/mes</span></p>
-              <p className="text-xs text-gray-500 font-medium">Menos de $1.700 COP al día. Cero comisiones.</p>
+              <p className="text-xs text-gray-500 font-medium">Equivale a menos de un tinto al día ($1.660 COP). <strong>No cobramos comisiones.</strong></p>
             </div>
             <div className="grid sm:grid-cols-2 gap-4 mb-10 max-w-2xl mx-auto">
               <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Profesionales ilimitados</div>

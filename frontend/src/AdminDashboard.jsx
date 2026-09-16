@@ -632,66 +632,95 @@ export default function AdminDashboard() {
     const isNoShow = r.no_show === true;
     const isCancelled = r.cancelled === true;
     const profesional = profesionales.find((p) => p.id === r.emp_id);
+    const horaStr = timeMs ? horaEnZona(timeMs, zonaNegocio) : '--:--';
+
+    // Estilo de tarjeta según estado
+    let cardStyle = 'bg-white border-gray-200 shadow-sm hover:shadow-md';
+    let dotColor = 'bg-green-500';
+    if (isNoShow) {
+      cardStyle = 'bg-amber-50 border-amber-200 opacity-90';
+      dotColor = 'bg-amber-500';
+    } else if (isCancelled) {
+      cardStyle = 'bg-red-50 border-red-200 opacity-80';
+      dotColor = 'bg-red-500';
+    } else if (isPast) {
+      cardStyle = 'bg-gray-50 border-gray-200 opacity-70 grayscale-[0.5]';
+      dotColor = 'bg-gray-400';
+    }
 
     return (
-      <div className={`p-4 rounded-2xl border transition-all ${
-        isNoShow ? 'bg-amber-50 border-amber-200' :
-        isPast ? 'bg-gray-50 border-gray-100 opacity-60' :
-        'bg-white border-gray-200 shadow-2xs'
-      }`}>
-        <div className="flex justify-between items-start gap-3">
-          <div className={isPast && !isNoShow ? 'grayscale' : ''}>
-            <p className="font-bold text-gray-900 text-sm">{r.client_name}</p>
-            <p className="text-xs font-bold text-green-700 mt-0.5">📞 {formatearTelefono(r.user_phone)}</p>
-            <p className="text-xs text-gray-500 font-medium mt-1">✂️ {r.service_name}</p>
-            <p className="text-xs text-gray-500 font-medium">👤 {profesional?.name || 'Profesional'}</p>
-            {r.notes && <p className="text-xs text-gray-600 mt-1 italic">📝 {r.notes}</p>}
+      <div className="flex gap-3 items-stretch relative">
+        {/* Timeline Line & Time */}
+        <div className="flex flex-col items-center min-w-[50px] shrink-0">
+          <span className="text-xs font-bold text-gray-800 bg-gray-100 px-2 py-1 rounded-md mb-1">{horaStr}</span>
+          <div className="w-px h-full bg-gray-200 relative">
+            <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-2.5 h-2.5 rounded-full ${dotColor} border-2 border-white shadow-sm`}></div>
+          </div>
+        </div>
+
+        {/* Card Content */}
+        <div className={`flex-1 p-4 rounded-2xl border transition-all mb-4 ${cardStyle}`}>
+          <div className="flex justify-between items-start gap-2">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h4 className="font-bold text-gray-900 text-sm">{r.client_name}</h4>
+                {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No Show</span>}
+                {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Cancelada</span>}
+              </div>
+              <div className="space-y-1 mt-2">
+                <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                  <span className="text-gray-400">✂️</span> {r.service_name}
+                </p>
+                <p className="text-xs text-gray-600 flex items-center gap-1.5">
+                  <span className="text-gray-400">👤</span> {profesional?.name || 'Sin Asignar'}
+                </p>
+                <p className="text-xs text-green-700 font-medium flex items-center gap-1.5 mt-1">
+                  <span className="text-gray-400">📞</span> {formatearTelefono(r.user_phone)}
+                </p>
+                {r.notes && (
+                  <div className="mt-2 p-2 bg-gray-100/50 rounded-lg border border-gray-100">
+                    <p className="text-xs text-gray-600 italic">"{r.notes}"</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col items-end gap-2 shrink-0">
+              {r.price > 0 && (
+                <span className="text-xs font-black text-gray-900 bg-gray-100 px-2 py-1 rounded-lg">
+                  {formatDinero(r.price)}
+                </span>
+              )}
+              {!isPast && !isNoShow && !isCancelled && (
+                <a
+                  href={`https://wa.me/${r.user_phone}`} target="_blank" rel="noreferrer"
+                  className="mt-1 text-[10px] text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1.5 rounded-md font-bold transition-colors flex items-center gap-1 border border-green-200"
+                >
+                  WhatsApp
+                </a>
+              )}
+            </div>
           </div>
 
-          {r.price > 0 && (
-            <span className="text-xs font-black text-gray-900 bg-gray-100 px-2.5 py-1 rounded-lg shrink-0">
-              {formatDinero(r.price)}
-            </span>
-          )}
-
-          {isNoShow ? (
-            <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
-              ⚠️ No Show
-            </span>
-          ) : isCancelled ? (
-            <span className="text-[10px] font-bold bg-red-100 text-red-700 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
-              ✕ Cancelada
-            </span>
-          ) : isPast ? (
-            <span className="text-[10px] font-bold bg-gray-200 text-gray-600 px-2.5 py-1.5 rounded-lg flex items-center shrink-0">
-              ✅ Finalizada
-            </span>
-          ) : (
-            <a
-              href={`https://wa.me/${r.user_phone}`} target="_blank" rel="noreferrer"
-              className="text-[11px] text-green-800 bg-green-100 px-3.5 py-2 rounded-full font-bold active:scale-95 transition-transform flex items-center gap-1 shrink-0"
-            >
-              💬 WhatsApp
-            </a>
+          {/* Acciones */}
+          {!isPast && !isNoShow && !isCancelled && (
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80 gap-2">
+              <button
+                onClick={() => handleMarcarNoShow(r.id)}
+                disabled={noShowMarking === r.id}
+                className="text-[11px] text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
+              >
+                {noShowMarking === r.id ? 'Marcando...' : 'No Llegó'}
+              </button>
+              <button
+                onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}
+                className="text-[11px] text-red-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100"
+              >
+                {cancelando === r.id ? '...' : 'Cancelar'}
+              </button>
+            </div>
           )}
         </div>
-        {!isPast && !isNoShow && !isCancelled && (
-          <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
-            <button
-              onClick={() => handleMarcarNoShow(r.id)}
-              disabled={noShowMarking === r.id}
-              className="text-xs text-amber-600 font-bold active:scale-95 transition-transform bg-amber-50 px-3 py-1.5 rounded-lg disabled:opacity-50"
-            >
-              {noShowMarking === r.id ? 'Marcando...' : '⚠️ No Llegó'}
-            </button>
-            <button
-              onClick={() => handleCancelarReserva(r.id)} disabled={cancelando === r.id}
-              className="text-xs text-red-500 font-bold active:scale-95 transition-transform bg-red-50 px-3 py-1.5 rounded-lg"
-            >
-              {cancelando === r.id ? 'Cancelando...' : 'Cancelar Cita'}
-            </button>
-          </div>
-        )}
       </div>
     );
   };
@@ -766,54 +795,58 @@ export default function AdminDashboard() {
                </div>
             ) : (
               <div className="space-y-8">
-                {/* SECCIÓN HOY (Agrupada por Hora) */}
+                {/* SECCIÓN HOY */}
                 {citasHoy.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-black text-gray-900 mb-4 flex items-center gap-2 uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
-                      Hoy
-                    </h3>
-                    <div className="space-y-5">
-                      {agruparPorHora(citasHoy).map(grupo => (
-                        <div key={grupo.hora} className="relative">
-                          <h4 className="text-[11px] font-bold text-gray-400 mb-2 pl-1 border-b border-gray-200/60 pb-1">{grupo.hora}</h4>
-                          <div className="space-y-3">
-                            {grupo.citas.map(r => <RenderCitaCard key={r.id} r={r} />)}
-                          </div>
-                        </div>
-                      ))}
+                  <div className="mb-10">
+                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                      <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 uppercase tracking-wider">
+                        <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                        Agenda de Hoy
+                      </h3>
+                    </div>
+                    <div className="pl-1">
+                      {citasHoy.map(r => <RenderCitaCard key={r.id} r={r} />)}
                     </div>
                   </div>
                 )}
 
-                {/* SECCIÓN MAÑANA (Agrupada por Hora) */}
+                {/* SECCIÓN MAÑANA */}
                 {citasManana.length > 0 && (
-                  <div>
-                    <h3 className="text-sm font-black text-gray-500 mb-4 flex items-center gap-2 uppercase tracking-wider">
-                      <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
-                      Mañana
-                    </h3>
-                    <div className="space-y-5">
-                      {agruparPorHora(citasManana).map(grupo => (
-                        <div key={grupo.hora} className="relative">
-                          <h4 className="text-[11px] font-bold text-gray-400 mb-2 pl-1 border-b border-gray-200/60 pb-1">{grupo.hora}</h4>
-                          <div className="space-y-3">
-                            {grupo.citas.map(r => <RenderCitaCard key={r.id} r={r} />)}
-                          </div>
-                        </div>
-                      ))}
+                  <div className="mb-10">
+                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                      <h3 className="text-sm font-black text-gray-700 flex items-center gap-2 uppercase tracking-wider">
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                        Mañana
+                      </h3>
+                    </div>
+                    <div className="pl-1">
+                      {citasManana.map(r => <RenderCitaCard key={r.id} r={r} />)}
                     </div>
                   </div>
                 )}
 
-                {/* SECCIÓN PRÓXIMAS (Agrupada por Día y Hora) */}
+                {/* SECCIÓN PRÓXIMAS */}
                 {citasProximas.length > 0 && (
                   <div>
-                    <h3 className="text-sm font-black text-gray-400 mb-4 flex items-center gap-2 uppercase tracking-wider">
-                      Próximas
-                    </h3>
-                    <div className="space-y-3">
-                      {citasProximas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                      <h3 className="text-sm font-black text-gray-500 flex items-center gap-2 uppercase tracking-wider">
+                        <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
+                        Días Siguientes
+                      </h3>
+                    </div>
+                    <div className="pl-1">
+                      {citasProximas.map(r => {
+                        const timeMs = r.date_time?.seconds * 1000;
+                        const fechaStr = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) : '';
+                        return (
+                          <div key={r.id}>
+                            <div className="text-[10px] font-bold text-gray-400 ml-16 mb-2 uppercase tracking-wider">
+                              {formatearFechaLarga(fechaStr)}
+                            </div>
+                            <RenderCitaCard r={r} />
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
