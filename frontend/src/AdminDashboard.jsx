@@ -287,6 +287,7 @@ export default function AdminDashboard() {
   const [codigoPais, setCodigoPais] = useState('57');
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
   const [contenidoCopiado, setContenidoCopiado] = useState('');
+  const [searchTermClientes, setSearchTermClientes] = useState('');
 
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => {
@@ -859,48 +860,124 @@ export default function AdminDashboard() {
         {view === 'clientes' && (
           <div className="space-y-6">
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <div className="flex justify-between items-center mb-1">
-                <h2 className="text-lg font-bold text-gray-900">
-                  Directorio de Clientes ({clientesCRM.length})
-                </h2>
+              {/* Encabezado y Acciones */}
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-5">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                    <span className="text-xl">👥</span> Directorio de Clientes
+                    <span className="bg-gray-100 text-gray-600 text-xs py-0.5 px-2 rounded-full font-semibold">
+                      {clientesCRM.length}
+                    </span>
+                  </h2>
+                  <p className="text-xs text-gray-500 font-medium mt-1">
+                    Ordenados por fidelidad (LTV = Ganancia Total).
+                  </p>
+                </div>
                 {clientesCRM.length > 0 && (
                   <button
                     onClick={exportarClientesCSV}
-                    className="py-2 px-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm active:scale-95 transition-transform"
+                    className="py-2.5 px-4 bg-green-50 hover:bg-green-100 text-green-700 font-bold rounded-xl text-xs flex items-center gap-2 transition-colors border border-green-200 w-full sm:w-auto justify-center"
                   >
-                    📊 Descargar CSV
+                    <span>📊</span> Descargar Excel / CSV
                   </button>
                 )}
               </div>
-              <p className="text-xs text-gray-500 font-medium mb-4 leading-relaxed">
-                Tus clientes más leales organizados por visitas y dinero invertido (LTV). Escríbeles para promociones o exporta la lista.
-              </p>
+
+              {/* Barra de Búsqueda */}
+              {clientesCRM.length > 0 && (
+                <div className="relative mb-6">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <span className="text-gray-400">🔍</span>
+                  </div>
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente por nombre o teléfono..."
+                    value={searchTermClientes}
+                    onChange={(e) => setSearchTermClientes(e.target.value)}
+                    className="block w-full pl-10 pr-3 py-3 border border-gray-200 rounded-xl text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-colors"
+                  />
+                </div>
+              )}
+
+              {/* Lista Vacía */}
               {clientesCRM.length === 0 ? (
-                <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-                  <div className="text-3xl mb-2">👥</div>
-                  <p className="text-sm font-medium text-gray-500">Los clientes aparecerán aquí automáticamente.</p>
+                <div className="py-12 text-center bg-gray-50 rounded-2xl border border-gray-200 border-dashed">
+                  <div className="text-4xl mb-3">📋</div>
+                  <p className="text-sm font-bold text-gray-700">Tu agenda está lista</p>
+                  <p className="text-xs text-gray-500 mt-1">Los clientes aparecerán aquí automáticamente cuando reserven.</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {clientesCRM.map((c) => (
-                    <div key={c.id} className="p-4 bg-white border border-gray-200 rounded-2xl shadow-2xs flex justify-between items-center gap-3">
-                      <div>
-                        <p className="font-bold text-gray-900 text-sm mb-1">{c.client_name}</p>
-                        <a href={`https://wa.me/${c.cliente_phone}`} target="_blank" rel="noreferrer" className="text-xs text-green-600 font-bold bg-green-50 px-2 py-1 rounded-md">
-                          {formatearTelefono(c.cliente_phone)}
-                        </a>
-                        <p className="text-[10px] text-gray-400 font-bold mt-2 uppercase tracking-wider">
-                          {Math.max(0, c.visits || 0)} visitas • Última: {fechaUltimaVisita(c)}
-                        </p>
-                      </div>
-                      <div className="text-right flex flex-col items-end">
-                        <span className="block text-sm font-black text-gray-900 bg-gray-50 px-2.5 py-1 rounded-lg border border-gray-200">
-                          {formatDinero(Math.max(0, c.total_spent || 0))}
-                        </span>
-                        <span className="text-[10px] text-gray-400 font-bold uppercase mt-1">LTV</span>
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {/* Lista Filtrada y Mapeada */}
+                  {(() => {
+                    const filtrados = clientesCRM.filter(c =>
+                      (c.client_name || '').toLowerCase().includes(searchTermClientes.toLowerCase()) ||
+                      (c.cliente_phone || '').includes(searchTermClientes)
+                    );
+
+                    if (filtrados.length === 0) {
+                      return (
+                        <div className="py-8 text-center text-gray-500 text-sm font-medium">
+                          No se encontraron clientes con "{searchTermClientes}".
+                        </div>
+                      );
+                    }
+
+                    return filtrados.map((c, index) => {
+                      // Top 3 clientes reciben una medalla visual
+                      const isTop3 = index < 3 && !searchTermClientes;
+
+                      return (
+                        <div key={c.id} className="p-4 bg-white border border-gray-100 rounded-2xl shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                          {/* Etiqueta lateral verde sutil para los mejores clientes */}
+                          {isTop3 && <div className="absolute left-0 top-0 bottom-0 w-1 bg-green-500"></div>}
+
+                          <div className="flex justify-between items-start gap-4">
+                            {/* Info Principal */}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1.5">
+                                <h3 className="font-bold text-gray-900 text-base truncate">
+                                  {c.client_name}
+                                </h3>
+                                {isTop3 && <span title="Cliente VIP" className="text-sm">🌟</span>}
+                              </div>
+
+                              <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-600 mb-3">
+                                <p className="flex items-center gap-1">
+                                  <span className="text-gray-400">📅</span>
+                                  Última vez: <span className="font-medium text-gray-800">{fechaUltimaVisita(c)}</span>
+                                </p>
+                                <p className="flex items-center gap-1">
+                                  <span className="text-gray-400">🔄</span>
+                                  <span className="font-medium text-gray-800">{Math.max(0, c.visits || 0)}</span> reservas
+                                </p>
+                              </div>
+
+                              {/* Botón WhatsApp de Acción Rápida */}
+                              <a
+                                href={`https://wa.me/${c.cliente_phone}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1.5 text-xs text-green-700 font-bold bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-green-200"
+                              >
+                                💬 WhatsApp: {formatearTelefono(c.cliente_phone)}
+                              </a>
+                            </div>
+
+                            {/* Info Financiera (LTV) */}
+                            <div className="text-right shrink-0 flex flex-col items-end">
+                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                Ingresos (LTV)
+                              </p>
+                              <span className="block text-base font-black text-green-700 bg-green-50 px-3 py-1.5 rounded-xl border border-green-100">
+                                {formatDinero(Math.max(0, c.total_spent || 0))}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
