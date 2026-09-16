@@ -274,7 +274,7 @@ export default function AdminDashboard() {
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
+  const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '', require_approval: false });
   const [guardandoInfo, setGuardandoInfo] = useState(false);
 
   const [cancelando, setCancelando] = useState('');
@@ -302,7 +302,8 @@ export default function AdminDashboard() {
         name: negocio.name || '',
         direccion: negocio.direccion || '',
         horario: negocio.horario || '',
-        telefono: negocio.telefono || ''
+        telefono: negocio.telefono || '',
+        require_approval: negocio.require_approval || false
       });
     }
   }, [negocio]);
@@ -523,6 +524,19 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleConfirmarReserva = async (citaId) => {
+    try {
+      const token = await user.getIdToken();
+      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}/confirm`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setReservas((prev) => prev.map((r) => r.id === citaId ? { ...r, status: 'confirmed' } : r));
+    } catch (err) {
+      alert('Error al confirmar la cita.');
+    }
+  };
+
   const [noShowMarking, setNoShowMarking] = useState('');
 
   const handleMarcarNoShow = async (citaId) => {
@@ -629,9 +643,12 @@ export default function AdminDashboard() {
 
   const RenderCitaCard = ({ r }) => {
     const timeMs = r.date_time?.seconds * 1000;
-    const isPast = timeMs < ahora;
+    const durationMs = (r.duration_minutes || 60) * 60000;
+    const endTimeMs = timeMs + durationMs;
+    const isPast = endTimeMs < ahora;
     const isNoShow = r.no_show === true;
     const isCancelled = r.cancelled === true;
+    const isPending = r.status === 'pending';
     const profesional = profesionales.find((p) => p.id === r.emp_id);
     const horaStr = timeMs ? horaEnZona(timeMs, zonaNegocio) : '--:--';
 
@@ -667,6 +684,7 @@ export default function AdminDashboard() {
                 <h4 className="font-bold text-gray-900 text-sm">{r.client_name}</h4>
                 {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No Show</span>}
                 {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Cancelada</span>}
+                {isPending && <span className="text-[9px] font-bold bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Pendiente</span>}
               </div>
               <div className="space-y-1 mt-2">
                 <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
@@ -706,6 +724,14 @@ export default function AdminDashboard() {
           {/* Acciones */}
           {!isPast && !isNoShow && !isCancelled && (
             <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80 gap-2">
+              {isPending && (
+                <button
+                  onClick={() => handleConfirmarReserva(r.id)}
+                  className="text-[11px] text-white bg-blue-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg shadow-sm"
+                >
+                  Aprobar
+                </button>
+              )}
               <button
                 onClick={() => handleMarcarNoShow(r.id)}
                 disabled={noShowMarking === r.id}
@@ -1181,6 +1207,17 @@ export default function AdminDashboard() {
                   onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
                 />
+                <label className="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-xl cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={infoLocal.require_approval || false}
+                    onChange={(e) => setInfoLocal({ ...infoLocal, require_approval: e.target.checked })}
+                    className="w-5 h-5 accent-black shrink-0"
+                  />
+                  <span className="text-xs font-semibold text-gray-700">
+                    Requerir aprobación manual para citas nuevas
+                  </span>
+                </label>
                 <button type="submit" disabled={guardandoInfo} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   {guardandoInfo ? 'Guardando...' : 'Guardar Información'}
                 </button>

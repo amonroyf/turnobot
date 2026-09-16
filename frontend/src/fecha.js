@@ -31,7 +31,7 @@ export function sumarDias(key, n) {
   return `${dt.getFullYear()}-${mm}-${dd}`;
 }
 
-// formatearFechaLarga: '2026-09-13' -> 'Sábado 13 de septiembre'.
+// formatearFechaLarga: '2026-09-13' -> 'Sábado 13 de septiembre de 2026'.
 export function formatearFechaLarga(yyyymmdd) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(yyyymmdd || '');
   if (!m) return yyyymmdd || '';
@@ -40,6 +40,7 @@ export function formatearFechaLarga(yyyymmdd) {
     weekday: 'long',
     day: 'numeric',
     month: 'long',
+    year: 'numeric',
   }).format(d);
   return s.charAt(0).toUpperCase() + s.slice(1);
 }

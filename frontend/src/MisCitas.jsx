@@ -149,7 +149,14 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
               <div key={c.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="font-bold text-gray-900 text-sm">✂️ {c.servicio}</p>
+                    <div className="flex items-center gap-2">
+                       <p className="font-bold text-gray-900 text-sm">✂️ {c.servicio}</p>
+                       {c.status === 'pending' && (
+                         <span className="text-[9px] font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded uppercase tracking-wider">
+                           Pendiente de Aprobación
+                         </span>
+                       )}
+                    </div>
                     <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
                     <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
                   </div>

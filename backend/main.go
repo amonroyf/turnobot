@@ -91,6 +91,9 @@ type Negocio struct {
 	// Suspended marca un negocio suspendido por el super admin: no acepta
 	// reservas nuevas (slots y book responden 403).
 	Suspended            bool          `firestore:"suspended" json:"suspended"`
+	// RequireApproval indica que las citas nuevas nacen como "pending" y
+	// requieren aprobación manual del dueño antes de confirmarse.
+	RequireApproval      bool          `firestore:"require_approval" json:"require_approval"`
 	// PushToken almacena el token FCM del dispositivo del dueño para
 	// recibir notificaciones push cuando un cliente reserva.
 	PushToken            string        `firestore:"push_token" json:"-"`
@@ -177,6 +180,7 @@ type Booking struct {
 	Price          int       `firestore:"price"`
 	DateTime       time.Time `firestore:"date_time"`
 	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
+	Status         string    `firestore:"status" json:"status"` // "pending" o "confirmed"
 	CreatedAt      time.Time `firestore:"created_at"`
 	NoShow         bool      `firestore:"no_show" json:"no_show"`
 	// Notes es la descripción de lo que necesita el cliente.
@@ -347,6 +351,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 	// POST /api/v1/b/{slug}/citas/{citaID}/client-push-token
 	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "client-push-token" && r.Method == http.MethodPost {
 		registerClientPushTokenHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Confirmar una cita pendiente (pending -> confirmed).
+	// POST /api/v1/b/{slug}/citas/{citaID}/confirm
+	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "confirm" && r.Method == http.MethodPost {
+		confirmCitaHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -711,6 +722,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				return errServicioNoOfrecido
 			}
 
+			// Determinar si nace pendiente o confirmada
+			statusInicial := "confirmed"
+			if negocioInfo.RequireApproval {
+				statusInicial = "pending"
+			}
+
 			if err := tx.Create(newRef, Booking{
 				NegocioID:      slug,
 				OwnerUID:       negocioInfo.OwnerUID,
@@ -722,6 +739,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				Price:          precioServicio,
 		DateTime:       eventDateTime,
 			CalendarEvt:    eventID,
+			Status:         statusInicial,
 			CreatedAt:      time.Now(),
 			Notes:          req.ClienteNotas,
 			ClientPushToken: clientPushToken,
@@ -893,6 +911,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		Cancelable bool   `json:"cancelable"`
 		Iso        string `json:"iso"`
 		Notes      string `json:"notes,omitempty"`
+		Status     string `json:"status"`
 	}
 
 	citas := []citaJSON{}
@@ -910,6 +929,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			Cancelable: b.DateTime.Sub(now) >= 2*time.Hour,
 			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
 			Notes:      b.Notes,
+			Status:     b.Status,
 		})
 	}
 
@@ -944,23 +964,22 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// 1. REGLA DE INTEGRIDAD DE DATOS (Aplica para TODOS)
-	// Nadie puede cancelar una cita que ya ocurrió. Esto protege el historial
-	// y el LTV en el CRM (las cancelaciones decremanten el gasto del cliente).
-	if b.DateTime.Before(time.Now()) {
+	// 1. REGLA DE INTEGRIDAD DE DATOS
+	// El cliente no puede cancelar citas pasadas, pero el DUEÑO SÍ PUEDE (para corregir errores).
+	isOwner := isOwnerRequest(r, slug)
+	if !isOwner && b.DateTime.Before(time.Now()) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "past_appointment",
-			"message": "No se puede cancelar una cita que ya pasó porque afectaría el historial contable del cliente.",
+			"message": "No se puede cancelar una cita que ya pasó. Comunícate con el local.",
 		})
 		return
 	}
 
 	// 2. Regla de negocio para clientes: no cancelar con menos de 2 horas.
-	// El dueño (token verificado) sí puede cancelar citas futuras de emergencia.
-	if !isOwnerRequest(r, slug) && b.DateTime.Sub(time.Now()) < 2*time.Hour {
+	if !isOwner && b.DateTime.Sub(time.Now()) < 2*time.Hour {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1001,6 +1020,33 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		"user_phone":   b.UserPhone,
 		"service_name": b.ServiceName,
 		"date_time":    b.DateTime.Format(time.RFC3339),
+	})
+}
+
+// confirmCitaHandler cambia el status de una cita de "pending" a "confirmed".
+// POST /api/v1/b/{slug}/citas/{citaID}/confirm
+func confirmCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	_, err := firestoreClient.Collection("reservas").Doc(citaID).Update(ctx, []firestore.Update{
+		{Path: "status", Value: "confirmed"},
+		{Path: "updated_at", Value: time.Now()},
+	})
+	if err != nil {
+		log.Printf("Error confirmando cita %s: %v", citaID, err)
+		http.Error(w, "Error al confirmar la cita", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Cita confirmada exitosamente",
+		"cita_id": citaID,
 	})
 }
 
