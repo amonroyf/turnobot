@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -172,4 +173,98 @@ func sendReminderToClient(ctx context.Context, neg Negocio, b Booking) {
 	_ = neg
 	_ = b
 	_ = time.Now()
+}
+
+// registerClientPushTokenRequest es el payload que envía el frontend del
+// cliente cuando activa el recordatorio después de agendar.
+type registerClientPushTokenRequest struct {
+	Token string `json:"token"`
+}
+
+// registerClientPushTokenHandler guarda el token FCM del cliente en la
+// reserva para que el cron de recordatorios le envíe un push antes de su cita.
+// POST /api/v1/b/{slug}/citas/{citaID}/client-push-token
+// No requiere auth: el citaID es un Firestore doc ID difficult to guess,
+// y solo se escribe un string (el token). El usuario es el cliente que
+// acaba de agendar y está en la pantalla de éxito.
+func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
+	var req registerClientPushTokenRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "payload_invalido",
+			"message": "El body debe contener {\"token\": \"...\"}",
+		})
+		return
+	}
+
+	req.Token = strings.TrimSpace(req.Token)
+	if req.Token == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "token_requerido",
+			"message": "El campo token es requerido",
+		})
+		return
+	}
+
+	// Sanity check: tokens FCM nunca superan 512 chars.
+	if len(req.Token) > 512 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "token_invalido",
+			"message": "El token parece inválido",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	docRef := firestoreClient.Collection("reservas").Doc(citaID)
+	doc, err := docRef.Get(ctx)
+	if err != nil {
+		http.Error(w, "Cita no encontrada", http.StatusNotFound)
+		return
+	}
+
+	var b Booking
+	doc.DataTo(&b)
+	if b.NegocioID != slug {
+		http.Error(w, "Cita no encontrada", http.StatusNotFound)
+		return
+	}
+
+	// Solo guardar si la cita es futura (no tiene sentido un recordatorio
+	// para una cita que ya pasó).
+	if b.DateTime.Before(time.Now()) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusGone)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "cita_pasada",
+			"message": "No se puede activar el recordatorio para una cita que ya pasó.",
+		})
+		return
+	}
+
+	_, err = docRef.Update(ctx, []firestore.Update{
+		{Path: "client_push_token", Value: req.Token},
+	})
+	if err != nil {
+		log.Printf("Error guardando client push token para cita %s: %v", citaID, err)
+		http.Error(w, "Error guardando token", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("client-push-token: token registrado para cita %s (slug=%s)", citaID, slug)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Recordatorio activado. Te avisaremos antes de tu cita.",
+	})
 }

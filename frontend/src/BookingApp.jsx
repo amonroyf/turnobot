@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { getToken } from 'firebase/messaging';
-import { messaging } from './firebase';
+import { messaging } from './firebase.js';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS } from './fecha.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
@@ -127,6 +127,9 @@ export default function BookingApp() {
   const [negocio, setNegocio] = useState(null);
   const [slots, setSlots] = useState([]);
   const [error, setError] = useState('');
+  const [citaId, setCitaId] = useState('');
+  // Estado del push post-agendamiento: 'idle' | 'loading' | 'success' | 'error'
+  const [pushStatus, setPushStatus] = useState('idle');
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
@@ -136,9 +139,6 @@ export default function BookingApp() {
     clienteTelefono: '',
     clienteNotas: '',
     website: '',
-    // avisarme: si el cliente acepta, se registra su token FCM con la reserva
-    // para enviarle el recordatorio push antes de su cita.
-    avisarme: true,
   });
 
   useEffect(() => {
@@ -194,29 +194,10 @@ export default function BookingApp() {
     setLoading(true);
     setError('');
 
-    // Token push del cliente (opcional): si aceptó el aviso, se pide permiso
-    // y se adjunta el token FCM para el recordatorio del cron. Si lo niega
-    // o falla, la reserva sigue sin token (sin recordatorio push).
-    let clientePushToken = '';
-    if (booking.avisarme && messaging && typeof Notification !== 'undefined') {
-      try {
-        if (Notification.permission === 'default') {
-          await Notification.requestPermission();
-        }
-        if (Notification.permission === 'granted') {
-          clientePushToken = await getToken(messaging, { vapidKey: undefined });
-        }
-      } catch {
-        clientePushToken = '';
-      }
-    }
-
     const payload = {
       ...booking,
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
-      clientePushToken,
     };
-    delete payload.avisarme;
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
         method: 'POST',
@@ -224,6 +205,9 @@ export default function BookingApp() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (data.cita_id) setCitaId(data.cita_id);
+        setPushStatus('idle');
         setStep(5);
         return;
       }
@@ -269,12 +253,52 @@ export default function BookingApp() {
     });
   };
 
-  const reiniciarAgendamiento = () => {    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '', avisarme: true });
+  const reiniciarAgendamiento = () => {
+    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '' });
     setSlots([]);
     setError('');
+    setCitaId('');
+    setPushStatus('idle');
     setStep(1);
     setView('agendar');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Activar recordatorio push post-agendamiento: pide permiso al navegador,
+  // obtiene el token FCM y lo guarda en la reserva vía el endpoint del backend.
+  // Se ejecuta DESPUÉS de que la cita ya está confirmada (201), separando la
+  // UX de reserva de la de permisos. Si falla o el usuario niega, la cita
+  // simplemente queda sin recordatorio push (sin efecto adverso).
+  const activarRecordatorio = async () => {
+    if (pushStatus !== 'idle' || !citaId) return;
+    if (!messaging || typeof Notification === 'undefined') return;
+    setPushStatus('loading');
+    try {
+      if (Notification.permission === 'default') {
+        await Notification.requestPermission();
+      }
+      if (Notification.permission !== 'granted') {
+        setPushStatus('idle');
+        return;
+      }
+      const token = await getToken(messaging, { vapidKey: undefined });
+      if (!token) {
+        setPushStatus('idle');
+        return;
+      }
+      const res = await fetch(
+        `${API_URL}/api/v1/b/${slug}/citas/${citaId}/client-push-token`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        }
+      );
+      setPushStatus(res.ok ? 'success' : 'idle');
+    } catch {
+      // Silenciar: el usuario puede intentar de nuevo o ignorar.
+      setPushStatus('idle');
+    }
   };
 
   const slotsManana = slots.filter(h => parseInt(h.split(':')[0], 10) < 12);
@@ -654,6 +678,26 @@ export default function BookingApp() {
                       >
                         📅 Añadir al calendario (.ics)
                       </button>
+
+                      {/* Activar recordatorio push: aparece solo si la cita
+                          es futura, el navegador soporta FCM y no se activó
+                          ya. El permiso se pide aquí (no en el flujo de
+                          reserva) para no bloquear la confirmación. */}
+                      {citaId && pushStatus === 'idle' && messaging && typeof Notification !== 'undefined' && (
+                        <button
+                          type="button"
+                          onClick={activarRecordatorio}
+                          className="block w-full py-3.5 bg-blue-50 text-blue-700 font-bold rounded-xl text-center text-sm border border-blue-200 active:scale-95 transition-transform"
+                        >
+                          🔔 Activar recordatorio en este teléfono
+                        </button>
+                      )}
+                      {pushStatus === 'loading' && (
+                        <p className="text-xs text-blue-600 font-semibold py-2">⏳ Activando recordatorio…</p>
+                      )}
+                      {pushStatus === 'success' && (
+                        <p className="text-xs text-green-600 font-semibold py-2">✅ Recordatorio activado. Te avisaremos antes de tu cita.</p>
+                      )}
 
                       {/* WhatsApp ahora es opcional para dudas, no obligatorio */}
                       {negocio.whatsapp && (

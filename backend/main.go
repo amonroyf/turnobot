@@ -343,6 +343,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Registro de token push del CLIENTE en una cita específica.
+	// POST /api/v1/b/{slug}/citas/{citaID}/client-push-token
+	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "client-push-token" && r.Method == http.MethodPost {
+		registerClientPushTokenHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Los paneles mutan vía SDK directo (addDoc/updateDoc) sin pasar por Go:
 	// tras hacerlo, llaman aquí para limpiar la RAM y evitar hasta 5min stale.
 	if len(parts) == 3 && parts[1] == "cache" && parts[2] == "invalidate" && r.Method == http.MethodPost {
