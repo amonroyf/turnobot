@@ -167,14 +167,30 @@ export default function EmployeeDashboard() {
   };
 
   const ahora = Date.now();
-  const hoy = new Date().toISOString().slice(0, 10);
-  const manana = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-
-  const citasHoy = citas.filter(c => c.fecha === hoy && !c.cancelled);
-  const citasManana = citas.filter(c => c.fecha === manana && !c.cancelled);
-  const citasProximas = citas.filter(c => c.fecha > manana && !c.cancelled);
-
   const zonaNegocio = negocio?.timezone || 'America/Bogota';
+
+  // Calcular fechas en la zona horaria del negocio (no en UTC)
+  const fmtFecha = (d) => d.toLocaleDateString('sv-SE', { timeZone: zonaNegocio });
+  const hoy = fmtFecha(new Date());
+  // Calcular "mañana" sumando 1 día al string de hoy (maneja cambio de mes/año)
+  const manana = (() => {
+    const [y, m, d] = hoy.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + 1);
+    return fmtFecha(dt);
+  })();
+
+  const citasHoy = citas.filter(c => c.fecha === hoy);
+  const citasManana = citas.filter(c => c.fecha === manana);
+  const citasProximas = citas.filter(c => c.fecha > manana);
+
+  const [filtroEstado, setFiltroEstado] = useState('todas');
+
+  const filtrarPorEstado = (lista) => {
+    if (filtroEstado === 'activas') return lista.filter(c => !c.cancelled && !c.no_show);
+    if (filtroEstado === 'canceladas') return lista.filter(c => c.cancelled);
+    if (filtroEstado === 'noshow') return lista.filter(c => c.no_show);
+    return lista;
+  };
 
   if (!token) {
     return (
@@ -275,33 +291,56 @@ export default function EmployeeDashboard() {
           </div>
         )}
 
-        {citasHoy.length > 0 && (
+        {!loading && citas.length > 0 && (
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {[
+              { key: 'todas', label: 'Todas', count: citas.length },
+              { key: 'activas', label: 'Activas', count: citas.filter(c => !c.cancelled && !c.no_show).length },
+              { key: 'canceladas', label: 'Canceladas', count: citas.filter(c => c.cancelled).length },
+              { key: 'noshow', label: 'No-Show', count: citas.filter(c => c.no_show).length },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setFiltroEstado(f.key)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                  filtroEstado === f.key
+                    ? 'bg-black text-white shadow-md'
+                    : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {f.label} ({f.count})
+              </button>
+            ))}
+          </div>
+        )}
+
+        {filtrarPorEstado(citasHoy).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
             <div className="space-y-2">
-              {citasHoy.map(c => (
+              {filtrarPorEstado(citasHoy).map(c => (
                 <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
         )}
 
-        {citasManana.length > 0 && (
+        {filtrarPorEstado(citasManana).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
             <div className="space-y-2">
-              {citasManana.map(c => (
+              {filtrarPorEstado(citasManana).map(c => (
                 <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
         )}
 
-        {citasProximas.length > 0 && (
+        {filtrarPorEstado(citasProximas).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
             <div className="space-y-2">
-              {citasProximas.map(c => (
+              {filtrarPorEstado(citasProximas).map(c => (
                 <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>

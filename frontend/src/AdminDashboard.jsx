@@ -352,6 +352,7 @@ export default function AdminDashboard() {
   const [guardandoWhatsApp, setGuardandoWhatsApp] = useState(false);
   const [contenidoCopiado, setContenidoCopiado] = useState('');
   const [searchTermClientes, setSearchTermClientes] = useState('');
+  const [filtroEstado, setFiltroEstado] = useState('todas'); // 'todas' | 'activas' | 'canceladas' | 'noshow'
 
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => {
@@ -886,6 +887,30 @@ export default function AdminDashboard() {
               Para cancelar una cita, hazlo siempre desde aquí. Si borras el evento desde Google Calendar, el espacio seguirá bloqueado en tu página de reservas.
             </p>
 
+            {/* Filtros de estado */}
+            {reservas.length > 0 && (
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {[
+                  { key: 'todas', label: 'Todas', count: reservas.length },
+                  { key: 'activas', label: 'Activas', count: reservas.filter(r => !r.cancelled && !r.no_show).length },
+                  { key: 'canceladas', label: 'Canceladas', count: reservas.filter(r => r.cancelled).length },
+                  { key: 'noshow', label: 'No-Show', count: reservas.filter(r => r.no_show).length },
+                ].map(f => (
+                  <button
+                    key={f.key}
+                    onClick={() => setFiltroEstado(f.key)}
+                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                      filtroEstado === f.key
+                        ? 'bg-black text-white shadow-md'
+                        : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {f.label} ({f.count})
+                  </button>
+                ))}
+              </div>
+            )}
+
             {reservas.length === 0 ? (
                <div className="py-8 text-center bg-gray-50 rounded-2xl border border-gray-200 border-dashed">
                  <div className="text-4xl mb-3">📅</div>
@@ -894,60 +919,84 @@ export default function AdminDashboard() {
             ) : (
               <div className="space-y-8">
                 {/* SECCIÓN HOY */}
-                {citasHoy.length > 0 && (
-                  <div className="mb-10">
-                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
-                      <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 uppercase tracking-wider">
-                        <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
-                        Agenda de Hoy
-                      </h3>
+                {(() => {
+                  const filtradas = citasHoy.filter(r => {
+                    if (filtroEstado === 'activas') return !r.cancelled && !r.no_show;
+                    if (filtroEstado === 'canceladas') return r.cancelled;
+                    if (filtroEstado === 'noshow') return r.no_show;
+                    return true;
+                  });
+                  return filtradas.length > 0 && (
+                    <div className="mb-10">
+                      <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                        <h3 className="text-sm font-black text-gray-900 flex items-center gap-2 uppercase tracking-wider">
+                          <span className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]"></span>
+                          Agenda de Hoy
+                        </h3>
+                      </div>
+                      <div className="pl-1">
+                        {filtradas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                      </div>
                     </div>
-                    <div className="pl-1">
-                      {citasHoy.map(r => <RenderCitaCard key={r.id} r={r} />)}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* SECCIÓN MAÑANA */}
-                {citasManana.length > 0 && (
-                  <div className="mb-10">
-                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
-                      <h3 className="text-sm font-black text-gray-700 flex items-center gap-2 uppercase tracking-wider">
-                        <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
-                        Mañana
-                      </h3>
+                {(() => {
+                  const filtradas = citasManana.filter(r => {
+                    if (filtroEstado === 'activas') return !r.cancelled && !r.no_show;
+                    if (filtroEstado === 'canceladas') return r.cancelled;
+                    if (filtroEstado === 'noshow') return r.no_show;
+                    return true;
+                  });
+                  return filtradas.length > 0 && (
+                    <div className="mb-10">
+                      <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                        <h3 className="text-sm font-black text-gray-700 flex items-center gap-2 uppercase tracking-wider">
+                          <span className="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                          Mañana
+                        </h3>
+                      </div>
+                      <div className="pl-1">
+                        {filtradas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                      </div>
                     </div>
-                    <div className="pl-1">
-                      {citasManana.map(r => <RenderCitaCard key={r.id} r={r} />)}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {/* SECCIÓN PRÓXIMAS */}
-                {citasProximas.length > 0 && (
-                  <div>
-                    <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
-                      <h3 className="text-sm font-black text-gray-500 flex items-center gap-2 uppercase tracking-wider">
-                        <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
-                        Días Siguientes
-                      </h3>
-                    </div>
-                    <div className="pl-1">
-                      {citasProximas.map(r => {
-                        const timeMs = r.date_time?.seconds * 1000;
-                        const fechaStr = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) : '';
-                        return (
-                          <div key={r.id}>
-                            <div className="text-[10px] font-bold text-gray-400 ml-16 mb-2 uppercase tracking-wider">
-                              {formatearFechaLarga(fechaStr)}
+                {(() => {
+                  const filtradas = citasProximas.filter(r => {
+                    if (filtroEstado === 'activas') return !r.cancelled && !r.no_show;
+                    if (filtroEstado === 'canceladas') return r.cancelled;
+                    if (filtroEstado === 'noshow') return r.no_show;
+                    return true;
+                  });
+                  return filtradas.length > 0 && (
+                    <div>
+                      <div className="sticky top-[72px] bg-gray-50/95 backdrop-blur-sm py-2 z-10 mb-4 border-b border-gray-200/50">
+                        <h3 className="text-sm font-black text-gray-500 flex items-center gap-2 uppercase tracking-wider">
+                          <span className="w-2.5 h-2.5 rounded-full bg-gray-300"></span>
+                          Días Siguientes
+                        </h3>
+                      </div>
+                      <div className="pl-1">
+                        {filtradas.map(r => {
+                          const timeMs = r.date_time?.seconds * 1000;
+                          const fechaStr = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) : '';
+                          return (
+                            <div key={r.id}>
+                              <div className="text-[10px] font-bold text-gray-400 ml-16 mb-2 uppercase tracking-wider">
+                                {formatearFechaLarga(fechaStr)}
+                              </div>
+                              <RenderCitaCard r={r} />
                             </div>
-                            <RenderCitaCard r={r} />
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             )}
           </div>

@@ -895,11 +895,6 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	var citasPendientes []*firestore.DocumentSnapshot
 	for _, d := range docsByRef {
-		// Excluir reservas canceladas (soft delete)
-		cancelled := d.Data()["cancelled"]
-		if cancelled == true {
-			continue
-		}
 		citasPendientes = append(citasPendientes, d)
 	}
 
@@ -928,6 +923,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		EmpID      string `json:"emp_id"`
 		EmpName    string `json:"emp_name"`
 		Cancelable bool   `json:"cancelable"`
+		Cancelled  bool   `json:"cancelled"`
 		Iso        string `json:"iso"`
 		Notes      string `json:"notes,omitempty"`
 	}
@@ -945,6 +941,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			EmpID:      b.EmpID,
 			EmpName:    empNames[b.EmpID],
 			Cancelable: b.DateTime.Sub(now) >= 2*time.Hour,
+			Cancelled:  d.Data()["cancelled"] == true,
 			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
 			Notes:      b.Notes,
 		})
@@ -1197,12 +1194,19 @@ func isAssignedEmployeeRequest(r *http.Request, slug, empID string) bool {
 // No usa autenticación fuerte: compara el header X-Client-Phone con el
 // teléfono de la cita. Aceptable para cancelación de citas propias donde
 // el riesgo es bajo (solo puede afectar sus propias citas).
+// Usa phoneQueryKeys para manejar diferentes formatos (E.164, nacional, etc.).
 func isClientRequest(r *http.Request, clientPhone string) bool {
 	phone := r.Header.Get("X-Client-Phone")
 	if phone == "" {
 		return false
 	}
-	return phone == clientPhone
+	// Comparar contra todos los formatos posibles del teléfono
+	for _, key := range phoneQueryKeys(phone) {
+		if key == clientPhone {
+			return true
+		}
+	}
+	return false
 }
 
 // DELETE /api/v1/b/{slug}/servicios/{servicioID}
@@ -2466,9 +2470,6 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 	now := time.Now()
 	citas := []empCitaJSON{}
 	for _, d := range docs {
-		if d.Data()["cancelled"] == true {
-			continue
-		}
 		var b Booking
 		d.DataTo(&b)
 		if b.DateTime.Before(now.AddDate(0, 0, -1)) {

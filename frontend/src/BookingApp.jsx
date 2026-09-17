@@ -396,7 +396,7 @@ export default function BookingApp() {
             )}
 
             {view === 'citas' && (
-              <MisCitas slug={slug} API_URL={API_URL} whatsapp={negocio?.whatsapp} />
+              <MisCitas slug={slug} API_URL={API_URL} whatsapp={negocio?.whatsapp} timezone={negocio?.timezone} />
             )}
 
             {view === 'info' && (
