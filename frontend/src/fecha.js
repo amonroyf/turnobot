@@ -167,3 +167,21 @@ export function descargarICS({ slug, servicio, profesional, fecha, hora, duracio
   a.remove();
   URL.revokeObjectURL(url);
 }
+
+// generarEnlaceGoogleCalendar construye la URL oficial "template" de Google
+// Calendar con la cita pre-llenada (abre app o web para guardar en 1 clic).
+// Reusa fechaHoraAUtc/fICal para que las horas coincidan con el .ics.
+export function generarEnlaceGoogleCalendar({ servicio, profesional, fecha, hora, duracionMin, direccion, timezone, notas }) {
+  const inicio = fechaHoraAUtc(fecha, hora, timezone);
+  if (!inicio) return '#';
+  const fin = new Date(inicio.getTime() + (duracionMin || 60) * 60000);
+
+  const title = encodeURIComponent(`${servicio} - ${profesional}`);
+  const details = encodeURIComponent(
+    [`${servicio} con ${profesional}`, notas ? `Notas: ${notas}` : ''].filter(Boolean).join('\n'),
+  );
+  const location = encodeURIComponent(direccion || '');
+  const dates = `${fICal(inicio)}/${fICal(fin)}`;
+
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
+}

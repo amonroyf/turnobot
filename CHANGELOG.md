@@ -18,6 +18,12 @@
 - Secreto `CRON_SECRET` (header `X-Cron-Secret`; super admin como alternativa)
 - Ventana por negocio: `reminder_hours_before` (default 2h)
 
+### Botón "Calendario de Google" en pantalla de éxito
+
+**Archivos modificados:**
+- `frontend/src/fecha.js` — `generarEnlaceGoogleCalendar` (URL template oficial, reusa `fechaHoraAUtc`/`fICal`)
+- `frontend/src/BookingApp.jsx` — botón principal blanco con logo G (inline SVG) + `.ics` como opción secundaria
+
 ### Fix: notificaciones push duplicadas
 
 **Causa:** el backend enviaba payload `Webpush.Notification` y el service
