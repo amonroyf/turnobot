@@ -569,7 +569,7 @@ export default function AdminDashboard() {
       );
 
       if (res.ok) {
-        setReservas(prev => prev.filter(item => item.id !== citaId));
+        setReservas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: true } : item));
       } else {
         const data = await res.json().catch(() => null);
         alert(data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.');

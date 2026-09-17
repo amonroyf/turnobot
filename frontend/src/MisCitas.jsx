@@ -54,19 +54,15 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error('Error del servidor');
-
-      if (whatsapp) {
-        const mensaje = `Hola, acabo de cancelar mi cita de ${cita.servicio} para el ${formatearFechaLarga(cita.fecha)} a las ${cita.hora}. ¡Gracias!`;
-        window.location.href = `https://wa.me/${whatsapp}?text=${encodeURIComponent(mensaje)}`;
-      } else {
-        setCitaCancelada(cita);
-        setCitas((prev) => prev.filter((c) => c.id !== cita.id));
-      }
+      setCitas((prev) => prev.map((c) => c.id === cita.id ? { ...c, cancelled: true } : c));
+      setCitaCancelada(cita);
     } catch (err) {
       setError('No pudimos cancelar la cita. Intenta de nuevo.');
     }
     setCancelando('');
   };
+
+
 
   return (
     <div className="space-y-4 pb-10">
@@ -106,22 +102,6 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
           <p className="text-xs text-gray-500 mb-4">
             El espacio en la agenda ha sido liberado.
           </p>
-          {whatsapp && (
-            <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-              <p className="text-xs text-amber-800 mb-3 font-semibold">
-                Por favor, avísale al local para que puedan asignar el turno a otra persona.
-              </p>
-              <a
-                href={`https://wa.me/${whatsapp}?text=${encodeURIComponent(`Hola, acabo de cancelar mi cita de ${citaCancelada.servicio} con ${citaCancelada.emp_name} para el ${formatearFechaLarga(citaCancelada.fecha)} a las ${citaCancelada.hora}. ¡Gracias!`)}`}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setCitaCancelada(null)}
-                className="block w-full py-3.5 bg-amber-500 text-white font-bold rounded-xl text-center text-xs shadow-sm active:scale-95 transition-transform"
-              >
-                🔔 Avisar al local por WhatsApp
-              </a>
-            </div>
-          )}
           <button
             onClick={() => setCitaCancelada(null)}
             className="mt-4 text-xs text-gray-500 font-semibold underline"
@@ -143,13 +123,16 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
           {citas.map(c => {
             const ahora = Date.now();
             const fechaTurno = c.iso ? new Date(c.iso).getTime() : 0;
-            const menosDe2Horas = fechaTurno ? (fechaTurno - ahora) <= 2 * 60 * 60 * 1000 : false;
-            const cancelable = c.cancelable !== false && !menosDe2Horas;
+            const isCancelled = c.cancelled === true;
+
             return (
-              <div key={c.id} className="bg-white border border-gray-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
+              <div key={c.id} className={`bg-white border rounded-2xl p-4 shadow-2xs space-y-1.5 ${isCancelled ? 'bg-red-50 border-red-200' : 'border-gray-200'}`}>
                 <div className="flex justify-between items-start">
                   <div>
-                     <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
+                      {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
+                    </div>
                     <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
                     <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
                   </div>
@@ -161,21 +144,7 @@ export default function MisCitas({ slug, API_URL, whatsapp }) {
                 </div>
                 {c.notes && <p className="text-xs text-gray-500 italic">📝 {c.notes}</p>}
                 
-                {!cancelable ? (
-                  <div className="mt-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-[11px] rounded-xl font-medium">
-                    <p className="mb-2">⚠️ Faltan menos de 2 horas. Ya no se puede cancelar por Internet.</p>
-                    {whatsapp && (
-                      <a
-                        href={`https://wa.me/${whatsapp}?text=${encodeURIComponent('Hola, necesito cancelar mi cita')}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block text-center py-2 bg-green-500 text-white font-bold rounded-lg active:scale-95 transition-transform"
-                      >
-                        💬 Escribir por WhatsApp
-                      </a>
-                    )}
-                  </div>
-                ) : (
+                {!isCancelled && (
                   <div className="pt-2 mt-2 border-t border-gray-100 flex justify-end">
                     <button
                       onClick={() => cancelarCita(c)}

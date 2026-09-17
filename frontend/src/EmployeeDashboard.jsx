@@ -116,7 +116,7 @@ export default function EmployeeDashboard() {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        setCitas(prev => prev.filter(item => item.id !== citaId));
+        setCitas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: true } : item));
       } else {
         const data = await res.json().catch(() => null);
         alert(data?.message || 'No se pudo cancelar la cita.');
