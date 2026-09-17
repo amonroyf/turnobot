@@ -168,6 +168,17 @@ export default function BookingApp() {
     }
   }, [step, view]);
 
+  // Abrir WhatsApp automáticamente cuando se confirma la cita
+  useEffect(() => {
+    if (step === 5 && negocio?.whatsapp) {
+      const msg = `Hola, acabo de agendar una cita de ${servicioElegido?.name || ''} para el ${formatearFechaLarga(booking.fecha)} a las ${booking.hora}.`;
+      const url = `https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(msg)}`;
+      // Delay breve para que el navegador no bloquee el popup
+      const timer = setTimeout(() => window.open(url, '_blank'), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [step, negocio]);
+
   const servicioElegido = negocio?.servicios?.find(s => s.id === booking.servicioId);
   const empleadoElegido = negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
