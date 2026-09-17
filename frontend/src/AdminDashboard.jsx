@@ -16,7 +16,7 @@ import {
   doc,
   updateDoc,
 } from 'firebase/firestore';
-import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono } from './fecha.js';
+import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
 
 const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
@@ -409,8 +409,11 @@ export default function AdminDashboard() {
 
           // 1. AGENDA OPTIMIZADA: solo descarga de HOY en adelante con
           // filtro nativo (requiere índice owner_uid + date_time).
-          const inicioHoy = new Date();
-          inicioHoy.setHours(0, 0, 0, 0);
+          // Medianoche en la ZONA DEL NEGOCIO (no del dispositivo): con TZ
+          // distinta, la medianoche local excluiría citas reales de hoy.
+          const tzAgenda = docSnap.data().timezone || 'America/Bogota';
+          const inicioHoy = fechaHoraAUtc(fechaHoyEnZona(tzAgenda), '00:00', tzAgenda)
+            || (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
           const qReservas = query(
             collection(db, 'reservas'),

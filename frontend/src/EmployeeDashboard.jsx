@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { formatearFechaLarga, horaEnZona } from './fecha.js';
+import { formatearFechaLarga, horaEnZona, sumarDias } from './fecha.js';
 import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 
@@ -172,12 +172,8 @@ export default function EmployeeDashboard() {
   // Calcular fechas en la zona horaria del negocio (no en UTC)
   const fmtFecha = (d) => d.toLocaleDateString('sv-SE', { timeZone: zonaNegocio });
   const hoy = fmtFecha(new Date());
-  // Calcular "mañana" sumando 1 día al string de hoy (maneja cambio de mes/año)
-  const manana = (() => {
-    const [y, m, d] = hoy.split('-').map(Number);
-    const dt = new Date(y, m - 1, d + 1);
-    return fmtFecha(dt);
-  })();
+  // Aritmética sobre el string (no Date del dispositivo): inmune a TZ.
+  const manana = sumarDias(hoy, 1);
 
   const citasHoy = citas.filter(c => c.fecha === hoy);
   const citasManana = citas.filter(c => c.fecha === manana);
@@ -357,7 +353,9 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
   const isCancelled = c.cancelled === true;
   const isNoShow = c.no_show === true;
   const fechaMs = isoMs;
-  const isToday = c.fecha === new Date(ahora).toISOString().slice(0, 10);
+  // Comparar en la zona del negocio (no UTC): toISOString() adelanta el día
+  // desde las 7pm en Colombia y ocultaba el botón indebidamente.
+  const isToday = c.fecha === new Date(ahora).toLocaleDateString('sv-SE', { timeZone: zona });
 
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-60' : 'border-gray-200'} ${isCancelled ? 'bg-red-50 border-red-200' : ''} ${isNoShow ? 'bg-amber-50 border-amber-200' : ''}`}>

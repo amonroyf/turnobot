@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { formatearFechaLarga } from './fecha.js';
+import { formatearFechaLarga, sumarDias } from './fecha.js';
 
 // Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
 const formatPhoneNumber = (value) => {
@@ -71,12 +71,10 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
     setCancelando('');
   };
 
-  // Agrupar por fecha usando la zona del negocio
+  // Agrupar por fecha usando la zona del negocio (aritmética sobre el
+  // string 'YYYY-MM-DD': no depende de la zona del dispositivo).
   const hoy = fmtFecha(new Date(), tz);
-  const manana = (() => {
-    const [y, m, d] = hoy.split('-').map(Number);
-    return fmtFecha(new Date(y, m - 1, d + 1), tz);
-  })();
+  const manana = sumarDias(hoy, 1);
 
   const filtrarPorEstado = (lista) => {
     if (filtroEstado === 'activas') return lista.filter(c => !c.cancelled);

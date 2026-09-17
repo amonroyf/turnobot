@@ -32,6 +32,16 @@
 - `client-push-token` verifica teléfono contra la reserva
 - `sendPushToOwner` vía caché (ahorra 1 lectura por reserva); nota de limitación iOS en el SW
 
+### Auditoría de zonas horarias (hora colombiana)
+
+- `AdminDashboard.jsx` — la query de agenda usaba medianoche del dispositivo; ahora usa medianoche en zona del negocio (`fechaHoraAUtc`). Con TZ distinta se excluían citas reales de hoy.
+- `MisCitas.jsx` / `EmployeeDashboard.jsx` — cálculo de "mañana" con aritmética de strings (`sumarDias`), inmune a TZ del dispositivo.
+- Backend verificado: almacenamiento en instantes absolutos, formato y límites de día siempre con `shopLocation`, comparaciones pasado/futuro por instante (independientes de TZ), eventos Calendar etiquetados con la zona del negocio.
+
+### Fix: botón Deshacer oculto en vista del empleado
+
+- `frontend/src/EmployeeDashboard.jsx` — `isToday` se calculaba en UTC (`toISOString`); desde las 7pm en Colombia ocultaba "↩️ Deshacer" aunque el backend lo permitía. Ahora usa la zona del negocio (igual que el panel del dueño).
+
 ### Botón "Calendario de Google" en pantalla de éxito
 
 **Archivos modificados:**
