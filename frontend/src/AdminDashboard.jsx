@@ -569,13 +569,7 @@ export default function AdminDashboard() {
       );
 
       if (res.ok) {
-        const t = r.date_time?.seconds * 1000;
-        const fechaStr = t ? diaKeyEnZona(t, zonaNegocio) : '';
-        const horaStr = t ? horaEnZona(t, zonaNegocio) : '';
-
-        const mensaje = `Hola ${r.client_name}, te informamos que tu cita de ${r.service_name} programada para el ${formatearFechaLarga(fechaStr)} a las ${horaStr} en ${negocio.name} ha sido cancelada.`;
-
-        window.location.href = `https://wa.me/${r.user_phone}?text=${encodeURIComponent(mensaje)}`;
+        setReservas(prev => prev.filter(item => item.id !== citaId));
       } else {
         const data = await res.json().catch(() => null);
         alert(data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.');
@@ -588,6 +582,7 @@ export default function AdminDashboard() {
   };
 
   const [noShowMarking, setNoShowMarking] = useState('');
+  const [undoingId, setUndoingId] = useState('');
 
   const handleMarcarNoShow = async (citaId) => {
     if (!confirm('¿Marcar esta cita como no-show?')) return;
@@ -599,7 +594,7 @@ export default function AdminDashboard() {
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
       if (res.ok) {
-        alert('⚠️ Cita marcada como no-show');
+        setReservas(prev => prev.map(item => item.id === citaId ? { ...item, no_show: true } : item));
       } else {
         alert('No se pudo marcar como no-show. Intenta nuevamente.');
       }
@@ -607,6 +602,27 @@ export default function AdminDashboard() {
       alert('No se pudo marcar como no-show. Intenta nuevamente.');
     }
     setNoShowMarking('');
+  };
+
+  const handleUndo = async (citaId) => {
+    if (!confirm('¿Deshacer esta acción? La cita volverá a estar activa.')) return;
+    setUndoingId(citaId);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/citas/${citaId}/undo`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        setReservas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: false, no_show: false } : item));
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'No se pudo deshacer. Intenta nuevamente.');
+      }
+    } catch (err) {
+      alert('No se pudo deshacer. Intenta nuevamente.');
+    }
+    setUndoingId('');
   };
 
   const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
@@ -700,6 +716,7 @@ export default function AdminDashboard() {
     const isCancelled = r.cancelled === true;
     const profesional = profesionales.find((p) => p.id === r.emp_id);
     const horaStr = timeMs ? horaEnZona(timeMs, zonaNegocio) : '--:--';
+    const isToday = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) === diaKeyEnZona(ahora, zonaNegocio) : false;
 
     // Estilo de tarjeta según estado
     let cardStyle = 'bg-white border-gray-200 shadow-sm hover:shadow-md';
@@ -786,6 +803,18 @@ export default function AdminDashboard() {
                 className="text-[11px] text-red-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100"
               >
                 {cancelando === r.id ? '...' : 'Cancelar'}
+              </button>
+            </div>
+          )}
+          {/* Deshacer (solo citas de hoy canceladas/no-show) */}
+          {(isCancelled || isNoShow) && isToday && (
+            <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80">
+              <button
+                onClick={() => handleUndo(r.id)}
+                disabled={undoingId === r.id}
+                className="text-[11px] text-blue-600 font-semibold hover:text-blue-800 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+              >
+                {undoingId === r.id ? 'Deshaciendo...' : '↩️ Deshacer'}
               </button>
             </div>
           )}

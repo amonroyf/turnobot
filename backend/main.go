@@ -324,6 +324,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Deshacer cancelación/no-show: POST /api/v1/b/{slug}/citas/{citaID}/undo
+	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "undo" && r.Method == http.MethodPost {
+		undoCitaHandler(w, r, slug, parts[2])
+		return
+	}
+
 	if len(parts) == 3 && parts[1] == "no-show" && r.Method == http.MethodPost {
 		markNoShowHandler(w, r, slug, parts[2])
 		return
@@ -949,6 +955,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 }
 
 // DELETE /api/v1/b/{slug}/citas/{citaID} -> cancela la cita (Firestore + Google Calendar)
+// Puede ser invocado por: el dueño, el empleado asignado, o el cliente (via phone match).
 func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
 	ctx := r.Context()
 	docRef := firestoreClient.Collection("reservas").Doc(citaID)
@@ -975,28 +982,17 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// 1. REGLA DE INTEGRIDAD DE DATOS
-	// El cliente no puede cancelar citas pasadas, pero el DUEÑO SÍ PUEDE (para corregir errores).
+	// AUTORIZACIÓN: dueño, empleado asignado, o cliente (por phone match).
 	isOwner := isOwnerRequest(r, slug)
-	if !isOwner && b.DateTime.Before(time.Now()) {
+	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	isClient := !isOwner && !isEmployee && isClientRequest(r, b.UserPhone)
+	if !isOwner && !isEmployee && !isClient {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   "past_appointment",
-			"message": "No se puede cancelar una cita que ya pasó. Comunícate con el local.",
-		})
-		return
-	}
-
-	// 2. Regla de negocio para clientes: no cancelar con menos de 2 horas.
-	if !isOwner && b.DateTime.Sub(time.Now()) < 2*time.Hour {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "cancel_window",
-			"message": "Ya no puedes cancelar esta cita por Internet (faltan menos de 2 horas). Comunícate directamente con el local.",
+			"error":   "unauthorized",
+			"message": "No autorizado para cancelar esta cita.",
 		})
 		return
 	}
@@ -1021,6 +1017,24 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
 	// SaaS: restar métricas maestras del negocio
 	updateNegocioStats(ctx, slug, -1, -b.Price)
+
+	// Pre-computar fecha/hora en zona del negocio para push (ctx se cancela al responder)
+	loc := shopLocation(ctx, slug)
+	fechaStr := b.DateTime.In(loc).Format("2006-01-02")
+	horaStr := b.DateTime.In(loc).Format("15:04")
+
+	// Push al cliente: notificar que su cita fue cancelada
+	if b.ClientPushToken != "" {
+		go sendPushToClient(context.Background(), b.ClientPushToken,
+			"❌ Cita cancelada",
+			fmt.Sprintf("Tu cita de %s en %s fue cancelada.", b.ServiceName, slug),
+			"/shop/"+slug, "cancel-"+citaID)
+	}
+
+	// Push al dueño/empleado: notificar si el CLIENTE fue quien canceló
+	if isClient {
+		go sendPushToOwnerCancellation(context.Background(), slug, b.ClientName, b.ServiceName, fechaStr, horaStr)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -1162,6 +1176,33 @@ func bearerToken(header string) string {
 		return ""
 	}
 	return header[len(prefix):]
+}
+
+// isAssignedEmployeeRequest verifica si el request proviene del empleado
+// asignado a la cita (JWT de empleado con PIN). Retorna true si el token
+// de empleado es válido y el emp_id coincide con el asignado.
+func isAssignedEmployeeRequest(r *http.Request, slug, empID string) bool {
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		return false
+	}
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID != empID {
+		return false
+	}
+	return true
+}
+
+// isClientRequest verifica si el request viene del cliente (por phone match).
+// No usa autenticación fuerte: compara el header X-Client-Phone con el
+// teléfono de la cita. Aceptable para cancelación de citas propias donde
+// el riesgo es bajo (solo puede afectar sus propias citas).
+func isClientRequest(r *http.Request, clientPhone string) bool {
+	phone := r.Header.Get("X-Client-Phone")
+	if phone == "" {
+		return false
+	}
+	return phone == clientPhone
 }
 
 // DELETE /api/v1/b/{slug}/servicios/{servicioID}

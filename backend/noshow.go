@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -17,16 +19,10 @@ func canMarkNoShow(dateTime, now time.Time) bool {
 
 // markNoShowHandler marca una cita como no-show manualmente.
 // POST /api/v1/b/{slug}/no-show/{citaID}
-// Solo el dueño (Firebase ID token) puede marcar. Idempotente: repetir la
-// llamada no duplica el ajuste del CRM.
+// Puede ser invocado por: el dueño o el empleado asignado. Idempotente:
+// repetir la llamada no duplica el ajuste del CRM.
 func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
-	if !isOwnerRequest(r, slug) {
-		http.Error(w, "No autorizado", http.StatusUnauthorized)
-		return
-	}
-
 	ctx := r.Context()
-
 	docRef := firestoreClient.Collection("reservas").Doc(citaID)
 	doc, err := docRef.Get(ctx)
 	if err != nil {
@@ -38,6 +34,14 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	doc.DataTo(&b)
 	if b.NegocioID != slug {
 		http.Error(w, "Cita no pertenece a este negocio", http.StatusForbidden)
+		return
+	}
+
+	// AUTORIZACIÓN: dueño o empleado asignado.
+	isOwner := isOwnerRequest(r, slug)
+	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	if !isOwner && !isEmployee {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
 		return
 	}
 
@@ -77,7 +81,18 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	// CRM: restar visita y gasto del cliente por no-show
 	decrementCliente(ctx, slug, b.UserPhone, b.Price)
 	// SaaS: restar métricas maestras del negocio
-	updateNegocioStats(ctx, slug, -1, -b.Price)
+	updateNegocioStats(ctx, slug, -1, b.Price)
+
+	// Push al cliente: notificar que su cita fue marcada como no-show
+	if b.ClientPushToken != "" {
+		loc := shopLocation(ctx, slug)
+		fechaStr := b.DateTime.In(loc).Format("02/01")
+		horaStr := b.DateTime.In(loc).Format("15:04")
+		go sendPushToClient(context.Background(), b.ClientPushToken,
+			"⚠️ Cita marcada como no-show",
+			fmt.Sprintf("Tu cita de %s (%s a las %s) fue marcada como no-show.", b.ServiceName, fechaStr, horaStr),
+			"/shop/"+slug, "noshow-"+citaID)
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

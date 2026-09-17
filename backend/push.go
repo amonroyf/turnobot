@@ -175,6 +175,44 @@ func sendReminderToClient(ctx context.Context, neg Negocio, b Booking) {
 	_ = time.Now()
 }
 
+// sendPushToOwnerCancellation envía un push al dueño cuando un CLIENTE cancela
+// su propia cita. Notifica para que el dueño sepa que el hueco se liberó.
+func sendPushToOwnerCancellation(ctx context.Context, slug, clientName, serviceName, dateStr, timeStr string) {
+	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return
+	}
+	var neg Negocio
+	negDoc.DataTo(&neg)
+	if neg.PushToken == "" {
+		return
+	}
+	fcmClient, err := firebaseApp.Messaging(ctx)
+	if err != nil {
+		return
+	}
+	title := "❌ Cita cancelada por cliente"
+	body := fmt.Sprintf("%s canceló %s (%s a las %s)", clientName, serviceName, dateStr, timeStr)
+	msg := &messaging.Message{
+		Token: neg.PushToken,
+		Webpush: &messaging.WebpushConfig{
+			Data: map[string]string{
+				"title": title,
+				"body":  body,
+				"icon":  "/icons/icon-192x192.png",
+				"url":   "/admin",
+				"tag":   "cancellation",
+			},
+		},
+	}
+	resp, err := fcmClient.Send(ctx, msg)
+	if err != nil {
+		log.Printf("sendPushToOwnerCancellation: error enviando push a %s: %v", slug, err)
+		return
+	}
+	log.Printf("sendPushToOwnerCancellation: notificación enviada a %s (message_id=%s)", slug, resp)
+}
+
 // registerClientPushTokenRequest es el payload que envía el frontend del
 // cliente cuando activa el recordatorio después de agendar.
 type registerClientPushTokenRequest struct {

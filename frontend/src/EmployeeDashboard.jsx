@@ -17,6 +17,9 @@ export default function EmployeeDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [negocio, setNegocio] = useState(null);
+  const [cancelando, setCancelando] = useState('');
+  const [noShowMarking, setNoShowMarking] = useState('');
+  const [undoingId, setUndoingId] = useState('');
 
   const pushNotifications = useEmployeePushNotifications(slug, token, empId);
 
@@ -100,6 +103,67 @@ export default function EmployeeDashboard() {
     setEmpSeleccionado(null);
     setPin('');
     setCitas([]);
+  };
+
+  const handleCancelar = async (citaId) => {
+    const c = citas.find(item => item.id === citaId);
+    if (!c) return;
+    if (!confirm(`¿Cancelar la cita de ${c.cliente}?`)) return;
+    setCancelando(citaId);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setCitas(prev => prev.filter(item => item.id !== citaId));
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'No se pudo cancelar la cita.');
+      }
+    } catch {
+      alert('No se pudo cancelar la cita.');
+    }
+    setCancelando('');
+  };
+
+  const handleMarcarNoShow = async (citaId) => {
+    if (!confirm('¿Marcar esta cita como no-show?')) return;
+    setNoShowMarking(citaId);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/no-show/${citaId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        setCitas(prev => prev.map(item => item.id === citaId ? { ...item, no_show: true } : item));
+      } else {
+        alert('No se pudo marcar como no-show.');
+      }
+    } catch {
+      alert('No se pudo marcar como no-show.');
+    }
+    setNoShowMarking('');
+  };
+
+  const handleUndo = async (citaId) => {
+    if (!confirm('¿Deshacer esta acción? La cita volverá a estar activa.')) return;
+    setUndoingId(citaId);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}/undo`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        setCitas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: false, no_show: false } : item));
+      } else {
+        const data = await res.json().catch(() => null);
+        alert(data?.message || 'No se pudo deshacer.');
+      }
+    } catch {
+      alert('No se pudo deshacer.');
+    }
+    setUndoingId('');
   };
 
   const ahora = Date.now();
@@ -216,7 +280,7 @@ export default function EmployeeDashboard() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
             <div className="space-y-2">
               {citasHoy.map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
@@ -227,7 +291,7 @@ export default function EmployeeDashboard() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
             <div className="space-y-2">
               {citasManana.map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
@@ -238,7 +302,7 @@ export default function EmployeeDashboard() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
             <div className="space-y-2">
               {citasProximas.map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
@@ -248,15 +312,23 @@ export default function EmployeeDashboard() {
   );
 }
 
-function CitaCard({ c, zona, ahora }) {
+function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noShowMarking, undoingId }) {
   const isoMs = c.iso ? new Date(c.iso).getTime() : 0;
   const isPast = isoMs < ahora;
+  const isCancelled = c.cancelled === true;
+  const isNoShow = c.no_show === true;
+  const fechaMs = isoMs;
+  const isToday = c.fecha === new Date(ahora).toISOString().slice(0, 10);
 
   return (
-    <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-60' : 'border-gray-200'}`}>
+    <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-60' : 'border-gray-200'} ${isCancelled ? 'bg-red-50 border-red-200' : ''} ${isNoShow ? 'bg-amber-50 border-amber-200' : ''}`}>
       <div className="flex justify-between items-start">
         <div>
-          <p className="font-bold text-gray-900 text-sm">👤 {c.cliente}</p>
+          <div className="flex items-center gap-2">
+            <p className="font-bold text-gray-900 text-sm">👤 {c.cliente}</p>
+            {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
+            {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase">No Show</span>}
+          </div>
           <p className="text-xs text-gray-600 font-medium mt-1">📋 {c.servicio}</p>
           <p className="text-xs text-gray-500 mt-1">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
           {c.notes && <p className="text-xs text-gray-400 italic mt-1">📝 {c.notes}</p>}
@@ -267,10 +339,38 @@ function CitaCard({ c, zona, ahora }) {
           </span>
         )}
       </div>
-      {c.no_show && (
-        <span className="inline-block mt-2 text-[9px] font-bold bg-amber-100 text-amber-700 px-2 py-0.5 rounded uppercase">
-          No Show
-        </span>
+      {/* Acciones */}
+      {!isCancelled && !isNoShow && (
+        <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
+          {isPast && (
+            <button
+              onClick={() => onNoShow(c.id)}
+              disabled={noShowMarking === c.id}
+              className="text-[11px] text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
+            >
+              {noShowMarking === c.id ? 'Marcando...' : 'No Llegó'}
+            </button>
+          )}
+          <button
+            onClick={() => onCancel(c.id)}
+            disabled={cancelando === c.id}
+            className="text-[11px] text-red-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+          >
+            {cancelando === c.id ? '...' : 'Cancelar'}
+          </button>
+        </div>
+      )}
+      {/* Deshacer */}
+      {(isCancelled || isNoShow) && isToday && (
+        <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
+          <button
+            onClick={() => onUndo(c.id)}
+            disabled={undoingId === c.id}
+            className="text-[11px] text-blue-600 font-semibold hover:text-blue-800 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+          >
+            {undoingId === c.id ? 'Deshaciendo...' : '↩️ Deshacer'}
+          </button>
+        </div>
       )}
     </div>
   );
