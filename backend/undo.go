@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -69,34 +70,63 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		return
 	}
 
-	// Determinar qué campos revertir
-	updates := []firestore.Update{
-		{Path: "updated_at", Value: time.Now()},
-	}
+	// Transacción atómica: reversión + CRM se aplican juntos o nada.
+	// Re-verifica dentro del tx (carrera: otro undo concurrente).
+	// Además resetea reminder_sent: una cita restaurada aún futura debe
+	// volver al radar del cron (antes quedaba sin recordatorio).
 	var pushTitle, pushBody string
-
-	if wasCancelled {
-		updates = append(updates, firestore.Update{Path: "cancelled", Value: false})
-		updates = append(updates, firestore.Update{Path: "cancelled_at", Value: nil})
-		pushTitle = "✅ Cita restaurada"
-		pushBody = fmt.Sprintf("Tu cita de %s fue restaurada. Sigue activa.", b.ServiceName)
-		// Revertir CRM: sumar de vuelta
-		incrementCliente(ctx, slug, b.UserPhone, b.Price)
-		updateNegocioStats(ctx, slug, 1, b.Price)
-	} else if wasNoShow {
-		updates = append(updates, firestore.Update{Path: "no_show", Value: false})
-		pushTitle = "✅ Cita restaurada"
-		pushBody = fmt.Sprintf("Tu cita de %s fue restaurada. Ya no está marcada como no-show.", b.ServiceName)
-		// Revertir CRM: sumar de vuelta
-		incrementCliente(ctx, slug, b.UserPhone, b.Price)
-		updateNegocioStats(ctx, slug, 1, b.Price)
-	}
-
-	_, err = docRef.Update(ctx, updates)
+	err = firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		stillCancelled := snap.Data()["cancelled"] == true
+		var cur Booking
+		snap.DataTo(&cur)
+		if !stillCancelled && !cur.NoShow {
+			return errYaAplicado
+		}
+		updates := []firestore.Update{
+			{Path: "updated_at", Value: time.Now()},
+			{Path: "reminder_sent", Value: false},
+		}
+		if stillCancelled {
+			updates = append(updates, firestore.Update{Path: "cancelled", Value: false})
+			updates = append(updates, firestore.Update{Path: "cancelled_at", Value: nil})
+		} else {
+			updates = append(updates, firestore.Update{Path: "no_show", Value: false})
+		}
+		if err := tx.Update(docRef, updates); err != nil {
+			return err
+		}
+		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
+		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, 1, b.Price), firestore.MergeAll); err != nil {
+			return err
+		}
+		negRef := firestoreClient.Collection("negocios").Doc(slug)
+		return tx.Set(negRef, negocioStatsData(1, b.Price), firestore.MergeAll)
+	})
 	if err != nil {
+		if errors.Is(err, errYaAplicado) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"message": "La cita ya estaba activa",
+				"cita_id": citaID,
+			})
+			return
+		}
 		log.Printf("Error deshaciendo cita %s: %v", citaID, err)
 		http.Error(w, "Error deshaciendo la acción", http.StatusInternalServerError)
 		return
+	}
+
+	if wasCancelled {
+		pushTitle = "✅ Cita restaurada"
+		pushBody = fmt.Sprintf("Tu cita de %s fue restaurada. Sigue activa.", b.ServiceName)
+	} else {
+		pushTitle = "✅ Cita restaurada"
+		pushBody = fmt.Sprintf("Tu cita de %s fue restaurada. Ya no está marcada como no-show.", b.ServiceName)
 	}
 
 	// Push al cliente: notificar que la cita fue restaurada
@@ -128,13 +158,7 @@ func incrementCliente(ctx context.Context, slug, phone string, price int) {
 		return
 	}
 	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-	_, err := ref.Set(ctx, map[string]interface{}{
-		"negocio_id":    slug,
-		"cliente_phone": phone,
-		"visits":        firestore.Increment(1),
-		"total_spent":   firestore.Increment(price),
-		"updated_at":    time.Now(),
-	}, firestore.MergeAll)
+	_, err := ref.Set(ctx, clienteCRMData(slug, phone, 1, price), firestore.MergeAll)
 	if err != nil {
 		log.Printf("Aviso: no se pudo restaurar al cliente %s en %s: %v", phone, slug, err)
 	}

@@ -2,6 +2,19 @@
 
 ## 2026-09-15
 
+### Seguridad S1+S3 e integridad S2
+
+**Críticos (S1):**
+- `firestore.rules` — `empleados` sin lectura pública (guardaban `refresh_token` y hash `login_pin`). Verificado en vivo: 403 sin auth. Flujos públicos usan el API sanitizado; paneles van autenticados.
+- `EMPLOYEE_TOKEN_KEY` por env (fail-closed): la llave HMAC estaba hardcodeada en git. Requiere redesplegar backend CON la variable o no arranca. Invalida sesiones de empleado activas.
+
+**Integridad (S2):**
+- `cancel`/`no-show`/`undo` ahora en `RunTransaction` (marca + CRM atómicos, re-chequeo anti-doble-aplicado). Builders compartidos `clienteCRMData`/`negocioStatsData`.
+- `undo` resetea `reminder_sent` (cita restaurada vuelve al radar del cron).
+
+**Endurecimiento (S3):**
+- Lockout de PIN: 5 fallos = 15 min de bloqueo por (negocio, empleado) + logs (nunca el PIN). Además del rate-limit 10/min/IP existente.
+
 ### Recordatorios push a clientes + resumen al dueño (cron)
 
 **Archivos nuevos:**

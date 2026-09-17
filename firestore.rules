@@ -78,7 +78,10 @@ service cloud.firestore {
       }
 
       match /empleados/{empId} {
-        allow read: if true;
+        // SIN lectura pública: estos docs guardan refresh_token de Google y
+        // hash login_pin. La página de reserva y el login leen empleados por
+        // el API backend (sanitizado); el panel va autenticado como dueño.
+        allow read: if isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
         allow write: if (isOwner(slug) && horarioIsValid()) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
       }
     }

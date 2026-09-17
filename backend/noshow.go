@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -68,20 +69,45 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	_, err = docRef.Update(ctx, []firestore.Update{
-		{Path: "no_show", Value: true},
-		{Path: "updated_at", Value: time.Now()},
+	// Transacción atómica: marca + CRM se aplican juntos o nada.
+	// Re-verifica dentro del tx contra doble marcado concurrente.
+	err = firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var cur Booking
+		snap.DataTo(&cur)
+		if cur.NoShow {
+			return errYaAplicado
+		}
+		if err := tx.Update(docRef, []firestore.Update{
+			{Path: "no_show", Value: true},
+			{Path: "updated_at", Value: time.Now()},
+		}); err != nil {
+			return err
+		}
+		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
+		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, -1, -b.Price), firestore.MergeAll); err != nil {
+			return err
+		}
+		negRef := firestoreClient.Collection("negocios").Doc(slug)
+		return tx.Set(negRef, negocioStatsData(-1, b.Price), firestore.MergeAll)
 	})
 	if err != nil {
+		if errors.Is(err, errYaAplicado) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"message": "La cita ya estaba marcada como no-show",
+				"cita_id": citaID,
+			})
+			return
+		}
 		log.Printf("Error marcando no-show: %v", err)
 		http.Error(w, "Error marcando no-show", http.StatusInternalServerError)
 		return
 	}
-
-	// CRM: restar visita y gasto del cliente por no-show
-	decrementCliente(ctx, slug, b.UserPhone, b.Price)
-	// SaaS: restar métricas maestras del negocio
-	updateNegocioStats(ctx, slug, -1, b.Price)
 
 	// Push al cliente: notificar que su cita fue marcada como no-show
 	if b.ClientPushToken != "" {

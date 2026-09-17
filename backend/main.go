@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -217,7 +218,13 @@ func main() {
 	}
 	defer firestoreClient.Close()
 
-	// 1b. Firebase Auth para verificar el token del dueño (operaciones de admin)
+	// 1b. Llave de sesión de empleados (fail-closed: sin esto no hay login).
+	employeeTokenKey = []byte(os.Getenv("EMPLOYEE_TOKEN_KEY"))
+	if len(employeeTokenKey) < 32 {
+		log.Fatalf("EMPLOYEE_TOKEN_KEY ausente o muy corta (mínimo 32 caracteres)")
+	}
+
+	// 1c. Firebase Auth para verificar el token del dueño (operaciones de admin)
 	fbApp, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: projectID})
 	if err != nil {
 		log.Fatalf("Error inicializando Firebase App: %v", err)
@@ -1008,21 +1015,43 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
 	}
 
-	// Soft delete: marcar como cancelada en lugar de borrar físicamente
-	_, err = docRef.Update(ctx, []firestore.Update{
-		{Path: "cancelled", Value: true},
-		{Path: "cancelled_at", Value: time.Now()},
+	// Transacción atómica: marca + CRM (cliente y stats) se aplican juntos o
+	// nada. Re-verifica dentro del tx para que dos cancelaciones concurrentes
+	// no resten doble en el CRM.
+	err = firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		if snap.Data()["cancelled"] == true {
+			return errYaAplicado
+		}
+		if err := tx.Update(docRef, []firestore.Update{
+			{Path: "cancelled", Value: true},
+			{Path: "cancelled_at", Value: time.Now()},
+		}); err != nil {
+			return err
+		}
+		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
+		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, -1, -b.Price), firestore.MergeAll); err != nil {
+			return err
+		}
+		negRef := firestoreClient.Collection("negocios").Doc(slug)
+		return tx.Set(negRef, negocioStatsData(-1, -b.Price), firestore.MergeAll)
 	})
 	if err != nil {
+		if errors.Is(err, errYaAplicado) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": true,
+				"message": "La cita ya estaba cancelada",
+			})
+			return
+		}
 		log.Printf("Error cancelando cita %s: %v", citaID, err)
 		http.Error(w, "Error cancelando la cita", http.StatusInternalServerError)
 		return
 	}
-
-	// CRM: reflejar la cancelación en el directorio de clientes (solo si era futura)
-	decrementCliente(ctx, slug, b.UserPhone, b.Price)
-	// SaaS: restar métricas maestras del negocio
-	updateNegocioStats(ctx, slug, -1, -b.Price)
 
 	// Pre-computar fecha/hora en zona del negocio para push (ctx se cancela al responder)
 	loc := shopLocation(ctx, slug)
@@ -1068,18 +1097,38 @@ func clienteDocID(slug, phone string) string {
 // update"; el merge con Increment lo crea/atualiza igual que el upsert de
 // bookHandler. Se incluyen negocio_id y cliente_phone para que el doc
 // siempre sea atribuible en las queries del CRM.
+// errYaAplicado indica que la mutación ya estaba aplicada (carrera entre dos
+// requests concurrentes): el caller responde éxito idempotente sin tocar el CRM.
+var errYaAplicado = errors.New("mutación ya aplicada")
+
+// clienteCRMData construye el upsert del directorio de clientes con deltas
+// arbitrarios (negativos = resta por cancelación/no-show, positivos = undo).
+// Compartido por la vía directa y la transaccional para no duplicar lógica.
+func clienteCRMData(slug, phone string, visitsDelta, spentDelta int) map[string]interface{} {
+	return map[string]interface{}{
+		"negocio_id":    slug,
+		"cliente_phone": phone,
+		"visits":        firestore.Increment(visitsDelta),
+		"total_spent":   firestore.Increment(spentDelta),
+		"updated_at":    time.Now(),
+	}
+}
+
+// negocioStatsData construye el ajuste de contadores maestros del tenant.
+func negocioStatsData(citasDelta, priceDelta int) map[string]interface{} {
+	return map[string]interface{}{
+		"stats_citas_activas":    firestore.Increment(citasDelta),
+		"stats_ingresos_totales": firestore.Increment(priceDelta),
+		"updated_at":             time.Now(),
+	}
+}
+
 func decrementCliente(ctx context.Context, slug, phone string, price int) {
 	if slug == "" || phone == "" {
 		return
 	}
 	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-	_, err := ref.Set(ctx, map[string]interface{}{
-		"negocio_id":    slug,
-		"cliente_phone": phone,
-		"visits":        firestore.Increment(-1),
-		"total_spent":   firestore.Increment(-price),
-		"updated_at":    time.Now(),
-	}, firestore.MergeAll)
+	_, err := ref.Set(ctx, clienteCRMData(slug, phone, -1, -price), firestore.MergeAll)
 	if err != nil {
 		log.Printf("Aviso: no se pudo actualizar al cliente %s en %s: %v", phone, slug, err)
 	}
@@ -1095,11 +1144,7 @@ func updateNegocioStats(ctx context.Context, slug string, citasDelta int, priceD
 		return
 	}
 	ref := firestoreClient.Collection("negocios").Doc(slug)
-	_, err := ref.Set(ctx, map[string]interface{}{
-		"stats_citas_activas":    firestore.Increment(citasDelta),
-		"stats_ingresos_totales": firestore.Increment(priceDelta),
-		"updated_at":             time.Now(),
-	}, firestore.MergeAll)
+	_, err := ref.Set(ctx, negocioStatsData(citasDelta, priceDelta), firestore.MergeAll)
 	if err != nil {
 		log.Printf("Aviso: no se pudo actualizar stats del negocio %s: %v", slug, err)
 	}
@@ -2355,7 +2400,9 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 // ---------------------------------------------------------------------------
 
 // employeeTokenSigningKey firma los tokens de sesión de empleados.
-var employeeTokenKey = []byte("turnobot-employee-token-key-2026")
+// VIENE DE ENV (EMPLOYEE_TOKEN_KEY): hardcodearla permitiría forjar sesiones
+// a cualquiera que lea el repo. Se valida en main (fail-closed).
+var employeeTokenKey []byte
 
 // signEmployeeToken genera un token HMAC-SHA256 con expiración de 12 horas.
 func signEmployeeToken(slug, empID string) string {
@@ -2398,6 +2445,48 @@ func verifyEmployeeToken(token string) (string, string, error) {
 	return parts2[0], parts2[1], nil
 }
 
+// pinGuard limita fuerza bruta al PIN: 5 fallos => bloqueo 15 min por
+// (negocio, empleado). En memoria por instancia (igual que los rate limiters);
+// el bookingLimiter (10 POST/min/IP) ya frena el barrido masivo.
+var pinGuard = struct {
+	sync.Mutex
+	fallos map[string]int
+	hasta  map[string]time.Time
+}{fallos: map[string]int{}, hasta: map[string]time.Time{}}
+
+const pinMaxFallos = 5
+const pinBloqueo = 15 * time.Minute
+
+func pinBloqueado(key string) bool {
+	pinGuard.Lock()
+	defer pinGuard.Unlock()
+	if time.Now().Before(pinGuard.hasta[key]) {
+		return true
+	}
+	return false
+}
+
+// pinFallo registra un intento fallido y retorna el conteo. Al llegar al
+// máximo activa el bloqueo (nunca se loguea el PIN).
+func pinFallo(key string) int {
+	pinGuard.Lock()
+	defer pinGuard.Unlock()
+	pinGuard.fallos[key]++
+	n := pinGuard.fallos[key]
+	if n >= pinMaxFallos {
+		pinGuard.hasta[key] = time.Now().Add(pinBloqueo)
+		pinGuard.fallos[key] = 0
+	}
+	return n
+}
+
+func pinReset(key string) {
+	pinGuard.Lock()
+	defer pinGuard.Unlock()
+	delete(pinGuard.fallos, key)
+	delete(pinGuard.hasta, key)
+}
+
 // POST /api/v1/b/{slug}/employee-login
 func employeeLoginHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	var req struct {
@@ -2424,10 +2513,21 @@ func employeeLoginHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Lockout anti-fuerza-bruta (además del rate limit 10/min/IP).
+	pinKey := slug + "|" + req.EmpID
+	if pinBloqueado(pinKey) {
+		log.Printf("Login empleado bloqueado por intentos: %s", pinKey)
+		http.Error(w, "Demasiados intentos. Espera 15 minutos.", http.StatusTooManyRequests)
+		return
+	}
+
 	if err := bcrypt.CompareHashAndPassword([]byte(emp.LoginPIN), []byte(req.Pin)); err != nil {
+		n := pinFallo(pinKey)
+		log.Printf("PIN incorrecto empleado %s (intento %d/5)", pinKey, n)
 		http.Error(w, "PIN incorrecto", http.StatusUnauthorized)
 		return
 	}
+	pinReset(pinKey)
 
 	token := signEmployeeToken(slug, req.EmpID)
 

@@ -119,6 +119,7 @@ GOOGLE_CLIENT_ID: <tu-client-id>
 GOOGLE_CLIENT_SECRET: <tu-client-secret>
 REDIRECT_URL: https://turnobot-850305350371.us-central1.run.app/auth/google/callback
 CRON_SECRET: <secreto-aleatorio-64-hex>   # auth del cron check-reminders
+EMPLOYEE_TOKEN_KEY: <secreto-aleatorio-64-hex>  # firma sesiones de empleados (requerido: sin esto el backend no arranca)
 PORT: "8080"
 FRONTEND_URL: https://turnobot-web.web.app
 ```
