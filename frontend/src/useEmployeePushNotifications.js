@@ -25,12 +25,26 @@ export default function useEmployeePushNotifications(slug, empToken, empId) {
     }
   }, [slug, empToken, empId]);
 
-  // Primer plano: el SW solo muestra en background; se emite evento para
-  // que la UI muestre un toast (no crear Notification aquí: duplicaría).
+  // Primer plano: toast en la app + notificación del sistema (igual que el
+  // dueño). No duplica con el SW: ese solo actúa en background.
   useEffect(() => {
     if (!messaging) return;
     const unsubscribe = onMessage(messaging, (payload) => {
-      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: payload?.data || {} }));
+      const d = payload?.data || {};
+      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: d }));
+      try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && d.title) {
+          const n = new Notification(d.title, {
+            body: d.body || '',
+            icon: d.icon || '/icons/icon-192x192.png',
+            tag: d.tag || 'turnobot-notification',
+            requireInteraction: true,
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      } catch {
+        // Sin notificación del sistema: el toast igual se mostró.
+      }
     });
     return () => unsubscribe();
   }, []);

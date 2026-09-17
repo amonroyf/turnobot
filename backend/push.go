@@ -208,6 +208,9 @@ func sendPushToClient(ctx context.Context, token, title, body, url, tag string) 
 	msg := &messaging.Message{
 		Token: token,
 		Webpush: &messaging.WebpushConfig{
+			// Urgencia alta: despierta el service worker en background
+			// aunque el sistema esté en Doze/ahorro (Android).
+			Headers: map[string]string{"Urgency": "high"},
 			Data: map[string]string{
 				"title": title,
 				"body":  body,
@@ -344,8 +347,19 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 	}
 
 	// El teléfono debe coincidir con el de la reserva: evita que cualquiera
-	// con el citaID pise el token de otro cliente.
-	if req.Phone == "" || digitsOnly(req.Phone) != digitsOnly(b.UserPhone) {
+	// con el citaID pise el token de otro cliente. Se compara contra todas
+	// las variantes (E.164, nacional) porque el frontend manda dígitos
+	// nacionales y el backend guarda E.164.
+	match := false
+	if want := digitsOnly(req.Phone); want != "" {
+		for _, key := range phoneQueryKeys(b.UserPhone) {
+			if digitsOnly(key) == want {
+				match = true
+				break
+			}
+		}
+	}
+	if !match {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{

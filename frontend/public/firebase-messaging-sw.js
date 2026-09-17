@@ -15,6 +15,13 @@ firebase.initializeApp({
 
 const messaging = firebase.messaging();
 
+// Tomar control inmediato al actualizarse: sin esto, una pestaña siempre
+// abierta seguiría controlada por el SW anterior indefinidamente.
+self.skipWaiting();
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 // Handle background messages
 // El backend envía mensajes solo-data (sin payload "notification"): el SDK
 // NO muestra nada automáticamente, así que este showNotification manual es
@@ -36,6 +43,8 @@ messaging.onBackgroundMessage((payload) => {
     // en vez de apilarse en la bandeja de notificaciones.
     tag: data.tag || 'turnobot-notification',
     renotify: false,
+    // Persistente en la bandeja hasta que el usuario la descarte.
+    requireInteraction: true,
     vibrate: [200, 100, 200],
     data: { url: data.url || '/admin' },
     actions: [{ action: 'open', title: 'Ver agenda' }]

@@ -26,12 +26,27 @@ export default function usePushNotifications(negocioId) {
   }, [negocioId]);
 
   // Mensajes con la app en primer plano: el service worker solo muestra en
-  // background, así que aquí NO se crea Notification (sería duplicado).
-  // Se emite un evento para que la UI muestre un toast en la app.
+  // background, así que aquí se muestra (1) toast en la app vía evento y
+  // (2) notificación del sistema para que también quede en la bandeja.
+  // No duplica con el SW: ese solo actúa cuando la app NO está visible.
   useEffect(() => {
     if (!messaging) return;
     const unsubscribe = onMessage(messaging, (payload) => {
-      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: payload?.data || {} }));
+      const d = payload?.data || {};
+      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: d }));
+      try {
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && d.title) {
+          const n = new Notification(d.title, {
+            body: d.body || '',
+            icon: d.icon || '/icons/icon-192x192.png',
+            tag: d.tag || 'turnobot-notification',
+            requireInteraction: true,
+          });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      } catch {
+        // Sin notificación del sistema: el toast igual se mostró.
+      }
     });
     return () => unsubscribe();
   }, []);

@@ -1,5 +1,16 @@
 # Changelog — Turnobot
 
+## 2026-09-17
+
+### Sin WhatsApp automático al confirmar
+
+- `BookingApp.jsx` — eliminada la apertura automática de WhatsApp al confirmar la cita. Queda el botón manual "Tengo una duda (Escribir al local)".
+
+### Fix: "Activar recordatorio" no hacía nada
+
+- Causa: la verificación de teléfono comparaba E.164 contra dígitos nacionales (403 silencioso). Ahora compara contra todas las variantes (`phoneQueryKeys`).
+- `BookingApp.jsx` — el botón muestra el motivo del fallo (permiso bloqueado, red, token) + "Intentar de nuevo" en vez de quedarse mudo.
+
 ## 2026-09-15
 
 ### Seguridad S1+S3 e integridad S2
@@ -44,6 +55,12 @@
 - Toast en app cuando el push llega con el panel abierto (`turnobot-push` + banner en `AdminDashboard`)
 - `client-push-token` verifica teléfono contra la reserva
 - `sendPushToOwner` vía caché (ahorra 1 lectura por reserva); nota de limitación iOS en el SW
+
+### Push en segundo plano (bandeja del sistema)
+
+- `push.go` — header `Urgency: high` en todos los webpush (despierta el SW en Doze/ahorro)
+- `firebase-messaging-sw.js` — `skipWaiting` + `clients.claim` (el SW nuevo toma control sin cerrar pestañas) y `requireInteraction: true` (persiste en bandeja)
+- Hooks dueño/empleado — en primer plano ahora muestran toast + notificación del sistema (antes solo toast)
 
 ### Botón "Enviarme una prueba" (push del dueño)
 

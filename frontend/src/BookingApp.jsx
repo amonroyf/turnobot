@@ -130,6 +130,7 @@ export default function BookingApp() {
   const [citaId, setCitaId] = useState('');
   // Estado del push post-agendamiento: 'idle' | 'loading' | 'success' | 'error'
   const [pushStatus, setPushStatus] = useState('idle');
+  const [pushError, setPushError] = useState('');
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
@@ -167,17 +168,6 @@ export default function BookingApp() {
       }, 150);
     }
   }, [step, view]);
-
-  // Abrir WhatsApp automáticamente cuando se confirma la cita
-  useEffect(() => {
-    if (step === 5 && negocio?.whatsapp) {
-      const msg = `Hola, acabo de agendar una cita de ${servicioElegido?.name || ''} para el ${formatearFechaLarga(booking.fecha)} a las ${booking.hora}.`;
-      const url = `https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent(msg)}`;
-      // Delay breve para que el navegador no bloquee el popup
-      const timer = setTimeout(() => window.open(url, '_blank'), 800);
-      return () => clearTimeout(timer);
-    }
-  }, [step, negocio]);
 
   const servicioElegido = negocio?.servicios?.find(s => s.id === booking.servicioId);
   const empleadoElegido = negocio?.empleados?.find(e => e.id === booking.empleadoId);
@@ -270,6 +260,7 @@ export default function BookingApp() {
     setError('');
     setCitaId('');
     setPushStatus('idle');
+    setPushError('');
     setStep(1);
     setView('agendar');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -282,19 +273,26 @@ export default function BookingApp() {
   // simplemente queda sin recordatorio push (sin efecto adverso).
   const activarRecordatorio = async () => {
     if (pushStatus !== 'idle' || !citaId) return;
-    if (!messaging || typeof Notification === 'undefined') return;
+    if (!messaging || typeof Notification === 'undefined') {
+      setPushStatus('error');
+      setPushError('Este navegador no soporta notificaciones.');
+      return;
+    }
     setPushStatus('loading');
+    setPushError('');
     try {
       if (Notification.permission === 'default') {
         await Notification.requestPermission();
       }
       if (Notification.permission !== 'granted') {
-        setPushStatus('idle');
+        setPushStatus('error');
+        setPushError('🔕 Permiso bloqueado: actívalo en los ajustes del navegador para este sitio.');
         return;
       }
       const token = await getToken(messaging, { vapidKey: undefined });
       if (!token) {
-        setPushStatus('idle');
+        setPushStatus('error');
+        setPushError('⚠️ No se pudo obtener el token en este navegador.');
         return;
       }
       const res = await fetch(
@@ -306,10 +304,15 @@ export default function BookingApp() {
           body: JSON.stringify({ token, phone: (booking.clienteTelefono || '').replace(/\D/g, '') }),
         }
       );
-      setPushStatus(res.ok ? 'success' : 'idle');
+      if (res.ok) {
+        setPushStatus('success');
+      } else {
+        setPushStatus('error');
+        setPushError('⚠️ No se pudo activar. Revisa tu conexión e intenta de nuevo.');
+      }
     } catch {
-      // Silenciar: el usuario puede intentar de nuevo o ignorar.
-      setPushStatus('idle');
+      setPushStatus('error');
+      setPushError('⚠️ Error de red. Intenta de nuevo.');
     }
   };
 
@@ -732,6 +735,18 @@ export default function BookingApp() {
                       )}
                       {pushStatus === 'success' && (
                         <p className="text-xs text-green-600 font-semibold py-2">✅ Recordatorio activado. Te avisaremos antes de tu cita.</p>
+                      )}
+                      {pushStatus === 'error' && (
+                        <div className="py-2 space-y-2">
+                          <p className="text-xs text-red-600 font-semibold">{pushError || '⚠️ No se pudo activar el recordatorio.'}</p>
+                          <button
+                            type="button"
+                            onClick={() => { setPushStatus('idle'); setPushError(''); }}
+                            className="text-xs text-blue-600 font-bold underline"
+                          >
+                            Intentar de nuevo
+                          </button>
+                        </div>
                       )}
 
                       {/* WhatsApp ahora es opcional para dudas, no obligatorio */}
