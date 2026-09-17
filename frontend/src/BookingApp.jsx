@@ -302,7 +302,8 @@ export default function BookingApp() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token }),
+          // El teléfono verifica que quien registra es el dueño de la cita.
+          body: JSON.stringify({ token, phone: (booking.clienteTelefono || '').replace(/\D/g, '') }),
         }
       );
       setPushStatus(res.ok ? 'success' : 'idle');

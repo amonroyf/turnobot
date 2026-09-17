@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getToken, onMessage } from 'firebase/messaging';
+import { getToken, onMessage, deleteToken } from 'firebase/messaging';
 import { messaging, auth } from './firebase';
 
 /**
@@ -25,14 +25,16 @@ export default function usePushNotifications(negocioId) {
     }
   }, [negocioId]);
 
-  // Escuchar mensajes cuando la app está en primer plano.
-  // No crear Notification manual: el backend envía solo-data y el service
-  // worker la muestra en background (doble render si se duplica aquí).
+  // Mensajes con la app en primer plano: el service worker solo muestra en
+  // background, así que aquí NO se crea Notification (sería duplicado).
+  // Se emite un evento para que la UI muestre un toast en la app.
   useEffect(() => {
     if (!messaging) return;
-    const unsubscribe = onMessage(messaging, () => {});
+    const unsubscribe = onMessage(messaging, (payload) => {
+      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: payload?.data || {} }));
+    });
     return () => unsubscribe();
-  }, [negocioId]);
+  }, []);
 
   const subscribe = useCallback(async () => {
     if (!messaging) {
@@ -73,13 +75,41 @@ export default function usePushNotifications(negocioId) {
     }
   }, [negocioId]);
 
-  const unsubscribe = useCallback(() => {
-    setToken(null);
-    setIsSubscribed(false);
-    if (negocioId) {
-      localStorage.removeItem(`fcm_token_${negocioId}`);
+  // Baja real: invalida el token en FCM y lo elimina del backend para que
+  // deje de llegar push a ESTE dispositivo (antes solo borraba localStorage
+  // y el servidor seguía enviando).
+  const unsubscribe = useCallback(async () => {
+    try {
+      const user = auth.currentUser;
+      if (user && negocioId) {
+        const apiBase = import.meta.env.VITE_API_URL || '';
+        const idToken = await user.getIdToken();
+        await fetch(`${apiBase}/api/v1/b/${negocioId}/push-token`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${idToken}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ token })
+        });
+      }
+      if (messaging) {
+        try {
+          await deleteToken(messaging);
+        } catch {
+          // Si FCM ya lo invalidó, igual se limpia el resto.
+        }
+      }
+    } catch (err) {
+      console.error('Error al desactivar notificaciones:', err);
+    } finally {
+      setToken(null);
+      setIsSubscribed(false);
+      if (negocioId) {
+        localStorage.removeItem(`fcm_token_${negocioId}`);
+      }
     }
-  }, [negocioId]);
+  }, [negocioId, token]);
 
   return { permission, isSubscribed, token, subscribe, unsubscribe };
 }

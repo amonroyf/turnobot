@@ -21,6 +21,10 @@ const messaging = firebase.messaging();
 // la ÚNICA vía de visualización (una sola notificación por mensaje).
 // Si el backend volviera a enviar Webpush.Notification, NO llamar
 // showNotification aquí o las notificaciones saldrían duplicadas.
+// NOTA iOS: Apple solo despierta el SW en background si hay payload
+// "notification"; con solo-data la PWA instalada puede no mostrar nada.
+// Se mantiene solo-data (correcto en Android/desktop sin duplicar) y el
+// cliente iPhone usa el .ics/Calendar/WhatsApp como respaldo.
 messaging.onBackgroundMessage((payload) => {
   const data = payload.data || {};
   const notificationTitle = data.title || 'Turnobot';

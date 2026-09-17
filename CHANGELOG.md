@@ -18,6 +18,20 @@
 - Secreto `CRON_SECRET` (header `X-Cron-Secret`; super admin como alternativa)
 - Ventana por negocio: `reminder_hours_before` (default 2h)
 
+### Auditoría push: 3 bugs + mejoras (A–I)
+
+**Bugs corregidos:**
+- `push.go` — `registerClientPushTokenHandler` resetea `reminder_sent=false` (antes, activar tarde = recordatorio perdido)
+- Nuevo `DELETE /api/v1/b/{slug}/push-token` + `deleteToken()` en el hook: "Desactivar" ahora sí deja de enviar (antes seguía llegando)
+- `isTokenGone`/`clearOwnerToken`: tokens muertos (app borrada, token rotado) se limpian en vez de reintentarse eternamente; igual para tokens de cliente en el cron
+
+**Mejoras:**
+- `reminders.go` — `reminder_sent` solo se marca si se envió o no había token (fallos transitorios reintentan); resumen del dueño a todos sus dispositivos
+- Multi-dispositivo dueño: array `push_tokens` (ArrayUnion/ArrayRemove) + legacy `push_token`
+- Toast en app cuando el push llega con el panel abierto (`turnobot-push` + banner en `AdminDashboard`)
+- `client-push-token` verifica teléfono contra la reserva
+- `sendPushToOwner` vía caché (ahorra 1 lectura por reserva); nota de limitación iOS en el SW
+
 ### Botón "Calendario de Google" en pantalla de éxito
 
 **Archivos modificados:**

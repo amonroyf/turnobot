@@ -331,6 +331,23 @@ export default function AdminDashboard() {
   const [view, setView] = useState('agenda');
   const pushNotifications = usePushNotifications(negocio?.id);
 
+  // Toast en app para pushes que llegan con el panel abierto (primer plano):
+  // el service worker solo muestra notificación del sistema en background.
+  const [pushToast, setPushToast] = useState(null);
+  useEffect(() => {
+    const onPush = (e) => {
+      const d = e.detail || {};
+      setPushToast({ title: d.title || 'Nueva reserva', body: d.body || '' });
+    };
+    window.addEventListener('turnobot-push', onPush);
+    return () => window.removeEventListener('turnobot-push', onPush);
+  }, []);
+  useEffect(() => {
+    if (!pushToast) return;
+    const t = setTimeout(() => setPushToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [pushToast]);
+
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
   const [reservas, setReservas] = useState([]);
@@ -869,6 +886,16 @@ export default function AdminDashboard() {
         <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-widest">Modo Administrador</p>
         <p className="text-[9px] font-medium text-gray-300 mt-0.5">v{import.meta.env.VITE_APP_VERSION || '0.1.1'}</p>
       </header>
+
+      {pushToast && (
+        <button
+          onClick={() => setPushToast(null)}
+          className="mx-4 mt-3 p-4 bg-black text-white rounded-2xl shadow-lg text-left active:scale-[0.99] transition-transform"
+        >
+          <p className="text-sm font-bold">🔔 {pushToast.title}</p>
+          {pushToast.body && <p className="text-xs opacity-80 mt-1">{pushToast.body}</p>}
+        </button>
+      )}
 
       <main className="p-4 space-y-6 flex-1">
         {/* PESTAÑA: AGENDA */}

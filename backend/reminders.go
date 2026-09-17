@@ -144,35 +144,60 @@ outer:
 					title = "⏰ Recordatorio de tu cita"
 				}
 				body := fmt.Sprintf("%s en %s, %s a las %s", it.b.ServiceName, negName, fecha, hora)
-				if sendPushToClient(ctx, it.b.ClientPushToken, title, body, "/shop/"+slug, "reminder-"+it.id) {
+				sent, gone := sendPushToClient(ctx, it.b.ClientPushToken, title, body, "/shop/"+slug, "reminder-"+it.id)
+				if sent {
 					clientOK++
 				} else {
 					clientFail++
 				}
+				if gone {
+					// Token muerto: se limpia y se marca para no reintentar.
+					batch.Update(it.ref, []firestore.Update{
+						{Path: "client_push_token", Value: firestore.Delete},
+						{Path: "reminder_sent", Value: true},
+					})
+					marked++
+				} else if sent {
+					batch.Update(it.ref, []firestore.Update{{Path: "reminder_sent", Value: true}})
+					marked++
+				}
+				// Fallo transitorio: se deja sin marcar para reintentar en
+				// la próxima corrida mientras siga en ventana.
+			} else {
+				// Sin token no hay nada que enviar: se marca para no reescanear.
+				// (Si el cliente activa el aviso después, el endpoint resetea
+				// reminder_sent y el cron la retoma.)
+				batch.Update(it.ref, []firestore.Update{{Path: "reminder_sent", Value: true}})
+				marked++
 			}
 			ownerLines = append(ownerLines, fmt.Sprintf("%s %s (%s)", hora, it.b.ClientName, it.b.ServiceName))
-			batch.Update(it.ref, []firestore.Update{{Path: "reminder_sent", Value: true}})
-			marked++
 		}
 
-		if !dryRun && len(ownerLines) > 0 && neg.PushToken != "" {
-			title := fmt.Sprintf("📋 %d citas próximas en %s", len(ownerLines), negName)
-			shown := ownerLines
-			extra := ""
-			if len(shown) > 3 {
-				shown = shown[:3]
-				extra = fmt.Sprintf("\ny %d más…", len(ownerLines)-3)
-			}
-			body := ""
-			for i, ln := range shown {
-				if i > 0 {
-					body += "\n"
+		if !dryRun && len(ownerLines) > 0 {
+			if tokens := ownerTokens(neg); len(tokens) > 0 {
+				title := fmt.Sprintf("📋 %d citas próximas en %s", len(ownerLines), negName)
+				shown := ownerLines
+				extra := ""
+				if len(shown) > 3 {
+					shown = shown[:3]
+					extra = fmt.Sprintf("\ny %d más…", len(ownerLines)-3)
 				}
-				body += "• " + ln
-			}
-			body += extra
-			if sendPushToClient(ctx, neg.PushToken, title, body, "/admin", "owner-reminders") {
-				ownersOK++
+				body := ""
+				for i, ln := range shown {
+					if i > 0 {
+						body += "\n"
+					}
+					body += "• " + ln
+				}
+				body += extra
+				for _, tok := range tokens {
+					sent, gone := sendPushToClient(ctx, tok, title, body, "/admin", "owner-reminders")
+					if sent {
+						ownersOK++
+					} else if gone {
+						clearOwnerToken(ctx, slug, neg, tok)
+					}
+				}
 			}
 		}
 	}

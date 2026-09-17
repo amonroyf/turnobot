@@ -346,6 +346,8 @@ gcloud run services logs tail turnobot --region us-central1
 | `/auth/google/login` | GET | 60/min | OAuth Google Calendar |
 | `/auth/google/callback` | GET | 60/min | Callback OAuth |
 | `/api/v1/check-reminders` | POST | Cron + secret | Recordatorios push a clientes + resumen al dueño |
+| `/api/v1/b/{slug}/citas/{id}/client-push-token` | POST | Teléfono de la cita | Registrar token del cliente para su recordatorio |
+| `/api/v1/b/{slug}/push-token` | DELETE | Firebase ID token (owner) | Baja de push en un dispositivo del dueño |
 
 ### Middleware (cadena de seguridad)
 

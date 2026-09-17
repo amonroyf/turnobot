@@ -98,6 +98,9 @@ type Negocio struct {
 	// PushToken almacena el token FCM del dispositivo del dueño para
 	// recibir notificaciones push cuando un cliente reserva.
 	PushToken            string        `firestore:"push_token" json:"-"`
+	// PushTokens soporta multi-dispositivo: cada dispositivo del dueño que
+	// activa notificaciones agrega su token (register los une con ArrayUnion).
+	PushTokens           []string      `firestore:"push_tokens" json:"-"`
 	StatsCitasActivas    int           `firestore:"stats_citas_activas" json:"stats_citas_activas,omitempty"`
 	StatsTotalClientes   int           `firestore:"stats_total_clientes" json:"stats_total_clientes,omitempty"`
 	StatsIngresosTotales int64         `firestore:"stats_ingresos_totales" json:"stats_ingresos_totales,omitempty"`
@@ -377,6 +380,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 	// Registro de token push del dueño (FCM)
 	if len(parts) == 2 && parts[1] == "register-push-token" && r.Method == http.MethodPost {
 		registerPushTokenHandler(w, r, slug)
+		return
+	}
+
+	// Baja de token push del dueño (deja de recibir en ese dispositivo)
+	if len(parts) == 2 && parts[1] == "push-token" && r.Method == http.MethodDelete {
+		unregisterPushTokenHandler(w, r, slug)
 		return
 	}
 

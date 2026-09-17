@@ -51,8 +51,22 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 		return
 	}
 
-	// Guardar el token en el documento del negocio
+	// Sanity check: tokens FCM nunca superan 512 chars.
+	if len(req.Token) > 512 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "token_invalido",
+			"message": "El token parece inválido",
+		})
+		return
+	}
+
+	// Guardar el token: ArrayUnion a push_tokens (multi-dispositivo) y
+	// push_token legacy por compatibilidad.
 	_, err := firestoreClient.Collection("negocios").Doc(slug).Update(r.Context(), []firestore.Update{
+		{Path: "push_tokens", Value: firestore.ArrayUnion(req.Token)},
 		{Path: "push_token", Value: req.Token},
 	})
 	if err != nil {
@@ -81,23 +95,17 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 // lo que producía notificaciones duplicadas. Solo-data + render manual en
 // firebase-messaging-sw.js = una sola notificación.
 func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, dateStr, timeStr string) {
-	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	// Vía caché TTL (se invalida al registrar/borrar token): ahorra una
+	// lectura de Firestore por cada reserva.
+	neg, err := getCachedNegocio(ctx, slug)
 	if err != nil {
 		log.Printf("sendPush: no se pudo leer negocio %s: %v", slug, err)
 		return
 	}
 
-	var neg Negocio
-	negDoc.DataTo(&neg)
-
-	if neg.PushToken == "" {
+	tokens := ownerTokens(neg)
+	if len(tokens) == 0 {
 		log.Printf("sendPush: negocio %s no tiene push_token registrado", slug)
-		return
-	}
-
-	fcmClient, err := firebaseApp.Messaging(ctx)
-	if err != nil {
-		log.Printf("sendPush: error creando cliente FCM: %v", err)
 		return
 	}
 
@@ -107,25 +115,60 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 	// Solo-data: el service worker (firebase-messaging-sw.js) renderiza la
 	// notificación manualmente leyendo payload.data. No usar
 	// Webpush.Notification (ver nota en el comentario de la función).
-	msg := &messaging.Message{
-		Token: neg.PushToken,
-		Webpush: &messaging.WebpushConfig{
-			Data: map[string]string{
-				"title": title,
-				"body":  body,
-				"icon":  "/icons/icon-192x192.png",
-				"url":   "/admin",
-				"tag":   "new-booking",
-			},
-		},
+	for _, tok := range tokens {
+		sent, gone := sendPushToClient(ctx, tok, title, body, "/admin", "new-booking")
+		if sent {
+			log.Printf("sendPush: notificación enviada a %s", slug)
+			continue
+		}
+		if gone {
+			clearOwnerToken(ctx, slug, neg, tok)
+		}
 	}
+}
 
-	resp, err := fcmClient.Send(ctx, msg)
-	if err != nil {
-		log.Printf("sendPush: error enviando push a %s: %v", slug, err)
+// ownerTokens devuelve los tokens del dueño sin duplicados: el legacy
+// push_token más el array push_tokens (multi-dispositivo).
+func ownerTokens(neg Negocio) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, t := range append([]string{neg.PushToken}, neg.PushTokens...) {
+		t = strings.TrimSpace(t)
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// isTokenGone detecta errores FCM de token inválido, revocado o expirado
+// (app desinstalada, PWA borrada, token rotado). Esos tokens nunca volverán
+// a funcionar: hay que limpiarlos en vez de reintentar eternamente.
+func isTokenGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Requested entity was not found") ||
+		strings.Contains(msg, "UNREGISTERED") ||
+		strings.Contains(msg, "registration-token-not-registered")
+}
+
+// clearOwnerToken elimina un token muerto del negocio e invalida la caché.
+func clearOwnerToken(ctx context.Context, slug string, neg Negocio, tok string) {
+	updates := []firestore.Update{
+		{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
+	}
+	if tok == neg.PushToken {
+		updates = append(updates, firestore.Update{Path: "push_token", Value: ""})
+	}
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(ctx, updates); err != nil {
+		log.Printf("sendPush: no se pudo limpiar token muerto en %s: %v", slug, err)
 		return
 	}
-	log.Printf("sendPush: notificación enviada a %s (message_id=%s)", slug, resp)
+	negocioCache.Invalidate(slug)
+	log.Printf("sendPush: token muerto eliminado en %s", slug)
 }
 
 // sendPushToClient envía un mensaje push solo-data a un token arbitrario.
@@ -133,14 +176,14 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 // recordatorios tanto para clientes como para resúmenes del dueño.
 // Solo-data a propósito (ver nota en sendPushToOwner): el service worker
 // renderiza la notificación una sola vez leyendo payload.data.
-func sendPushToClient(ctx context.Context, token, title, body, url, tag string) bool {
+func sendPushToClient(ctx context.Context, token, title, body, url, tag string) (sent, gone bool) {
 	if token == "" {
-		return false
+		return false, false
 	}
 	fcmClient, err := firebaseApp.Messaging(ctx)
 	if err != nil {
 		log.Printf("sendPushToClient: error creando cliente FCM: %v", err)
-		return false
+		return false, false
 	}
 	msg := &messaging.Message{
 		Token: token,
@@ -157,10 +200,10 @@ func sendPushToClient(ctx context.Context, token, title, body, url, tag string) 
 	resp, err := fcmClient.Send(ctx, msg)
 	if err != nil {
 		log.Printf("sendPushToClient: error enviando push (tag=%s): %v", tag, err)
-		return false
+		return false, isTokenGone(err)
 	}
 	log.Printf("sendPushToClient: notificación enviada (tag=%s message_id=%s)", tag, resp)
-	return true
+	return true, false
 }
 
 // sendReminderToClient envía un recordatorio push al cliente (si tiene token).
@@ -217,6 +260,9 @@ func sendPushToOwnerCancellation(ctx context.Context, slug, clientName, serviceN
 // cliente cuando activa el recordatorio después de agendar.
 type registerClientPushTokenRequest struct {
 	Token string `json:"token"`
+	// Phone verifica que quien registra es el dueño de la cita (endurece el
+	// endpoint sin auth: se compara por dígitos contra user_phone).
+	Phone string `json:"phone,omitempty"`
 }
 
 // registerClientPushTokenHandler guarda el token FCM del cliente en la
@@ -277,6 +323,19 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 		return
 	}
 
+	// El teléfono debe coincidir con el de la reserva: evita que cualquiera
+	// con el citaID pise el token de otro cliente.
+	if req.Phone == "" || digitsOnly(req.Phone) != digitsOnly(b.UserPhone) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "telefono_no_coincide",
+			"message": "El teléfono no coincide con el de la reserva.",
+		})
+		return
+	}
+
 	// Solo guardar si la cita es futura (no tiene sentido un recordatorio
 	// para una cita que ya pasó).
 	if b.DateTime.Before(time.Now()) {
@@ -290,8 +349,11 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 		return
 	}
 
+	// Se resetea reminder_sent: si el cron ya pasó por esta cita (sin token),
+	// el recordatorio debe enviarse igual ahora que hay a dónde enviarlo.
 	_, err = docRef.Update(ctx, []firestore.Update{
 		{Path: "client_push_token", Value: req.Token},
+		{Path: "reminder_sent", Value: false},
 	})
 	if err != nil {
 		log.Printf("Error guardando client push token para cita %s: %v", citaID, err)
@@ -304,5 +366,58 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Recordatorio activado. Te avisaremos antes de tu cita.",
+	})
+}
+
+// unregisterPushTokenHandler elimina el token FCM de un dispositivo del dueño
+// para que deje de recibir pushes (el "Desactivar" del panel antes solo
+// borraba localStorage y el backend seguía enviando).
+// DELETE /api/v1/b/{slug}/push-token — body opcional {token}: si viene, se
+// elimina solo ese dispositivo; si no, se eliminan todos los del negocio.
+// Solo el dueño (Firebase ID token).
+func unregisterPushTokenHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Token string `json:"token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req) // best effort: sin body = todos
+	tok := strings.TrimSpace(req.Token)
+
+	ctx := r.Context()
+	updates := []firestore.Update{}
+	if tok == "" {
+		updates = append(updates,
+			firestore.Update{Path: "push_token", Value: ""},
+			firestore.Update{Path: "push_tokens", Value: []string{}},
+		)
+	} else {
+		updates = append(updates,
+			firestore.Update{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
+		)
+		var neg Negocio
+		if doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx); err == nil {
+			doc.DataTo(&neg)
+			if neg.PushToken == tok {
+				updates = append(updates, firestore.Update{Path: "push_token", Value: ""})
+			}
+		}
+	}
+
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(ctx, updates); err != nil {
+		log.Printf("Error borrando push token para %s: %v", slug, err)
+		http.Error(w, "Error eliminando token", http.StatusInternalServerError)
+		return
+	}
+
+	negocioCache.Invalidate(slug)
+	log.Printf("push-token: token(s) eliminados para %s (uno=%v)", slug, tok != "")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Notificaciones desactivadas en este dispositivo",
 	})
 }
