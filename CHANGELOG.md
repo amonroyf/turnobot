@@ -45,6 +45,11 @@
 - `client-push-token` verifica teléfono contra la reserva
 - `sendPushToOwner` vía caché (ahorra 1 lectura por reserva); nota de limitación iOS en el SW
 
+### Botón "Enviarme una prueba" (push del dueño)
+
+- `POST /api/v1/b/{slug}/push-test` (solo dueño): push de prueba a todos sus dispositivos, con conteo `sent/total`; limpia tokens muertos que encuentre
+- `AdminDashboard.jsx` — botón en la tarjeta de push (Ajustes) con estado de envío y mensaje de resultado
+
 ### Push de empleados conectado + paridad con dueño
 
 - `main.go`/`push.go` — `sendPushToEmployee`: push al profesional asignado en reserva nueva y en el cron (`emp_ok` en la respuesta); limpia tokens muertos; campo `PushToken` en `Employee` (oculto en JSON)

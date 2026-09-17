@@ -405,6 +405,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Prueba de push del dueño
+	if len(parts) == 2 && parts[1] == "push-test" && r.Method == http.MethodPost {
+		sendTestPushHandler(w, r, slug)
+		return
+	}
+
 	// Registro de token push del CLIENTE en una cita específica.
 	// POST /api/v1/b/{slug}/citas/{citaID}/client-push-token
 	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "client-push-token" && r.Method == http.MethodPost {

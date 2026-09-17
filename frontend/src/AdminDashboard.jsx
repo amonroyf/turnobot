@@ -450,6 +450,34 @@ export default function AdminDashboard() {
 
   const logout = () => signOut(auth);
 
+  // Prueba de push: envía una notificación a los dispositivos del dueño para
+  // verificar que llegan (útil al activar en un celular nuevo).
+  const [probandoPush, setProbandoPush] = useState(false);
+  const [pushTestMsg, setPushTestMsg] = useState('');
+  const enviarPushPrueba = async () => {
+    if (!user || !negocio || probandoPush) return;
+    setProbandoPush(true);
+    setPushTestMsg('');
+    try {
+      const idToken = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/push-test`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success) {
+        setPushTestMsg(data.sent > 0
+          ? `✅ Prueba enviada (${data.sent}/${data.total}). Revisa tus dispositivos.`
+          : '⚠️ No se pudo enviar a ningún dispositivo. Desactiva y vuelve a activar las notificaciones.');
+      } else {
+        setPushTestMsg('⚠️ No se pudo enviar la prueba. Intenta de nuevo.');
+      }
+    } catch {
+      setPushTestMsg('⚠️ Error de red al enviar la prueba.');
+    }
+    setProbandoPush(false);
+  };
+
   const copiarContenido = async (tipo) => {
     const url = `${window.location.origin}/shop/${negocio.id}`;
     const mensajeWhatsApp = `¡Hola! 👋 Te compartimos nuestro enlace de agendamiento en línea de *${negocio.name}*\n\nAhora puedes elegir tu servicio, ver nuestros horarios disponibles en tiempo real y reservar tu cita en segundos sin esperar confirmación:\n👉 ${url}\n\n¡Te esperamos! ✨`;
@@ -1210,6 +1238,16 @@ export default function AdminDashboard() {
                     <p className="text-xs font-bold text-green-800">✅ Notificaciones activas</p>
                     <p className="text-[10px] text-green-600 mt-1">Recibirás alertas cuando haya nuevas reservas.</p>
                   </div>
+                  <button
+                    onClick={enviarPushPrueba}
+                    disabled={probandoPush}
+                    className="w-full py-3 bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 active:scale-95 transition-transform disabled:opacity-50"
+                  >
+                    {probandoPush ? '⏳ Enviando prueba...' : '📨 Enviarme una prueba'}
+                  </button>
+                  {pushTestMsg && (
+                    <p className="text-[11px] font-semibold text-center text-gray-600">{pushTestMsg}</p>
+                  )}
                   <button
                     onClick={pushNotifications.unsubscribe}
                     className="w-full py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"

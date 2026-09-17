@@ -389,6 +389,42 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 	})
 }
 
+// sendTestPushHandler envía un push de prueba a todos los dispositivos del
+// dueño para verificar que las notificaciones llegan a este celular.
+// POST /api/v1/b/{slug}/push-test — solo el dueño (Firebase ID token).
+func sendTestPushHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	ctx := r.Context()
+	neg, err := getCachedNegocio(ctx, slug)
+	if err != nil {
+		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
+		return
+	}
+	tokens := ownerTokens(neg)
+	sent := 0
+	for _, tok := range tokens {
+		if ok, gone := sendPushToClient(ctx, tok,
+			"🔔 Prueba de notificaciones",
+			"Si ves este mensaje, las notificaciones funcionan en este dispositivo.",
+			"/admin", "push-test"); ok {
+			sent++
+		} else if gone {
+			clearOwnerToken(ctx, slug, neg, tok)
+		}
+	}
+	log.Printf("push-test: %d/%d enviados a %s", sent, len(tokens), slug)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"sent":    sent,
+		"total":   len(tokens),
+		"message": "Prueba enviada",
+	})
+}
+
 // unregisterPushTokenHandler elimina el token FCM de un dispositivo del dueño
 // para que deje de recibir pushes (el "Desactivar" del panel antes solo
 // borraba localStorage y el backend seguía enviando).
