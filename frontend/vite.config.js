@@ -21,7 +21,9 @@ export default defineConfig(({mode}) => ({
         display: 'standalone',
         orientation: 'portrait',
         scope: '/',
-        start_url: '/admin',
+        // '/' y no '/admin': quien instala desde la tienda debe abrir la
+        // tienda, no el muro de login del dueño.
+        start_url: '/',
         icons: [
           {
             src: 'icons/icon-192x192.png',

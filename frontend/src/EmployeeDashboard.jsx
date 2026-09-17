@@ -23,6 +23,22 @@ export default function EmployeeDashboard() {
 
   const pushNotifications = useEmployeePushNotifications(slug, token, empId);
 
+  // Toast en app para pushes con el portal abierto (primer plano).
+  const [pushToast, setPushToast] = useState(null);
+  useEffect(() => {
+    const onPush = (e) => {
+      const d = e.detail || {};
+      setPushToast({ title: d.title || 'Aviso', body: d.body || '' });
+    };
+    window.addEventListener('turnobot-push', onPush);
+    return () => window.removeEventListener('turnobot-push', onPush);
+  }, []);
+  useEffect(() => {
+    if (!pushToast) return;
+    const t = setTimeout(() => setPushToast(null), 8000);
+    return () => clearTimeout(t);
+  }, [pushToast]);
+
   useEffect(() => {
     const fetchNegocio = async () => {
       try {
@@ -258,7 +274,14 @@ export default function EmployeeDashboard() {
           <div className="flex items-center gap-2">
             {messaging && typeof Notification !== 'undefined' && (
               pushNotifications.isSubscribed ? (
-                <span className="text-[10px] text-green-600 font-bold">🔔 Activo</span>
+                <button
+                  onClick={() => pushNotifications.unsubscribe()}
+                  className="text-[10px] text-gray-500 font-bold underline"
+                >
+                  🔔 Desactivar
+                </button>
+              ) : pushNotifications.permission === 'denied' ? (
+                <span className="text-[10px] text-red-500 font-bold">🔕 Bloqueadas</span>
               ) : (
                 <button
                   onClick={pushNotifications.subscribe}
@@ -274,6 +297,16 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       </header>
+
+      {pushToast && (
+        <button
+          onClick={() => setPushToast(null)}
+          className="mx-4 mt-3 p-4 bg-black text-white rounded-2xl shadow-lg text-left active:scale-[0.99] transition-transform"
+        >
+          <p className="text-sm font-bold">🔔 {pushToast.title}</p>
+          {pushToast.body && <p className="text-xs opacity-80 mt-1">{pushToast.body}</p>}
+        </button>
+      )}
 
       <main className="p-4 space-y-6">
         {loading && (

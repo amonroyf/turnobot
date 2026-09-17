@@ -127,6 +127,26 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 	}
 }
 
+// sendPushToEmployee envía un aviso al profesional (reserva nueva o próxima
+// cita) a la URL de su portal. Si el token está muerto se limpia del empleado.
+// Retorna true si FCM lo aceptó.
+func sendPushToEmployee(ctx context.Context, slug, empID, token, title, body, tag string) bool {
+	if strings.TrimSpace(token) == "" {
+		return false
+	}
+	sent, gone := sendPushToClient(ctx, token, title, body, "/employee/"+slug, tag)
+	if gone {
+		if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+			{Path: "push_token", Value: ""},
+		}); err != nil {
+			log.Printf("empPush: no se pudo limpiar token muerto %s/%s: %v", slug, empID, err)
+		} else {
+			log.Printf("empPush: token muerto eliminado %s/%s", slug, empID)
+		}
+	}
+	return sent
+}
+
 // ownerTokens devuelve los tokens del dueño sin duplicados: el legacy
 // push_token más el array push_tokens (multi-dispositivo).
 func ownerTokens(neg Negocio) []string {

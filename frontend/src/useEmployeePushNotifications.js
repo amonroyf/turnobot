@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getToken, onMessage } from 'firebase/messaging';
+import { getToken, onMessage, deleteToken } from 'firebase/messaging';
 import { messaging } from './firebase';
 
 /**
@@ -25,11 +25,15 @@ export default function useEmployeePushNotifications(slug, empToken, empId) {
     }
   }, [slug, empToken, empId]);
 
+  // Primer plano: el SW solo muestra en background; se emite evento para
+  // que la UI muestre un toast (no crear Notification aquí: duplicaría).
   useEffect(() => {
     if (!messaging) return;
-    const unsubscribe = onMessage(messaging, () => {});
+    const unsubscribe = onMessage(messaging, (payload) => {
+      window.dispatchEvent(new CustomEvent('turnobot-push', { detail: payload?.data || {} }));
+    });
     return () => unsubscribe();
-  }, [slug]);
+  }, []);
 
   const subscribe = useCallback(async () => {
     if (!messaging) {
@@ -64,12 +68,33 @@ export default function useEmployeePushNotifications(slug, empToken, empId) {
     }
   }, [slug, empToken, empId]);
 
-  const unsubscribe = useCallback(() => {
-    setIsSubscribed(false);
-    if (slug && empId) {
-      localStorage.removeItem(`emp_fcm_${slug}_${empId}`);
+  // Baja real: borra el token en el backend y lo invalida en FCM para que
+  // deje de llegar push a este dispositivo (antes solo borraba localStorage).
+  const unsubscribe = useCallback(async () => {
+    try {
+      if (slug && empToken && empId) {
+        const apiBase = import.meta.env.VITE_API_URL || '';
+        await fetch(`${apiBase}/api/v1/b/${slug}/employee/${empId}/push-token`, {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${empToken}` }
+        });
+      }
+      if (messaging) {
+        try {
+          await deleteToken(messaging);
+        } catch {
+          // Si FCM ya lo invalidó, igual se limpia el resto.
+        }
+      }
+    } catch (err) {
+      console.error('Error al desactivar notificaciones:', err);
+    } finally {
+      setIsSubscribed(false);
+      if (slug && empId) {
+        localStorage.removeItem(`emp_fcm_${slug}_${empId}`);
+      }
     }
-  }, [slug, empId]);
+  }, [slug, empToken, empId]);
 
   return { permission, isSubscribed, subscribe, unsubscribe };
 }

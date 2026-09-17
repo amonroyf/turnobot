@@ -45,6 +45,14 @@
 - `client-push-token` verifica teléfono contra la reserva
 - `sendPushToOwner` vía caché (ahorra 1 lectura por reserva); nota de limitación iOS en el SW
 
+### Push de empleados conectado + paridad con dueño
+
+- `main.go`/`push.go` — `sendPushToEmployee`: push al profesional asignado en reserva nueva y en el cron (`emp_ok` en la respuesta); limpia tokens muertos; campo `PushToken` en `Employee` (oculto en JSON)
+- Nuevo `DELETE /api/v1/b/{slug}/employee/{empId}/push-token` (baja real con token de empleado)
+- `useEmployeePushNotifications` — baja real (`deleteToken` + backend), evento `turnobot-push` en primer plano; `EmployeeDashboard` con botón Desactivar, aviso de bloqueadas y toast
+- `vite.config.js` — `start_url: '/'` (antes `/admin`: quien instalaba desde la tienda abría el login del dueño)
+- Validación de longitud (512) en registro de token de empleado
+
 ### Auditoría de zonas horarias (hora colombiana)
 
 - `AdminDashboard.jsx` — la query de agenda usaba medianoche del dispositivo; ahora usa medianoche en zona del negocio (`fechaHoraAUtc`). Con TZ distinta se excluían citas reales de hoy.

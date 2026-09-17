@@ -349,6 +349,8 @@ gcloud run services logs tail turnobot --region us-central1
 | `/api/v1/check-reminders` | POST | Cron + secret | Recordatorios push a clientes + resumen al dueño |
 | `/api/v1/b/{slug}/citas/{id}/client-push-token` | POST | Teléfono de la cita | Registrar token del cliente para su recordatorio |
 | `/api/v1/b/{slug}/push-token` | DELETE | Firebase ID token (owner) | Baja de push en un dispositivo del dueño |
+| `/api/v1/b/{slug}/employee/{id}/register-push-token` | POST | Token de empleado (PIN) | Registrar push del profesional (recibe reservas y recordatorios) |
+| `/api/v1/b/{slug}/employee/{id}/push-token` | DELETE | Token de empleado (PIN) | Baja de push del profesional |
 
 ### Middleware (cadena de seguridad)
 

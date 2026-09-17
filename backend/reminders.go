@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -87,7 +88,7 @@ func checkRemindersHandler(w http.ResponseWriter, r *http.Request) {
 		ClientPush bool   `json:"client_push"`
 	}
 	preview := []previewItem{}
-	clientOK, clientFail, ownersOK, marked := 0, 0, 0, 0
+	clientOK, clientFail, ownersOK, empOK, marked := 0, 0, 0, 0, 0
 	truncated := false
 	batch := firestoreClient.Batch()
 
@@ -112,6 +113,18 @@ outer:
 		negName := neg.Name
 		if negName == "" {
 			negName = slug
+		}
+
+		// Tokens push de los profesionales (una lectura por negocio, no por cita).
+		empTokens := map[string]string{}
+		if empsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll(); err != nil {
+			log.Printf("checkReminders: no se pudieron leer empleados de %s: %v", slug, err)
+		} else {
+			for _, d := range empsDocs {
+				if t, ok := d.Data()["push_token"].(string); ok && strings.TrimSpace(t) != "" {
+					empTokens[d.Ref.ID] = t
+				}
+			}
 		}
 
 		sort.Slice(list, func(i, j int) bool { return list[i].b.DateTime.Before(list[j].b.DateTime) })
@@ -170,6 +183,13 @@ outer:
 				batch.Update(it.ref, []firestore.Update{{Path: "reminder_sent", Value: true}})
 				marked++
 			}
+			// Aviso al profesional asignado (no afecta el marcado: es informativo).
+			if tok, ok := empTokens[it.b.EmpID]; ok {
+				empBody := fmt.Sprintf("%s con %s, %s a las %s", it.b.ServiceName, it.b.ClientName, fecha, hora)
+				if sendPushToEmployee(ctx, slug, it.b.EmpID, tok, "⏰ Tu próxima cita", empBody, "emp-reminder-"+it.id) {
+					empOK++
+				}
+			}
 			ownerLines = append(ownerLines, fmt.Sprintf("%s %s (%s)", hora, it.b.ClientName, it.b.ServiceName))
 		}
 
@@ -208,17 +228,18 @@ outer:
 		}
 	}
 
-	log.Printf("checkReminders: dry_run=%v citas=%d client_ok=%d client_fail=%d owners=%d truncated=%v",
-		dryRun, marked+len(preview), clientOK, clientFail, ownersOK, truncated)
+	log.Printf("checkReminders: dry_run=%v citas=%d client_ok=%d client_fail=%d owners=%d emp_ok=%d truncated=%v",
+		dryRun, marked+len(preview), clientOK, clientFail, ownersOK, empOK, truncated)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":         true,
-		"dry_run":         dryRun,
+		"success":          true,
+		"dry_run":          dryRun,
 		"citas_procesadas": marked,
-		"client_ok":       clientOK,
-		"client_fail":     clientFail,
-		"owners_notified": ownersOK,
-		"truncated":       truncated,
-		"preview":         preview,
+		"client_ok":        clientOK,
+		"client_fail":      clientFail,
+		"owners_notified":  ownersOK,
+		"emp_ok":           empOK,
+		"truncated":        truncated,
+		"preview":          preview,
 	})
 }

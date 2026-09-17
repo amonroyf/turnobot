@@ -147,6 +147,9 @@ type Employee struct {
 	// LoginPIN es el PIN hasheado con bcrypt para login del empleado.
 	// json:"-" evita que se envíe en la API pública.
 	LoginPIN string `firestore:"login_pin" json:"-"`
+	// PushToken es el token FCM del dispositivo del empleado para avisos de
+	// sus citas (reserva nueva y recordatorios del cron).
+	PushToken string `firestore:"push_token" json:"-"`
 }
 
 // Service offered by a business.
@@ -375,6 +378,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 	// Registrar push token del empleado: POST /api/v1/b/{slug}/employee/{empId}/register-push-token
 	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "register-push-token" && r.Method == http.MethodPost {
 		employeeRegisterPushTokenHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Baja de push del empleado: DELETE /api/v1/b/{slug}/employee/{empId}/push-token
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "push-token" && r.Method == http.MethodDelete {
+		employeeUnregisterPushTokenHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -876,6 +885,13 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Push notification fire-and-forget: notificar al dueño que hay reserva nueva
 	go sendPushToOwner(context.Background(), slug, req.ClienteNombre, serviceName,
 		eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04"))
+
+	// Push al profesional asignado (si activó notificaciones en su portal).
+	go sendPushToEmployee(context.Background(), slug, req.EmpleadoID, empData.PushToken,
+		fmt.Sprintf("📅 Nueva reserva: %s", req.ClienteNombre),
+		fmt.Sprintf("%s — %s a las %s", serviceName,
+			eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04")),
+		"emp-booking-"+citaID)
 }
 
 
@@ -2650,13 +2666,24 @@ func employeeRegisterPushTokenHandler(w http.ResponseWriter, r *http.Request, sl
 	}
 
 	var req registerPushTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Token == "" {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Token) == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "token_requerido",
 			"message": "El campo token es requerido",
+		})
+		return
+	}
+	req.Token = strings.TrimSpace(req.Token)
+	if len(req.Token) > 512 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "token_invalido",
+			"message": "El token parece inválido",
 		})
 		return
 	}
@@ -2675,6 +2702,32 @@ func employeeRegisterPushTokenHandler(w http.ResponseWriter, r *http.Request, sl
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Token push registrado",
+	})
+}
+
+// DELETE /api/v1/b/{slug}/employee/{empId}/push-token
+// Baja de push del empleado: deja de recibir avisos en su dispositivo.
+func employeeUnregisterPushTokenHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID != empID {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+		{Path: "push_token", Value: ""},
+	}); err != nil {
+		log.Printf("Error borrando push token empleado %s/%s: %v", slug, empID, err)
+		http.Error(w, "Error eliminando token", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Notificaciones desactivadas",
 	})
 }
 
