@@ -404,7 +404,6 @@ export default function AdminDashboard() {
           onSnapshot(qReservas, (snapshot) => {
             const citas = snapshot.docs
               .map((d) => ({ id: d.id, ...d.data() }))
-              .filter((c) => c.cancelled !== true)
               .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
             setReservas(citas);
           }, (error) => console.error("Error consultando reservas:", error));
