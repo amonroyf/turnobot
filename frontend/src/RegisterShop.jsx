@@ -10,7 +10,6 @@ import {
   query,
   where,
   getDocs,
-  getDoc,
   setDoc,
 } from 'firebase/firestore';
 import { auth, provider, db } from './firebase';
@@ -122,13 +121,18 @@ export default function RegisterShop() {
     }
 
     try {
-      // Verificar y crear (getDoc + setDoc) para evitar cuelgues de runTransaction en headless.
-      const docRef = doc(db, 'negocios', slug);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
+      // El doc del negocio ya no es de lectura pública (guarda secretos en
+      // privado/): la disponibilidad del enlace se valida por el backend.
+      const API = import.meta.env.VITE_API_URL || '';
+      const res = await fetch(`${API}/api/v1/b/${slug}/existe`);
+      const data = await res.json().catch(() => null);
+      if (data?.exists) {
         throw new Error('slug-en-uso');
       }
-      await setDoc(docRef, {
+      // Crear con owner_uid propio (las reglas lo exigen y lo verifican).
+      // Si dos personas piden el mismo enlace a la vez, gana una y la otra
+      // recibe error de permiso: se traduce abajo a "en uso".
+      await setDoc(doc(db, 'negocios', slug), {
         name: formData.name,
         owner_uid: user.uid,
         whatsapp: '',
@@ -146,7 +150,7 @@ export default function RegisterShop() {
       navigate('/admin');
     } catch (err) {
       console.error(err);
-      if (err.message === 'slug-en-uso') {
+      if (err.message === 'slug-en-uso' || err.code === 'permission-denied') {
         setError('Este enlace ya está en uso. Por favor, elige otro.');
       } else {
         setError('Hubo un error al crear la tienda. Intenta de nuevo.');

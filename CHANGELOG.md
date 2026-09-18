@@ -1,5 +1,33 @@
 # Changelog — Turnobot
 
+## 2026-09-18 (Firestore rules: tokens fuera del doc público)
+
+**Hallazgo (auditoría S1 incompleta):** `negocios/{slug}` era de lectura pública Y guarda `push_token/push_tokens` del dueño (y el campo `refresh_token` existe en el esquema). Cualquiera con el slug leía los tokens FCM.
+- Tokens del dueño migrados a `negocios/{slug}/privado/notificaciones` (solo dueño/superadmin; el backend usa Admin SDK). Lectura con fallback + migración sola al primer uso; registro/baja limpian los campos viejos.
+- `negocios/{slug}`: lectura solo dueño/superadmin (la página pública usa el API sanitizado). `servicios` sigue público (solo nombre/duración/precio).
+- Nueva subcolección `privado/{doc}` en reglas (denegada a terceros).
+- Validación de rangos en reglas para las 4 políticas (`cancel_window_hours` 1-72, `booking_window_days` 1-365, tope/día 1-20, `min_notice` 0-10080); el backend también acota.
+- Nuevo `GET /api/v1/b/{slug}/existe` (público, sin datos sensibles) para validar el enlace en el registro; `RegisterShop` ya no lee el doc directo.
+- Correcciones que exige el despliegue: `no-show` sin credencial = 401 antes de tocar BD; tests viejos reparados (`TestCancelIdempotenteYLiberaSlot` con auth de cliente + ventana 2h; suite completa en verde con emulador).
+- **Desplegar reglas con:** `TOKEN=$(gcloud auth print-access-token) node scripts/deploy-rules.mjs` + redesplegar backend (`only-backend`).
+
+## 2026-09-18 (reglas comparadas con el mercado y corregidas)
+
+Comparativa contra Fresha/Booksy/Vagaro/Mindbody/Pabau. Ver tabla en `backend/README.md`.
+
+**Corregido (desvíos reales):**
+- Ventana de cancelación configurable: nuevo `cancel_window_hours` (default **24h** como el mercado, tope 1-72h; antes 2h fijas). Aplica a cancelar y reprogramar; `cancelable` de `GET /citas` usa la misma ventana. El dueño la edita en Admin → "Tus reglas de reserva" (nueva tarjeta: ventana, aviso mínimo, días visibles, tope/día).
+- Citas pasadas: nadie las cancela ni las mueve (el doc lo prometía pero el código lo permitía). La herramienta es "No llegó".
+- Deshacer ampliado: cita de hoy **o acción <24h** (nuevo `no_show_at`; el `cancelled_at` ya existía). Antes un no-show marcado tarde no se podía corregir nunca.
+- Recordatorio push: default **24h** (antes 2h) y techo de escaneo 6h → **72h** (cubre 24/48h del mercado).
+- Tope diario: el mensaje 409 decía "3" aunque el negocio configurara otro valor; ahora usa el real.
+- Rate limit: el estricto (10/min) frenaba TODOS los POST con llave solo-IP (un wifi compartido bloqueaba a todos). Ahora solo `book`/`reschedule` con llave IP+negocio.
+- Slots mock (sin Calendar): tope 12 → 48 (se ocultaba la tarde completa).
+- Contador `no_shows` por cliente (como el reporte Cancellation & No-Show del mercado): visible en CRM y CSV; se revierte al deshacer.
+- Docs que mentían corregidos: skill (tope "1/día" → 3 configurable; ventana 2h → configurable) y e2e `reglas-negocio` (esperaba un `cancel_window` 403 que no existía; ahora prueba la regla real: 409 `too_late_to_cancel`).
+
+**Brecha consciente (no implementada):** seña/cuota de no-show con tarjeta en archivo (Booksy/Vagaro/Pabau) — requiere pagos en línea (PSE/Nequi/Bold). La prevención actual es ventana 24h + contador + recordatorio.
+
 ## 2026-09-18 (backend: reglas por actor + reprogramar)
 
 ### Reglas de negocio que se exigían en docs pero no en código

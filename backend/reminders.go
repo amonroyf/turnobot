@@ -14,8 +14,10 @@ import (
 )
 
 // maxReminderScan acota la ventana de búsqueda en Firestore. La ventana real
-// por cita la define cada negocio (reminder_hours_before, default 2h).
-const maxReminderScan = 6 * time.Hour
+// por cita la define cada negocio (reminder_hours_before, default 24h).
+// 72h cubre el estándar del mercado (aviso 24/48h antes); configuraciones
+// mayores se capan a este techo.
+const maxReminderScan = 72 * time.Hour
 
 // maxRemindersPerRun acota el trabajo por ejecución para no exceder el
 // WriteTimeout del servidor (15s) si algún día hay muchas citas juntas.
@@ -103,7 +105,7 @@ outer:
 		negDoc.DataTo(&neg)
 		_, hours := negocioReminders(ctx, slug)
 		if hours <= 0 {
-			hours = 2
+			hours = 24
 		}
 		if hours > int(maxReminderScan/time.Hour) {
 			hours = int(maxReminderScan / time.Hour)
@@ -194,7 +196,7 @@ outer:
 		}
 
 		if !dryRun && len(ownerLines) > 0 {
-			if tokens := ownerTokens(neg); len(tokens) > 0 {
+			if tokens := ownerPushTokens(ctx, slug); len(tokens) > 0 {
 				title := fmt.Sprintf("📋 %d citas próximas en %s", len(ownerLines), negName)
 				shown := ownerLines
 				extra := ""
@@ -215,7 +217,7 @@ outer:
 					if sent {
 						ownersOK++
 					} else if gone {
-						clearOwnerToken(ctx, slug, neg, tok)
+						clearOwnerToken(ctx, slug, tok)
 					}
 				}
 			}

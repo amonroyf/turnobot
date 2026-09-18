@@ -96,14 +96,27 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		return
 	}
 
-	// Ventana de 2h para el cliente (igual que cancelar); dueño/equipo libres.
-	if isClient && time.Until(b.DateTime) < 2*time.Hour {
+	// Las citas pasadas no se mueven: la herramienta es "No llegó" o "Deshacer".
+	if time.Now().After(b.DateTime) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "cita_pasada",
+			"message": "Esta cita ya pasó. Si el cliente no vino, márcala como No llegó.",
+		})
+		return
+	}
+
+	// Ventana del cliente (igual que al cancelar); dueño/equipo libres.
+	ventanaCancel := negocioCancelWindow(ctx, slug)
+	if isClient && !clientePuedeCancelar(b.DateTime, time.Now(), ventanaCancel) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "too_late_to_move",
-			"message": "Ya falta poco para tu cita. Para cambios de última hora, escribe directamente al local.",
+			"message": fmt.Sprintf("Solo puedes mover tu cita hasta %d horas antes. Para cambios de última hora, escribe directamente al local.", ventanaCancel),
 		})
 		return
 	}

@@ -261,11 +261,29 @@ func deleteCita(t *testing.T, slug, id string) int {
 	return rec.Code
 }
 
+// deleteCitaComoCliente cancela con el header del cliente (flujo real de
+// MisCitas): sin esto el handler responde 403 por falta de autorización.
+func deleteCitaComoCliente(t *testing.T, slug, id, phone string) int {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+id, nil)
+	req.Header.Set("X-Client-Phone", phone)
+	rec := httptest.NewRecorder()
+	cancelCitaHandler(rec, req, slug, id)
+	return rec.Code
+}
+
 func TestCancelIdempotenteYLiberaSlot(t *testing.T) {
 	testFirestoreClient(t)
 	ctx := context.Background()
 	slug := slugUnico("test-cancel")
 	seedTienda(t, ctx, slug)
+	// Ventana corta para que la cita de mañana sea cancelable por el cliente
+	// (el default de 24h la bloquearía según la hora de corrida).
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"cancel_window_hours": 2,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
 	phone := "+573001234567"
 	fecha := mañanaStr()
 
@@ -290,10 +308,10 @@ func TestCancelIdempotenteYLiberaSlot(t *testing.T) {
 		t.Fatal("el slot ocupado no debió listarse libre")
 	}
 
-	if c := deleteCita(t, slug, ids[0]); c != http.StatusOK {
+	if c := deleteCitaComoCliente(t, slug, ids[0], phone); c != http.StatusOK {
 		t.Fatalf("cancel 1 code=%d", c)
 	}
-	if c := deleteCita(t, slug, ids[0]); c != http.StatusOK {
+	if c := deleteCitaComoCliente(t, slug, ids[0], phone); c != http.StatusOK {
 		t.Fatalf("cancel 2 (idempotente) code=%d", c)
 	}
 	if v := visitasCliente(t, ctx, slug, phone); v != 0 {

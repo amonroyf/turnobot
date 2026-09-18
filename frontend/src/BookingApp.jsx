@@ -568,7 +568,7 @@ export default function BookingApp() {
       timezone: negocio?.timezone || 'America/Bogota',
       notas: booking.clienteNotas || '',
       reminderDias: negocio?.reminder_days_before || 1,
-      reminderHoras: negocio?.reminder_hours_before || 2,
+      reminderHoras: negocio?.reminder_hours_before || 24,
     });
   };
 

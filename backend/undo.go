@@ -14,9 +14,11 @@ import (
 
 // undoCitaHandler deshace una cancelación o no-show de una cita.
 // POST /api/v1/b/{slug}/citas/{citaID}/undo
-// Solo permite deshacer si la cita fue cancelada/marcada hoy (mismo día
-// en la zona horaria del negocio). Si se deshace una cancelación, se
-// recrea el evento de Google Calendar (cancelar lo había borrado).
+// Ventana: la cita es de hoy (zona del negocio) O la acción se hizo hace
+// menos de 24h (así se puede corregir al día siguiente un no-show marcado
+// tarde; antes era imposible porque la cita pasada nunca es "hoy").
+// Si se deshace una cancelación, se recrea el evento de Google Calendar
+// (cancelar lo había borrado).
 // Puede ser invocado por: el dueño o el empleado asignado.
 func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
 	ctx := r.Context()
@@ -56,17 +58,26 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		return
 	}
 
-	// RESTRICCIÓN DE TIEMPO: solo mismo día (zona horaria del negocio).
+	// VENTANA: cita de hoy (zona del negocio) O acción reciente (<24h).
+	// El no-show se marca sobre citas ya pasadas, así que exigir "cita de hoy"
+	// impedía corregirlo al día siguiente. Guardamos cancelled_at/no_show_at
+	// al marcar para medir la ventana desde la acción, no desde la cita.
 	loc := shopLocation(ctx, slug)
 	hoy := time.Now().In(loc).Format("2006-01-02")
 	fechaCita := b.DateTime.In(loc).Format("2006-01-02")
-	if fechaCita != hoy {
+	accionReciente := false
+	if wasCancelled {
+		accionReciente = marcaReciente(doc.Data()["cancelled_at"], 24*time.Hour)
+	} else {
+		accionReciente = marcaReciente(doc.Data()["no_show_at"], 24*time.Hour)
+	}
+	if fechaCita != hoy && !accionReciente {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
-			"error":   "outside_same_day",
-			"message": "Solo se puede deshacer una acción del mismo día.",
+			"error":   "outside_window",
+			"message": "Solo se puede deshacer el mismo día o dentro de las 24 horas de la acción.",
 		})
 		return
 	}
@@ -93,9 +104,10 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		}
 		if stillCancelled {
 			updates = append(updates, firestore.Update{Path: "cancelled", Value: false})
-			updates = append(updates, firestore.Update{Path: "cancelled_at", Value: nil})
+			updates = append(updates, firestore.Update{Path: "cancelled_at", Value: firestore.Delete})
 		} else {
 			updates = append(updates, firestore.Update{Path: "no_show", Value: false})
+			updates = append(updates, firestore.Update{Path: "no_show_at", Value: firestore.Delete})
 		}
 		if err := tx.Update(docRef, updates); err != nil {
 			return err
@@ -103,6 +115,14 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
 		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, 1, b.Price), firestore.MergeAll); err != nil {
 			return err
+		}
+		if !stillCancelled {
+			// Revertir el contador de no-shows del cliente.
+			if err := tx.Set(cliRef, map[string]interface{}{
+				"no_shows": firestore.Increment(-1),
+			}, firestore.MergeAll); err != nil {
+				return err
+			}
 		}
 		negRef := firestoreClient.Collection("negocios").Doc(slug)
 		return tx.Set(negRef, negocioStatsData(1, b.Price), firestore.MergeAll)
@@ -178,6 +198,19 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		"action":     action,
 		"date_time":  b.DateTime.Format(time.RFC3339),
 	})
+}
+
+// marcaReciente dice si una marca de tiempo de Firestore (cancelled_at,
+// no_show_at) ocurrió dentro de la ventana. Acepta time.Time (lectura
+// directa) y fishtimestamps; ausente o ilegible = false.
+func marcaReciente(v interface{}, ventana time.Duration) bool {
+	if v == nil {
+		return false
+	}
+	if t, ok := v.(time.Time); ok && !t.IsZero() {
+		return time.Since(t) <= ventana
+	}
+	return false
 }
 
 // incrementCliente suma de vuelta una visita y el gasto del servicio al

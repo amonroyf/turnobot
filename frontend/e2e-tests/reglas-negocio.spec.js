@@ -95,35 +95,38 @@ test('1. Slots solo dentro de la jornada operativa 10:00-14:00', async () => {
   console.log('SLOTS:', slots.join(','));
 });
 
-test('2. Ventana de 2 horas para cancelación del cliente', async () => {
+test('2. Ventana de cancelación del cliente (default 24h, configurable)', async () => {
   const en30Min = new Date(Date.now() + 30 * 60 * 1000);
-  const manana = new Date(Date.now() + 86400000);
+  const en48h = new Date(Date.now() + 48 * 3600 * 1000);
+  const phone = '3100000000';
 
   const cercaId = await crearReserva({ dateTime: en30Min });
-  const libreId = await crearReserva({ dateTime: manana });
+  const libreId = await crearReserva({ dateTime: en48h });
 
-  // Cliente sin token: menos de 2h -> 403
+  // Cliente con su teléfono: menos de 24h -> 409 too_late_to_cancel
   const bloqueada = await fetch(`${API}/api/v1/b/${slug}/citas/${cercaId}`, {
     method: 'DELETE',
+    headers: { 'X-Client-Phone': phone },
   });
-  expect(bloqueada.status).toBe(403);
+  expect(bloqueada.status).toBe(409);
   const body = await bloqueada.json();
-  expect(body.error).toBe('cancel_window');
+  expect(body.error).toBe('too_late_to_cancel');
 
-  // Cliente sin token: turno de mañana -> permitido
+  // Cliente con su teléfono: turno en 48h -> permitido
   const permitida = await fetch(`${API}/api/v1/b/${slug}/citas/${libreId}`, {
     method: 'DELETE',
+    headers: { 'X-Client-Phone': phone },
   });
   expect(permitida.status).toBe(200);
 
-  // Dueño con token: puede cancelar incluso a menos de 2h
+  // Dueño con token: puede cancelar incluso dentro de la ventana
   const adminOk = await fetch(`${API}/api/v1/b/${slug}/citas/${cercaId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   expect(adminOk.status).toBe(200);
 
-  // Petición maliciosa: token inválido NO debe saltarse la ventana
+  // Petición maliciosa: token inválido y sin teléfono NO debe cancelar
   const otraCerca = await crearReserva({ dateTime: en30Min });
   const rechazada = await fetch(`${API}/api/v1/b/${slug}/citas/${otraCerca}`, {
     method: 'DELETE',

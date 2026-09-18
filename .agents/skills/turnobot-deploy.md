@@ -106,8 +106,8 @@ ENV_FILE=/tmp/opencode/env_full.yaml ./deploy.sh only-backend
 
 1. **Citas pasadas son sagradas:** Nadie puede cancelarlas (protege CRM/LTV)
 2. **Ventana de reservas:** Máximo 30 días en el futuro (backend + frontend)
-3. **Cancelación de clientes:** Bloqueada con menos de 2 horas de anticipación
-4. **Una cita por día por cliente:** Límite estricto en `bookHandler`
+3. **Cancelación de clientes:** Bloqueada dentro de la ventana (`cancel_window_hours`, default 24h); dueño y equipo siempre pueden
+4. **Tope por día por cliente:** Default 3 (configurable `max_bookings_per_phone_per_day`, máx 20)
 5. **Sin anticipación mínima:** Se puede reservar cualquier slot libre inmediato
 
 ## Comandos Rápidos de Referencia

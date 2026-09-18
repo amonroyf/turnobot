@@ -45,24 +45,54 @@ service cloud.firestore {
              isValidHorarioSemanal(request.resource.data.horario);
     }
 
+    // Las políticas de reserva solo aceptan rangos sanos (el backend también
+    // los acota; esto frena escrituras absurdas desde el SDK del dueño).
+    function politicasValidas() {
+      return (!('cancel_window_hours' in request.resource.data) ||
+              (request.resource.data.cancel_window_hours is number &&
+               request.resource.data.cancel_window_hours >= 1 &&
+               request.resource.data.cancel_window_hours <= 72)) &&
+             (!('booking_window_days' in request.resource.data) ||
+              (request.resource.data.booking_window_days is number &&
+               request.resource.data.booking_window_days >= 1 &&
+               request.resource.data.booking_window_days <= 365)) &&
+             (!('max_bookings_per_phone_per_day' in request.resource.data) ||
+              (request.resource.data.max_bookings_per_phone_per_day is number &&
+               request.resource.data.max_bookings_per_phone_per_day >= 1 &&
+               request.resource.data.max_bookings_per_phone_per_day <= 20)) &&
+             (!('min_notice_minutes' in request.resource.data) ||
+              (request.resource.data.min_notice_minutes is number &&
+               request.resource.data.min_notice_minutes >= 0 &&
+               request.resource.data.min_notice_minutes <= 10080));
+    }
+
     // ──────────────────────────────────────────────────────────────────────
     // Colecciones
     // ──────────────────────────────────────────────────────────────────────
 
     // 1. Colección principal: NEGOCIOS
     match /negocios/{slug} {
-      // Público: Los clientes necesitan leer el local para agendar
-      allow read: if true;
+      // Lectura RESTRINGIDA (antes pública): el doc puede traer restos de
+      // campos sensibles de versiones viejas (push_token/push_tokens, hoy
+      // migrados a privado/). La página pública lee por el API sanitizado;
+      // el registro valida el enlace con GET /api/v1/b/{slug}/existe.
+      // Solo dueño y super admin leen directo.
+      allow read: if request.auth != null && (
+        resource.data.owner_uid == request.auth.uid ||
+        request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+      );
       // Creación: el dueño autenticado crea el documento con su owner_uid
       allow create: if request.auth != null &&
                      request.resource.data.owner_uid == request.auth.uid;
 
       // ACTUALIZACIÓN Y ELIMINACIÓN
       // El dueño NO puede modificar los campos 'suspended' ni 'suspended_at'.
+      // Tampoco puede dejar políticas fuera de rango (se validan aquí y en Go).
       // El UID del Super Admin ('0FF1nrcBnSPIdB1rMgYocmRnYUb2') puede hacer todo.
       allow update: if request.auth != null && (
         (resource.data.owner_uid == request.auth.uid &&
-         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspended', 'suspended_at']))
+         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspended', 'suspended_at']) &&
+         politicasValidas())
         || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
       );
 
@@ -70,6 +100,15 @@ service cloud.firestore {
         resource.data.owner_uid == request.auth.uid ||
         request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
       );
+
+      // Subcolección PRIVADA: tokens push del dueño y secretos del negocio.
+      // Sin lectura pública ni de otros autenticados: solo dueño y super admin.
+      // El backend Go usa Admin SDK (sin reglas) para leer/escribir aquí.
+      match /privado/{docId} {
+        allow read, write: if request.auth != null && (
+          isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
+        );
+      }
 
       // Subcolecciones: SERVICIOS y EMPLEADOS
       match /servicios/{servicioId} {

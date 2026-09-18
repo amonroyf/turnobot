@@ -116,8 +116,13 @@ type Negocio struct {
 	BookingWindowDays int `firestore:"booking_window_days" json:"booking_window_days"`
 	// MaxBookingsPerPhonePerDay es el límite de reservas por teléfono al día (default 3).
 	MaxBookingsPerPhonePerDay int `firestore:"max_bookings_per_phone_per_day" json:"max_bookings_per_phone_per_day"`
+	// CancelWindowHours son las horas mínimas de antelación con las que un
+	// CLIENTE puede cancelar o mover su cita (estándar del mercado: 24h en
+	// belleza, 48h en spa/salud; default 24). El dueño y el equipo siempre
+	// pueden. Se configura por negocio; ausente o fuera de 1-72 = 24.
+	CancelWindowHours int `firestore:"cancel_window_hours" json:"cancel_window_hours"`
 	// ReminderDaysBefore y ReminderHoursBefore configuran los recordatorios
-	// de Calendar e ICS (defaults 1 día y 2 horas antes).
+	// de Calendar, ICS y push (defaults 1 día y 24 horas antes).
 	ReminderDaysBefore  int `firestore:"reminder_days_before" json:"reminder_days_before"`
 	ReminderHoursBefore int `firestore:"reminder_hours_before" json:"reminder_hours_before"`
 	// Suspended marca un negocio suspendido por el super admin: no acepta
@@ -354,6 +359,15 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		}
 		if action == "citas" && r.Method == http.MethodGet {
 			listCitasHandler(w, r, slug)
+			return
+		}
+		// Existe el negocio: GET /api/v1/b/{slug}/existe -> {exists: bool}.
+		// Público y sin datos sensibles: el registro lo usa para validar el
+		// enlace sin necesitar lectura directa del doc (que ya no es pública).
+		if action == "existe" && r.Method == http.MethodGet {
+			_, err := firestoreClient.Collection("negocios").Doc(slug).Get(r.Context())
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"exists": err == nil})
 			return
 		}
 
@@ -787,15 +801,17 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		hour.Hour(), hour.Minute(), 0, 0, loc,
 	)
 
-	// 0. Límite familiar/Anti-spam: un número de teléfono puede tener máximo 3 citas al día.
+	// 0. Límite familiar/Anti-spam: tope de citas por teléfono y día natural
+	// (default 3, configurable por negocio).
+	topeDia := negocioMaxBookings(ctx, slug)
 	if hasBookingOnDate(ctx, slug, req.ClienteTelefono, eventDateTime) {
-		log.Printf("Límite diario de %s: ya tiene 3 citas el %s en %s", req.ClienteTelefono, req.Fecha, slug)
+		log.Printf("Límite diario de %s: ya tiene %d citas el %s en %s", req.ClienteTelefono, topeDia, req.Fecha, slug)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "max_per_day",
-			"message": "Has alcanzado el límite máximo de 3 reservas para este día usando este número de WhatsApp. Por favor, comunícate directamente con el local para agendar turnos adicionales.",
+			"message": fmt.Sprintf("Has alcanzado el límite de %d reservas para este día con este número de WhatsApp. Para turnos adicionales, escribe directamente al local.", topeDia),
 		})
 		return
 	}
@@ -1148,6 +1164,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	citas := []citaJSON{}
+	ventanaCancelList := negocioCancelWindow(ctx, slug)
 	for _, d := range citasPendientes {
 		var b Booking
 		d.DataTo(&b)
@@ -1159,7 +1176,7 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			Hora:       b.DateTime.In(loc).Format("15:04"),
 			EmpID:      b.EmpID,
 			EmpName:    empNames[b.EmpID],
-			Cancelable: b.DateTime.Sub(now) >= 2*time.Hour,
+			Cancelable: clientePuedeCancelar(b.DateTime, now, ventanaCancelList),
 			Cancelled:  d.Data()["cancelled"] == true,
 			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
 			Notes:      b.Notes,
@@ -1213,17 +1230,32 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// REGLA DE NEGOCIO: el cliente no puede cancelar con menos de 2h de
-	// antelación (el campo `cancelable` de GET /citas lo anticipa en la UI).
-	// El dueño y el equipo sí pueden (emergencias, reorden de agenda).
-	// Antes la ventana solo se calculaba pero nunca se exigía.
-	if isClient && !clientePuedeCancelar(b.DateTime, time.Now()) {
+	// REGLA DE NEGOCIO: las citas pasadas no se cancelan (protege el CRM).
+	// Si el cliente no vino, la herramienta es "No llegó", no cancelar.
+	// Aplica a todos (dueño y equipo incluidos): el historial no se reescribe.
+	if time.Now().After(b.DateTime) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "cita_pasada",
+			"message": "Esta cita ya pasó. Si el cliente no vino, márcala como No llegó en vez de cancelarla.",
+		})
+		return
+	}
+
+	// REGLA DE NEGOCIO: el cliente solo puede cancelar con la antelación
+	// configurada (default 24h, estándar del mercado; el campo `cancelable`
+	// de GET /citas lo anticipa en la UI). El dueño y el equipo sí pueden
+	// (emergencias, reorden de agenda).
+	ventanaCancel := negocioCancelWindow(ctx, slug)
+	if isClient && !clientePuedeCancelar(b.DateTime, time.Now(), ventanaCancel) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "too_late_to_cancel",
-			"message": "Ya falta poco para tu cita. Para cambios de última hora, escribe directamente al local.",
+			"message": fmt.Sprintf("Solo puedes cancelar hasta %d horas antes de tu cita. Para cambios de última hora, escribe directamente al local.", ventanaCancel),
 		})
 		return
 	}
@@ -1301,11 +1333,29 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	})
 }
 
+// negocioCancelWindow devuelve las horas mínimas de antelación para que un
+// cliente cancele o mueva su cita (default 24, estándar del mercado).
+func negocioCancelWindow(ctx context.Context, slug string) int {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return 24
+	}
+	var n Negocio
+	doc.DataTo(&n)
+	if n.CancelWindowHours < 1 || n.CancelWindowHours > 72 {
+		return 24
+	}
+	return n.CancelWindowHours
+}
+
 // clientePuedeCancelar dice si un cliente aún está dentro de la ventana de
-// cancelación (2h o más antes de la cita). El dueño y el equipo no tienen
-// ventana: siempre pueden cancelar o mover.
-func clientePuedeCancelar(dateTime, now time.Time) bool {
-	return dateTime.Sub(now) >= 2*time.Hour
+// cancelación (windowHours o más antes de la cita). El dueño y el equipo no
+// tienen ventana: siempre pueden cancelar o mover.
+func clientePuedeCancelar(dateTime, now time.Time, windowHours int) bool {
+	if windowHours < 1 {
+		windowHours = 24
+	}
+	return dateTime.Sub(now) >= time.Duration(windowHours)*time.Hour
 }
 
 // clienteDocID genera el ID estable del documento de cliente a partir del
@@ -1972,11 +2022,12 @@ func negocioMaxBookings(ctx context.Context, slug string) int {
 	return n.MaxBookingsPerPhonePerDay
 }
 
-// negocioReminders devuelve los recordatorios configurados (defaults 1d, 2h).
+// negocioReminders devuelve los recordatorios configurados (defaults 1d, 24h:
+// el mercado avisa el día antes, no 2h antes).
 func negocioReminders(ctx context.Context, slug string) (daysBefore, hoursBefore int) {
 	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
 	if err != nil {
-		return 1, 2
+		return 1, 24
 	}
 	var n Negocio
 	doc.DataTo(&n)
@@ -1986,7 +2037,7 @@ func negocioReminders(ctx context.Context, slug string) (daysBefore, hoursBefore
 		daysBefore = n.ReminderDaysBefore
 	}
 	if n.ReminderHoursBefore <= 0 {
-		hoursBefore = 2
+		hoursBefore = 24
 	} else {
 		hoursBefore = n.ReminderHoursBefore
 	}
@@ -2243,17 +2294,19 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 	var busyPeriods [][2]time.Time
 	if err != nil {
 		// Mock mode: no Google Calendar linked. Generate slots within each shift.
+		// Tope 48 (jornada completa): con 12 se ocultaban turnos reales de la
+		// tarde a empleados sin Calendar. Firestore resta las reservas igual.
 		log.Printf("Aviso: %v. Devolviendo slots falsos.", err)
 		for _, iv := range shiftIntervals {
 			for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
 				if t.After(earliest) && t.Before(maxBookingTime) {
 					slots = append(slots, t.Format("15:04"))
 				}
-				if len(slots) >= 12 {
+				if len(slots) >= 48 {
 					break
 				}
 			}
-			if len(slots) >= 12 {
+			if len(slots) >= 48 {
 				break
 			}
 		}
@@ -2963,12 +3016,35 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// apiBookingLimiter aplica rate limiting más estricto a endpoints de escritura
+// apiBookingLimiter aplica rate limiting estricto solo a las escrituras que
+// un bot puede abusar: crear reserva y reprogramar. Antes frenaba TODOS los
+// POST (undo, no-show, PIN, push, caché) y con llave solo-IP: un wifi
+// compartido o un negocio con tráfico bloqueaba a los demás. Ahora la llave
+// es ip|negocio y el resto de operaciones usa el límite general.
 func apiBookingLimiter(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			rateLimitMiddleware(bookingLimiter, next)(w, r)
-			return
+		if r.Method == http.MethodPost &&
+			(strings.HasSuffix(r.URL.Path, "/book") || strings.HasSuffix(r.URL.Path, "/reschedule")) {
+			ip := clientIP(r)
+			slug := ""
+			if rest := strings.TrimPrefix(r.URL.Path, "/api/v1/b/"); rest != r.URL.Path {
+				if i := strings.Index(rest, "/"); i > 0 {
+					slug = rest[:i]
+				} else {
+					slug = rest
+				}
+			}
+			if !bookingLimiter.allowKey(ip + "|" + slug) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "rate_limited",
+					"message": "Demasiadas peticiones. Intenta de nuevo en un minuto.",
+				})
+				return
+			}
 		}
 		next(w, r)
 	}

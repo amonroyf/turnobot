@@ -112,12 +112,18 @@ func (rl *rateLimiter) cleanup() {
 }
 
 func (rl *rateLimiter) allow(ip string) bool {
+	return rl.allowKey(ip)
+}
+
+// allowKey limita por una llave compuesta (ej. "ip|negocio") para que un
+// negocio con mucho tráfico no bloquee a los demás (wifi compartido, etc).
+func (rl *rateLimiter) allowKey(key string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
-	v, exists := rl.visitors[ip]
+	v, exists := rl.visitors[key]
 	if !exists {
-		rl.visitors[ip] = &visitor{tokens: rl.limit - 1, lastSeen: time.Now()}
+		rl.visitors[key] = &visitor{tokens: rl.limit - 1, lastSeen: time.Now()}
 		return true
 	}
 

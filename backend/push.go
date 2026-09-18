@@ -63,17 +63,22 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 		return
 	}
 
-	// Guardar el token: ArrayUnion a push_tokens (multi-dispositivo) y
-	// push_token legacy por compatibilidad.
-	_, err := firestoreClient.Collection("negocios").Doc(slug).Update(r.Context(), []firestore.Update{
-		{Path: "push_tokens", Value: firestore.ArrayUnion(req.Token)},
-		{Path: "push_token", Value: req.Token},
-	})
+	// Guardar el token en el doc privado (nunca en el negocio público):
+	// ArrayUnion a push_tokens (multi-dispositivo) y push_token legacy.
+	// Además borra los campos legacy del doc público por si existían.
+	_, err := privadoNotificacionesRef(slug).Set(r.Context(), map[string]interface{}{
+		"push_tokens": firestore.ArrayUnion(req.Token),
+		"push_token":  req.Token,
+	}, firestore.MergeAll)
 	if err != nil {
 		log.Printf("Error guardando push token para %s: %v", slug, err)
 		http.Error(w, "Error guardando token", http.StatusInternalServerError)
 		return
 	}
+	_, _ = firestoreClient.Collection("negocios").Doc(slug).Update(r.Context(), []firestore.Update{
+		{Path: "push_token", Value: firestore.Delete},
+		{Path: "push_tokens", Value: firestore.Delete},
+	})
 
 	// Invalidar caché para que el próximo request tenga el token actualizado
 	negocioCache.Invalidate(slug)
@@ -95,15 +100,7 @@ func registerPushTokenHandler(w http.ResponseWriter, r *http.Request, slug strin
 // lo que producía notificaciones duplicadas. Solo-data + render manual en
 // firebase-messaging-sw.js = una sola notificación.
 func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, dateStr, timeStr string) {
-	// Vía caché TTL (se invalida al registrar/borrar token): ahorra una
-	// lectura de Firestore por cada reserva.
-	neg, err := getCachedNegocio(ctx, slug)
-	if err != nil {
-		log.Printf("sendPush: no se pudo leer negocio %s: %v", slug, err)
-		return
-	}
-
-	tokens := ownerTokens(neg)
+	tokens := ownerPushTokens(ctx, slug)
 	if len(tokens) == 0 {
 		log.Printf("sendPush: negocio %s no tiene push_token registrado", slug)
 		return
@@ -122,7 +119,7 @@ func sendPushToOwner(ctx context.Context, slug string, clientName, serviceName, 
 			continue
 		}
 		if gone {
-			clearOwnerToken(ctx, slug, neg, tok)
+			clearOwnerToken(ctx, slug, tok)
 		}
 	}
 }
@@ -147,8 +144,61 @@ func sendPushToEmployee(ctx context.Context, slug, empID, token, title, body, ta
 	return sent
 }
 
-// ownerTokens devuelve los tokens del dueño sin duplicados: el legacy
-// push_token más el array push_tokens (multi-dispositivo).
+// Tokens del dueño: viven en negocios/{slug}/privado/notificaciones
+// (push_token legacy + push_tokens multi-dispositivo). NUNCA en el doc
+// público del negocio: las reglas lo dejan leer sin auth para la página de
+// reservas, y los tokens FCM no deben ser visibles públicamente.
+// Los campos viejos (push_token/push_tokens en el negocio) se leen como
+// fallback y se migran solos al primer uso.
+func privadoNotificacionesRef(slug string) *firestore.DocumentRef {
+	return firestoreClient.Collection("negocios").Doc(slug).Collection("privado").Doc("notificaciones")
+}
+
+// ownerPushTokens devuelve los tokens del dueño sin duplicados, leyendo el
+// doc privado y migrando los campos legacy si aún existen.
+func ownerPushTokens(ctx context.Context, slug string) []string {
+	seen := map[string]bool{}
+	out := []string{}
+	agregar := func(t string) {
+		t = strings.TrimSpace(t)
+		if t != "" && !seen[t] {
+			seen[t] = true
+			out = append(out, t)
+		}
+	}
+
+	if doc, err := privadoNotificacionesRef(slug).Get(ctx); err == nil {
+		var priv struct {
+			PushToken  string   `firestore:"push_token"`
+			PushTokens []string `firestore:"push_tokens"`
+		}
+		doc.DataTo(&priv)
+		agregar(priv.PushToken)
+		for _, t := range priv.PushTokens {
+			agregar(t)
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+
+	// Fallback legacy: campos en el doc del negocio (versiones viejas).
+	// Si hay, se migran al privado y se borran del doc público.
+	if doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx); err == nil {
+		var neg Negocio
+		doc.DataTo(&neg)
+		for _, t := range ownerTokens(neg) {
+			agregar(t)
+		}
+		if len(out) > 0 {
+			go migrarTokensPrivado(slug, out)
+		}
+	}
+	return out
+}
+
+// ownerTokens devuelve los tokens legacy del doc del negocio sin duplicados.
+// Solo se usa como fallback de migración (los nuevos viven en el privado).
 func ownerTokens(neg Negocio) []string {
 	seen := map[string]bool{}
 	out := []string{}
@@ -160,6 +210,26 @@ func ownerTokens(neg Negocio) []string {
 		}
 	}
 	return out
+}
+
+// migrarTokensPrivado mueve los tokens legacy al doc privado y los borra del
+// doc público. Best-effort en background.
+func migrarTokensPrivado(slug string, tokens []string) {
+	ctx := context.Background()
+	if _, err := privadoNotificacionesRef(slug).Set(ctx, map[string]interface{}{
+		"push_tokens": tokens,
+		"push_token":  tokens[0],
+		"migrado_at":  time.Now(),
+	}, firestore.MergeAll); err != nil {
+		log.Printf("push: no se pudo migrar tokens de %s: %v", slug, err)
+		return
+	}
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(ctx, []firestore.Update{
+		{Path: "push_token", Value: firestore.Delete},
+		{Path: "push_tokens", Value: firestore.Delete},
+	}); err != nil {
+		log.Printf("push: no se pudieron limpiar tokens legacy de %s: %v", slug, err)
+	}
 }
 
 // isTokenGone detecta errores FCM de token inválido, revocado o expirado
@@ -175,18 +245,18 @@ func isTokenGone(err error) bool {
 		strings.Contains(msg, "registration-token-not-registered")
 }
 
-// clearOwnerToken elimina un token muerto del negocio e invalida la caché.
-func clearOwnerToken(ctx context.Context, slug string, neg Negocio, tok string) {
-	updates := []firestore.Update{
+// clearOwnerToken elimina un token muerto del doc privado e invalida la caché.
+func clearOwnerToken(ctx context.Context, slug, tok string) {
+	if _, err := privadoNotificacionesRef(slug).Update(ctx, []firestore.Update{
 		{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
-	}
-	if tok == neg.PushToken {
-		updates = append(updates, firestore.Update{Path: "push_token", Value: ""})
-	}
-	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(ctx, updates); err != nil {
+	}); err != nil {
 		log.Printf("sendPush: no se pudo limpiar token muerto en %s: %v", slug, err)
 		return
 	}
+	// Limpieza legacy por si el token vivía en el doc público.
+	_, _ = firestoreClient.Collection("negocios").Doc(slug).Update(ctx, []firestore.Update{
+		{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
+	})
 	negocioCache.Invalidate(slug)
 	log.Printf("sendPush: token muerto eliminado en %s", slug)
 }
@@ -242,15 +312,11 @@ func sendReminderToClient(ctx context.Context, neg Negocio, b Booking) {
 }
 
 // sendPushToOwnerCancellation envía un push al dueño cuando un CLIENTE cancela
-// su propia cita. Notifica para que el dueño sepa que el hueco se liberó.
+// su propia cita. Notifica a TODOS sus dispositivos para que sepa que el
+// hueco se liberó.
 func sendPushToOwnerCancellation(ctx context.Context, slug, clientName, serviceName, dateStr, timeStr string) {
-	negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
-	if err != nil {
-		return
-	}
-	var neg Negocio
-	negDoc.DataTo(&neg)
-	if neg.PushToken == "" {
+	tokens := ownerPushTokens(ctx, slug)
+	if len(tokens) == 0 {
 		return
 	}
 	fcmClient, err := firebaseApp.Messaging(ctx)
@@ -259,24 +325,29 @@ func sendPushToOwnerCancellation(ctx context.Context, slug, clientName, serviceN
 	}
 	title := "❌ Cita cancelada por cliente"
 	body := fmt.Sprintf("%s canceló %s (%s a las %s)", clientName, serviceName, dateStr, timeStr)
-	msg := &messaging.Message{
-		Token: neg.PushToken,
-		Webpush: &messaging.WebpushConfig{
-			Data: map[string]string{
-				"title": title,
-				"body":  body,
-				"icon":  "/icons/icon-192x192.png",
-				"url":   "/admin",
-				"tag":   "cancellation",
+	for _, tok := range tokens {
+		msg := &messaging.Message{
+			Token: tok,
+			Webpush: &messaging.WebpushConfig{
+				Data: map[string]string{
+					"title": title,
+					"body":  body,
+					"icon":  "/icons/icon-192x192.png",
+					"url":   "/admin",
+					"tag":   "cancellation",
+				},
 			},
-		},
+		}
+		resp, err := fcmClient.Send(ctx, msg)
+		if err != nil {
+			log.Printf("sendPushToOwnerCancellation: error enviando push a %s: %v", slug, err)
+			if isTokenGone(err) {
+				clearOwnerToken(ctx, slug, tok)
+			}
+			continue
+		}
+		log.Printf("sendPushToOwnerCancellation: notificación enviada a %s (message_id=%s)", slug, resp)
 	}
-	resp, err := fcmClient.Send(ctx, msg)
-	if err != nil {
-		log.Printf("sendPushToOwnerCancellation: error enviando push a %s: %v", slug, err)
-		return
-	}
-	log.Printf("sendPushToOwnerCancellation: notificación enviada a %s (message_id=%s)", slug, resp)
 }
 
 // registerClientPushTokenRequest es el payload que envía el frontend del
@@ -412,12 +483,7 @@ func sendTestPushHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 	ctx := r.Context()
-	neg, err := getCachedNegocio(ctx, slug)
-	if err != nil {
-		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
-		return
-	}
-	tokens := ownerTokens(neg)
+	tokens := ownerPushTokens(ctx, slug)
 	sent := 0
 	for _, tok := range tokens {
 		if ok, gone := sendPushToClient(ctx, tok,
@@ -426,7 +492,7 @@ func sendTestPushHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			"/admin", "push-test"); ok {
 			sent++
 		} else if gone {
-			clearOwnerToken(ctx, slug, neg, tok)
+			clearOwnerToken(ctx, slug, tok)
 		}
 	}
 	log.Printf("push-test: %d/%d enviados a %s", sent, len(tokens), slug)
@@ -460,21 +526,24 @@ func unregisterPushTokenHandler(w http.ResponseWriter, r *http.Request, slug str
 	ctx := r.Context()
 	updates := []firestore.Update{}
 	if tok == "" {
+		// Sin token: se borra el doc privado completo (todos los dispositivos)
+		// más los campos legacy del doc público por si existían.
+		if _, err := privadoNotificacionesRef(slug).Delete(ctx); err != nil {
+			log.Printf("push-token: no se pudo borrar doc privado de %s: %v", slug, err)
+		}
 		updates = append(updates,
-			firestore.Update{Path: "push_token", Value: ""},
-			firestore.Update{Path: "push_tokens", Value: []string{}},
+			firestore.Update{Path: "push_token", Value: firestore.Delete},
+			firestore.Update{Path: "push_tokens", Value: firestore.Delete},
 		)
 	} else {
+		if _, err := privadoNotificacionesRef(slug).Update(ctx, []firestore.Update{
+			{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
+		}); err != nil {
+			log.Printf("push-token: no se pudo quitar token en %s: %v", slug, err)
+		}
 		updates = append(updates,
 			firestore.Update{Path: "push_tokens", Value: firestore.ArrayRemove(tok)},
 		)
-		var neg Negocio
-		if doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx); err == nil {
-			doc.DataTo(&neg)
-			if neg.PushToken == tok {
-				updates = append(updates, firestore.Update{Path: "push_token", Value: ""})
-			}
-		}
 	}
 
 	if _, err := firestoreClient.Collection("negocios").Doc(slug).Update(ctx, updates); err != nil {

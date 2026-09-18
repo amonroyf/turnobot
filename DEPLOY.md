@@ -657,7 +657,7 @@ gcloud run services describe turnobot --region us-central1 --format="value(statu
 |------------|---------|
 | **CORS** | Solo permite dominios: `turnobot-web.web.app`, `localhost:5173`, `localhost:3000` |
 | **Rate Limiting General** | 60 requests/min por IP |
-| **Rate Limiting Booking** | 10 bookings/min por IP |
+| **Rate Limiting Booking** | 10 reservar/mover por min por IP+negocio (solo `book` y `reschedule`) |
 | **Security Headers** | HSTS, X-Frame-Options, X-Content-Type-Options, CSP |
 | **Structured Logging** | JSON con timestamp, level, method, path, status, duration, IP |
 

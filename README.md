@@ -41,7 +41,7 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 | `/api/v1/b/{slug}/slots/primer-hueco` | GET | Primer horario libre hacia adelante |
 | `/api/v1/b/{slug}/book` | POST | Crear reserva (Firestore + Google Calendar + push al dueño y empleado) |
 | `/api/v1/b/{slug}/citas` | GET | Citas activas del cliente por teléfono |
-| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (cliente solo con 2h+; dueño y equipo siempre) |
+| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (nunca pasadas; cliente con antelación configurable, default 24h) |
 | `/api/v1/b/{slug}/citas/{id}/reschedule` | POST | Mover cita de día/hora (misma cita, mueve Calendar) |
 | `/api/v1/b/{slug}/citas/{id}/undo` | POST | Deshacer cancelación/no-show del mismo día (recrea el Calendar) |
 | `/api/v1/b/{slug}/citas/{id}/client-push-token` | POST | Registrar token del cliente para su recordatorio |
@@ -54,6 +54,7 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 | `/api/v1/b/{slug}/employee/{id}/register-push-token` | POST | Registrar push del empleado |
 | `/api/v1/b/{slug}/employee/{id}/push-token` | DELETE | Baja de push del empleado |
 | `/api/v1/b/{slug}/register-push-token` | POST | Registrar push del dueño |
+| `/api/v1/b/{slug}/existe` | GET | Público: ¿existe el enlace? (sin datos sensibles) |
 | `/api/v1/b/{slug}/push-token` | DELETE | Baja de push del dueño |
 | `/api/v1/b/{slug}/push-test` | POST | Push de prueba a los dispositivos del dueño |
 | `/api/v1/b/{slug}/cache/invalidate` | POST | Limpiar caché en RAM del negocio |

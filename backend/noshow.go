@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -23,6 +24,13 @@ func canMarkNoShow(dateTime, now time.Time) bool {
 // Puede ser invocado por: el dueño o el empleado asignado. Idempotente:
 // repetir la llamada no duplica el ajuste del CRM.
 func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
+	// Sin credencial no hay nada que buscar: 401 antes de tocar Firestore
+	// (no se revela si la cita existe; el dueño y el equipo siempre mandan
+	// su Bearer).
+	if strings.TrimSpace(r.Header.Get("Authorization")) == "" {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
 	ctx := r.Context()
 	docRef := firestoreClient.Collection("reservas").Doc(citaID)
 	doc, err := docRef.Get(ctx)
@@ -83,12 +91,21 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		}
 		if err := tx.Update(docRef, []firestore.Update{
 			{Path: "no_show", Value: true},
+			{Path: "no_show_at", Value: time.Now()},
 			{Path: "updated_at", Value: time.Now()},
 		}); err != nil {
 			return err
 		}
 		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
 		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, -1, -b.Price), firestore.MergeAll); err != nil {
+			return err
+		}
+		// Contador de no-shows del cliente (reporte tipo "Cancellation &
+		// No-Show" del mercado): el dueño lo ve en el CRM para detectar
+		// reincidentes. Se revierte si se deshace la marca.
+		if err := tx.Set(cliRef, map[string]interface{}{
+			"no_shows": firestore.Increment(1),
+		}, firestore.MergeAll); err != nil {
 			return err
 		}
 		negRef := firestoreClient.Collection("negocios").Doc(slug)

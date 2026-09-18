@@ -358,6 +358,10 @@ export default function AdminDashboard() {
 
   const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
   const [guardandoInfo, setGuardandoInfo] = useState(false);
+  // Políticas de reserva (reglas del negocio, como en el mercado: Fresha,
+  // Booksy y Vagaro las dejan configurar por negocio).
+  const [politicas, setPoliticas] = useState({ cancel_window_hours: 24, min_notice_minutes: 0, booking_window_days: 30, max_bookings_per_phone_per_day: 3 });
+  const [guardandoPoliticas, setGuardandoPoliticas] = useState(false);
 
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
@@ -387,6 +391,12 @@ export default function AdminDashboard() {
         direccion: negocio.direccion || '',
         horario: negocio.horario || '',
         telefono: negocio.telefono || ''
+      });
+      setPoliticas({
+        cancel_window_hours: negocio.cancel_window_hours || 24,
+        min_notice_minutes: negocio.min_notice_minutes ?? 0,
+        booking_window_days: negocio.booking_window_days || 30,
+        max_bookings_per_phone_per_day: negocio.max_bookings_per_phone_per_day || 3,
       });
     }
   }, [negocio]);
@@ -510,8 +520,30 @@ export default function AdminDashboard() {
     }
   };
 
-  const handleGuardarInfoLocal = async (e) => {
+  // Políticas de reserva: el dueño define sus reglas (como en el mercado).
+  // Se guardan en el negocio y aplican de inmediato (con caché invalidada).
+  const handleGuardarPoliticas = async (e) => {
     e.preventDefault();
+    const limpio = {
+      cancel_window_hours: Math.min(72, Math.max(1, Number(politicas.cancel_window_hours) || 24)),
+      min_notice_minutes: Math.max(0, Number(politicas.min_notice_minutes) || 0),
+      booking_window_days: Math.min(365, Math.max(1, Number(politicas.booking_window_days) || 30)),
+      max_bookings_per_phone_per_day: Math.min(20, Math.max(1, Number(politicas.max_bookings_per_phone_per_day) || 3)),
+    };
+    setGuardandoPoliticas(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), limpio);
+      setNegocio({ ...negocio, ...limpio });
+      setPoliticas(limpio);
+      await invalidarCache();
+      alert('Políticas actualizadas. Aplican desde ya.');
+    } catch (err) {
+      alert('No se pudieron guardar las políticas. Intenta nuevamente.');
+    }
+    setGuardandoPoliticas(false);
+  };
+
+  const handleGuardarInfoLocal = async (e) => {    e.preventDefault();
     setGuardandoInfo(true);
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
@@ -695,6 +727,7 @@ export default function AdminDashboard() {
       'Telefono / WhatsApp',
       'Numero de Visitas',
       'Total Gastado (LTV)',
+      'No-shows',
       'Fecha de Ultima Cita',
     ];
 
@@ -703,6 +736,7 @@ export default function AdminDashboard() {
       `"${(c.cliente_phone || '').replace(/"/g, '""')}"`,
       c.visits || 0,
       c.total_spent || 0,
+      Math.max(0, c.no_shows || 0),
       `"${(fechaUltimaVisita(c) || 'N/A').replace(/"/g, '""')}"`,
     ]);
 
@@ -1145,6 +1179,11 @@ export default function AdminDashboard() {
                                   {c.client_name}
                                 </h3>
                                 {isTop3 && <span title="Cliente VIP" className="text-sm">🌟</span>}
+                                {(c.no_shows || 0) > 0 && (
+                                  <span title="Veces que no llegó a su cita" className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded-full shrink-0">
+                                    ⚠️ {c.no_shows} no llegó
+                                  </span>
+                                )}
                               </div>
 
                               <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-gray-600 mb-3">
@@ -1274,6 +1313,65 @@ export default function AdminDashboard() {
                   🔔 Activar avisos en este dispositivo
                 </button>
               )}
+            </div>
+
+            {/* POLÍTICAS DE RESERVA */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Tus reglas de reserva</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Como en las grandes plataformas: tú defines los tiempos y topes. Aplican desde que guardas.</p>
+              <form onSubmit={handleGuardarPoliticas} className="space-y-4">
+                <label className="block">
+                  <span className="block text-xs font-bold text-gray-700 mb-1">El cliente puede cancelar hasta…</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" required min={1} max={72} inputMode="numeric"
+                      value={politicas.cancel_window_hours}
+                      onChange={(e) => setPoliticas({ ...politicas, cancel_window_hours: e.target.value })}
+                      aria-label="Horas mínimas de antelación para cancelar"
+                      className="w-24 p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                    <span className="text-xs text-gray-500 font-medium">horas antes de su cita (lo usual: 24h; spa/salud: 48h). Pasado ese punto, solo tú o tu equipo pueden cancelar.</span>
+                  </div>
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Aviso mínimo (min)</span>
+                    <input
+                      type="number" min={0} max={10080} inputMode="numeric"
+                      value={politicas.min_notice_minutes}
+                      onChange={(e) => setPoliticas({ ...politicas, min_notice_minutes: e.target.value })}
+                      aria-label="Antelación mínima en minutos"
+                      className="w-full p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                    <span className="block text-[11px] text-gray-400 font-medium mt-1">0 = aceptas citas para ya.</span>
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Se reserva hasta (días)</span>
+                    <input
+                      type="number" min={1} max={365} inputMode="numeric"
+                      value={politicas.booking_window_days}
+                      onChange={(e) => setPoliticas({ ...politicas, booking_window_days: e.target.value })}
+                      aria-label="Días máximos hacia adelante para reservar"
+                      className="w-full p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                    <span className="block text-[11px] text-gray-400 font-medium mt-1">Qué tan lejos se ve el calendario.</span>
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tope por número/día</span>
+                    <input
+                      type="number" min={1} max={20} inputMode="numeric"
+                      value={politicas.max_bookings_per_phone_per_day}
+                      onChange={(e) => setPoliticas({ ...politicas, max_bookings_per_phone_per_day: e.target.value })}
+                      aria-label="Máximo de citas por número de WhatsApp al día"
+                      className="w-full p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                    <span className="block text-[11px] text-gray-400 font-medium mt-1">Anti-spam (usual: 3).</span>
+                  </label>
+                </div>
+                <button type="submit" disabled={guardandoPoliticas} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                  {guardandoPoliticas ? 'Guardando…' : 'Guardar reglas'}
+                </button>
+              </form>
             </div>
 
             {/* GESTIÓN DE SERVICIOS */}
