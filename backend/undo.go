@@ -15,7 +15,8 @@ import (
 // undoCitaHandler deshace una cancelación o no-show de una cita.
 // POST /api/v1/b/{slug}/citas/{citaID}/undo
 // Solo permite deshacer si la cita fue cancelada/marcada hoy (mismo día
-// en la zona horaria del negocio). No restaura el evento de Google Calendar.
+// en la zona horaria del negocio). Si se deshace una cancelación, se
+// recrea el evento de Google Calendar (cancelar lo había borrado).
 // Puede ser invocado por: el dueño o el empleado asignado.
 func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string) {
 	ctx := r.Context()
@@ -127,6 +128,34 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 	} else {
 		pushTitle = "✅ Cita restaurada"
 		pushBody = fmt.Sprintf("Tu cita de %s fue restaurada. Ya no está marcada como no-show.", b.ServiceName)
+	}
+
+	// Restaurar el evento de Google Calendar: cancelar lo borró del
+	// calendario del profesional (el campo calendar_event_id quedó huérfano).
+	// El no-show nunca borra, así que solo se recrea al deshacer cancelación.
+	// Best-effort: si falla, la cita queda activa igual y se registra el aviso.
+	if wasCancelled {
+		go func() {
+			bgCtx := context.Background()
+			direccion := ""
+			if negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(bgCtx); err == nil {
+				var neg Negocio
+				negDoc.DataTo(&neg)
+				direccion = neg.Direccion
+			}
+			dur := b.DurationMinute
+			if dur <= 0 {
+				dur = 60
+			}
+			newEvt := createCalendarEvent(bgCtx, slug, b.EmpID, b.ServiceName, dur, b.DateTime, b.Notes, b.ClientName, b.UserPhone, direccion)
+			if newEvt == "" {
+				log.Printf("Aviso: undo %s restauró la cita pero no el evento de Calendar", citaID)
+				return
+			}
+			if _, err := docRef.Update(bgCtx, []firestore.Update{{Path: "calendar_event_id", Value: newEvt}}); err != nil {
+				log.Printf("Aviso: no se pudo guardar el evento restaurado de %s: %v", citaID, err)
+			}
+		}()
 	}
 
 	// Push al cliente: notificar que la cita fue restaurada

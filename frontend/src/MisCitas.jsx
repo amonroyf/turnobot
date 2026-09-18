@@ -71,8 +71,11 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
     setCancelando('');
   };
 
-  // Agrupar por fecha usando la zona del negocio (aritmética sobre el
-  // string 'YYYY-MM-DD': no depende de la zona del dispositivo).
+  // Mover una cita a otro día/hora (reprogramar): actualiza fecha/hora en
+  // su lugar sin tocar visitas ni gasto (sigue siendo la misma cita).
+  const moverCita = (citaId, fecha, hora) => {
+    setCitas((prev) => prev ? prev.map((c) => c.id === citaId ? { ...c, fecha, hora } : c) : prev);
+  };
   const hoy = fmtFecha(new Date(), tz);
   const manana = sumarDias(hoy, 1);
 
@@ -174,7 +177,7 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
               <div className="space-y-3">
                 {citasHoy.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
                 ))}
               </div>
             </section>
@@ -186,7 +189,7 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
               <div className="space-y-3">
                 {citasManana.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
                 ))}
               </div>
             </section>
@@ -198,7 +201,7 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
               <div className="space-y-3">
                 {citasProximas.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
                 ))}
               </div>
             </section>
@@ -209,13 +212,56 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
   );
 }
 
-function CitaCard({ c, onCancel, cancelando }) {
+function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMoved }) {
   const isCancelled = c.cancelled === true;
+  const [moviendo, setMoviendo] = useState(false);
+  const [nuevaFecha, setNuevaFecha] = useState(c.fecha);
+  const [horasLibres, setHorasLibres] = useState([]);
+  const [horaElegida, setHoraElegida] = useState('');
+  const [cargandoHoras, setCargandoHoras] = useState(false);
+  const [guardandoMover, setGuardandoMover] = useState(false);
+  const [errorMover, setErrorMover] = useState('');
+
+  const cargarHoras = async (fecha) => {
+    setCargandoHoras(true);
+    setErrorMover('');
+    setHoraElegida('');
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${c.emp_id}&fecha=${fecha}`);
+      if (!res.ok) throw new Error('Error del servidor');
+      const data = await res.json();
+      setHorasLibres(Array.isArray(data) ? data : (data?.slots || []));
+    } catch {
+      setErrorMover('No pudimos cargar los horarios de ese día.');
+      setHorasLibres([]);
+    }
+    setCargandoHoras(false);
+  };
+
+  const confirmarMover = async () => {
+    if (!horaElegida || guardandoMover) return;
+    setGuardandoMover(true);
+    setErrorMover('');
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${c.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Client-Phone': phone || '' },
+        body: JSON.stringify({ fecha: nuevaFecha, hora: horaElegida }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || 'No pudimos mover la cita.');
+      onMoved?.(c.id, data.fecha || nuevaFecha, data.hora || horaElegida);
+      setMoviendo(false);
+    } catch (err) {
+      setErrorMover(err.message || 'No pudimos mover la cita. Intenta de nuevo.');
+    }
+    setGuardandoMover(false);
+  };
 
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-2xs space-y-1.5 ${isCancelled ? 'bg-red-50 border-red-200' : 'border-gray-200'}`}>
       <div className="flex justify-between items-start">
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
             {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
@@ -232,15 +278,78 @@ function CitaCard({ c, onCancel, cancelando }) {
       {c.notes && <p className="text-xs text-gray-500 italic">📝 {c.notes}</p>}
 
       {!isCancelled && (
-        <div className="pt-2 mt-2 border-t border-gray-100 flex justify-end">
-          <button
-            onClick={() => onCancel(c)}
-            disabled={cancelando === c.id}
-            title="Cancelar esta cita y liberar el horario"
-            className="min-h-[44px] px-4 py-2 bg-red-50 text-red-700 font-bold text-xs rounded-xl border border-red-200 disabled:opacity-50 active:scale-95 transition-transform"
-          >
-            {cancelando === c.id ? 'Cancelando…' : 'Cancelar cita'}
-          </button>
+        <div className="pt-2 mt-2 border-t border-gray-100 space-y-2">
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                setMoviendo((v) => !v);
+                setErrorMover('');
+                if (!moviendo) {
+                  setNuevaFecha(c.fecha);
+                  cargarHoras(c.fecha);
+                }
+              }}
+              className="min-h-[44px] px-4 py-2 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl active:scale-95 transition-transform"
+            >
+              {moviendo ? 'Cerrar' : 'Cambiar hora'}
+            </button>
+            <button
+              onClick={() => onCancel(c)}
+              disabled={cancelando === c.id}
+              title="Cancelar esta cita y liberar el horario"
+              className="min-h-[44px] px-4 py-2 bg-red-50 text-red-700 font-bold text-xs rounded-xl border border-red-200 disabled:opacity-50 active:scale-95 transition-transform"
+            >
+              {cancelando === c.id ? 'Cancelando…' : 'Cancelar cita'}
+            </button>
+          </div>
+          {moviendo && (
+            <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
+              <label className="block">
+                <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nuevo día</span>
+                <input
+                  type="date"
+                  value={nuevaFecha}
+                  min={hoyMin}
+                  onChange={(e) => {
+                    setNuevaFecha(e.target.value);
+                    if (e.target.value) cargarHoras(e.target.value);
+                  }}
+                  className="w-full min-h-[44px] p-2.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
+                />
+              </label>
+              {cargandoHoras ? (
+                <p className="text-xs text-gray-500 font-medium text-center py-2">Buscando horarios…</p>
+              ) : horasLibres.length === 0 ? (
+                <p className="text-xs text-gray-500 font-medium text-center py-2">Sin espacios ese día. Prueba otro.</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2">
+                  {horasLibres.map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setHoraElegida(h)}
+                      className={`min-h-[44px] py-2 border rounded-xl font-bold text-xs active:scale-95 transition-all ${
+                        horaElegida === h ? 'bg-black text-white border-black' : 'bg-white border-gray-200 text-gray-800'
+                      }`}
+                    >
+                      {h}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {errorMover && (
+                <p role="alert" className="text-xs text-red-600 font-semibold text-center">{errorMover}</p>
+              )}
+              <button
+                type="button"
+                onClick={confirmarMover}
+                disabled={!horaElegida || guardandoMover}
+                className="w-full min-h-[48px] py-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50"
+              >
+                {guardandoMover ? 'Moviendo…' : horaElegida ? `Mover al ${nuevaFecha} a las ${horaElegida}` : 'Elige la nueva hora'}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

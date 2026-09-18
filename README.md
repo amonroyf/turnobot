@@ -37,11 +37,13 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 |----------|--------|-------------|
 | `/health` | GET | Health check (verifica Firestore) |
 | `/api/v1/b/{slug}` | GET | Datos del negocio, servicios y empleados |
-| `/api/v1/b/{slug}/slots` | GET | Horarios disponibles para un empleado/fecha |
+| `/api/v1/b/{slug}/slots` | GET | Horarios disponibles para un empleado/fecha (`emp_id=any` = todos) |
+| `/api/v1/b/{slug}/slots/primer-hueco` | GET | Primer horario libre hacia adelante |
 | `/api/v1/b/{slug}/book` | POST | Crear reserva (Firestore + Google Calendar + push al dueño y empleado) |
 | `/api/v1/b/{slug}/citas` | GET | Citas activas del cliente por teléfono |
-| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (dueño, empleado asignado o cliente) |
-| `/api/v1/b/{slug}/citas/{id}/undo` | POST | Deshacer cancelación/no-show del mismo día |
+| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (cliente solo con 2h+; dueño y equipo siempre) |
+| `/api/v1/b/{slug}/citas/{id}/reschedule` | POST | Mover cita de día/hora (misma cita, mueve Calendar) |
+| `/api/v1/b/{slug}/citas/{id}/undo` | POST | Deshacer cancelación/no-show del mismo día (recrea el Calendar) |
 | `/api/v1/b/{slug}/citas/{id}/client-push-token` | POST | Registrar token del cliente para su recordatorio |
 | `/api/v1/b/{slug}/no-show/{id}` | POST | Marcar cita como no-show (solo pasadas) |
 | `/api/v1/b/{slug}/servicios/{id}` | DELETE | Eliminar servicio (en cascada) |

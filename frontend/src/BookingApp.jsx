@@ -55,7 +55,34 @@ const fetchSlotsEmpleado = async (slug, empId, servicioId, fecha) => {
   const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${servicioId}&fecha=${fecha}`);
   if (!res.ok) throw new Error('Error del servidor');
   const data = await res.json();
-  return Array.isArray(data) ? data : [];
+  // Un profesional devuelve array plano; el modo "any" del backend nuevo
+  // devuelve objeto {slots, asignado_por_hora}. Se normaliza a un solo tipo.
+  // esObjeto distingue un backend nuevo de uno viejo (el viejo responde
+  // array incluso a emp_id=any, con datos mock que NO se deben usar).
+  if (Array.isArray(data)) return { slots: data, porHora: {}, esObjeto: false };
+  return { slots: Array.isArray(data?.slots) ? data.slots : [], porHora: data?.asignado_por_hora || {}, esObjeto: true };
+};
+
+// Fan-out para backends viejos (sin emp_id=any): consulta cada profesional.
+// Se usa solo si el backend responde con array plano al pedir "any".
+const fetchSlotsAnyLegacy = async (slug, empleados, servicioId, fecha) => {
+  const resultados = await Promise.all(
+    empleados.map(async (e) => {
+      try {
+        const { slots } = await fetchSlotsEmpleado(slug, e.id, servicioId, fecha);
+        return { empId: e.id, slots };
+      } catch {
+        return { empId: e.id, slots: [] };
+      }
+    })
+  );
+  const porHora = {};
+  for (const r of resultados) {
+    for (const h of r.slots) {
+      if (!(h in porHora)) porHora[h] = r.empId;
+    }
+  }
+  return { slots: Object.keys(porHora).sort(), porHora };
 };
 
 // Empleados que ofrecen un servicio (para no resetear de más al cambiar).
@@ -271,24 +298,22 @@ export default function BookingApp() {
       let unidos = [];
       let porHora = {};
       if (booking.empleadoId === EMP_ANY) {
-        const resultados = await Promise.all(
-          empleadosElegibles.map(async (e) => {
-            try {
-              const s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
-              return { empId: e.id, slots: s };
-            } catch {
-              return { empId: e.id, slots: [] };
-            }
-          })
-        );
-        for (const r of resultados) {
-          for (const h of r.slots) {
-            if (!(h in porHora)) porHora[h] = r.empId;
-          }
+        // Una sola llamada al backend nuevo (objeto); si responde array plano
+        // es un backend viejo y se hace fan-out por profesional (fallback).
+        // OJO: el array del backend viejo con emp_id=any puede ser mock:
+        // se descarta y se consulta cada profesional de verdad.
+        const r = await fetchSlotsEmpleado(slug, 'any', booking.servicioId, fecha);
+        if (r.esObjeto) {
+          unidos = r.slots;
+          porHora = r.porHora;
+        } else {
+          const leg = await fetchSlotsAnyLegacy(slug, empleadosElegibles, booking.servicioId, fecha);
+          unidos = leg.slots;
+          porHora = leg.porHora;
         }
-        unidos = Object.keys(porHora).sort();
       } else {
-        unidos = await fetchSlotsEmpleado(slug, booking.empleadoId, booking.servicioId, fecha);
+        const r = await fetchSlotsEmpleado(slug, booking.empleadoId, booking.servicioId, fecha);
+        unidos = r.slots;
       }
       setSlots(unidos);
       setSlotsPorHora(porHora);
@@ -310,15 +335,39 @@ export default function BookingApp() {
     fetchHorariosRef.current = fetchHorarios;
   });
 
-  // Primer hueco: recorre los próximos días (día por día, en paralelo por
-  // profesional) hasta encontrar el primer slot libre. Respeta el modo
-  // "cualquiera" o el profesional elegido.
+  // Primer hueco: pregunta al backend (una sola llamada); si el backend es
+  // viejo (404), recorre los próximos días día por día como fallback.
   const buscarPrimerHueco = async () => {
     if (!booking.servicioId || !booking.empleadoId || !negocio) return;
     setBuscandoHueco(true);
     setPrimerHueco(null);
     setError('');
+    const aplicarHueco = async (h) => {
+      setPrimerHueco(h);
+      // Saltar directo a ese día/hora sin perder servicio/profesional.
+      // En modo "any" se conserva ANY; la asignación se resuelve al confirmar.
+      setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: '' }));
+      await fetchHorarios(h.fecha, { preserveError: true });
+      setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: h.hora }));
+      setStep(4);
+    };
     try {
+      const empParam = booking.empleadoId === EMP_ANY ? 'any' : booking.empleadoId;
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${booking.servicioId}&emp_id=${empParam}&dias=${MAX_DIAS_HUECO}`);
+      if (res.ok) {
+        const h = await res.json();
+        if (h?.fecha && h?.hora) {
+          await aplicarHueco({ fecha: h.fecha, hora: h.hora, empId: h.emp_id, empName: h.emp_name });
+          return;
+        }
+      } else if (res.status !== 404) {
+        const data = await res.json().catch(() => null);
+        if (data?.message) {
+          setError(data.message);
+          return;
+        }
+      }
+      // Fallback (backend sin /primer-hueco): escaneo día por día.
       const hoyStr = fechaHoyEnZona(negocio?.timezone);
       const objetivos = booking.empleadoId === EMP_ANY ? empleadosElegibles : empleadosElegibles.filter(e => e.id === booking.empleadoId);
       if (objetivos.length === 0) {
@@ -334,9 +383,9 @@ export default function BookingApp() {
               return { empId: e.id, empName: e.name, slots: semanaCacheRef.current[cacheKey] };
             }
             try {
-              const s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
-              semanaCacheRef.current[cacheKey] = s;
-              return { empId: e.id, empName: e.name, slots: s };
+              const r = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+              semanaCacheRef.current[cacheKey] = r.slots;
+              return { empId: e.id, empName: e.name, slots: r.slots };
             } catch {
               return { empId: e.id, empName: e.name, slots: [] };
             }
@@ -346,14 +395,7 @@ export default function BookingApp() {
           .flatMap(r => r.slots.map(h => ({ fecha, hora: h, empId: r.empId, empName: r.empName })))
           .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.hora < b.hora ? -1 : 1));
         if (ordenados.length > 0) {
-          const h = ordenados[0];
-          setPrimerHueco(h);
-          // Saltar directo a ese día/hora sin perder servicio/profesional.
-          // En modo "any" se conserva ANY; la asignación se resuelve al confirmar.
-          setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: '' }));
-          await fetchHorarios(h.fecha, { preserveError: true });
-          setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: h.hora }));
-          setStep(4);
+          await aplicarHueco(ordenados[0]);
           return;
         }
       }
@@ -388,6 +430,16 @@ export default function BookingApp() {
         const filas = await Promise.all(
           dias.map(async (fecha) => {
             if (fecha < hoyStr) return { fecha, total: -1 };
+            // Modo "any": una sola llamada (objeto del backend nuevo). Si el
+            // backend es viejo (array), fan-out por profesional.
+            if (booking.empleadoId === EMP_ANY) {
+              try {
+                const r = await fetchSlotsEmpleado(slug, 'any', booking.servicioId, fecha);
+                if (r.esObjeto) return { fecha, total: r.slots.length };
+              } catch {
+                // cae al fan-out de abajo
+              }
+            }
             let total = 0;
             await Promise.all(
               objetivos.map(async (e) => {
@@ -395,7 +447,8 @@ export default function BookingApp() {
                 let s = semanaCacheRef.current[cacheKey];
                 if (s === undefined) {
                   try {
-                    s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+                    const r = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+                    s = r.slots;
                   } catch {
                     s = [];
                   }

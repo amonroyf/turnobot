@@ -64,6 +64,33 @@ func ofreceServicio(emp Employee, servicioID string) bool {
 	return false
 }
 
+// profesionalElegible es un empleado que puede atender (id + nombre).
+type profesionalElegible struct {
+	id   string
+	name string
+}
+
+// empleadosQueOfrecen lista los profesionales del negocio que ofrecen el
+// servicio (servicioID vacío = todos). Ordenados por nombre para respuestas
+// deterministas (el "primero disponible" no baila entre llamadas).
+func empleadosQueOfrecen(ctx context.Context, slug, servicioID string) ([]profesionalElegible, error) {
+	docs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Documents(ctx).GetAll()
+	if err != nil {
+		return nil, err
+	}
+	var out []profesionalElegible
+	for _, d := range docs {
+		var emp Employee
+		d.DataTo(&emp)
+		if servicioID != "" && !ofreceServicio(emp, servicioID) {
+			continue
+		}
+		out = append(out, profesionalElegible{id: d.Ref.ID, name: emp.Name})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].name < out[j].name })
+	return out, nil
+}
+
 // ---------------------------------------------------------------------------
 // Data Models (optimizados para JSON y Firestore)
 // ---------------------------------------------------------------------------
@@ -332,6 +359,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 
 	}
 
+	// Primer hueco disponible: GET /api/v1/b/{slug}/slots/primer-hueco
+	// ?servicio_id=&emp_id=(id|any)&desde=YYYY-MM-DD&dias=14
+	if len(parts) == 3 && parts[1] == "slots" && parts[2] == "primer-hueco" && r.Method == http.MethodGet {
+		getPrimerHuecoHandler(w, r, slug)
+		return
+	}
+
 	if len(parts) == 3 && parts[1] == "citas" && r.Method == http.MethodDelete {
 		cancelCitaHandler(w, r, slug, parts[2])
 		return
@@ -340,6 +374,12 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 	// Deshacer cancelación/no-show: POST /api/v1/b/{slug}/citas/{citaID}/undo
 	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "undo" && r.Method == http.MethodPost {
 		undoCitaHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Reprogramar: POST /api/v1/b/{slug}/citas/{citaID}/reschedule
+	if len(parts) == 4 && parts[1] == "citas" && parts[3] == "reschedule" && r.Method == http.MethodPost {
+		rescheduleCitaHandler(w, r, slug, parts[2])
 		return
 	}
 
@@ -478,8 +518,8 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	servicioID := r.URL.Query().Get("servicio_id")
 	fechaStr := r.URL.Query().Get("fecha")
 
-	if empID == "" || fechaStr == "" {
-		http.Error(w, "Faltan parámetros emp_id o fecha", http.StatusBadRequest)
+	if fechaStr == "" {
+		http.Error(w, "Falta parámetro fecha", http.StatusBadRequest)
 		return
 	}
 
@@ -493,6 +533,51 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
 
+	// Modo "cualquiera" (emp_id=any): une la disponibilidad de todos los
+	// profesionales que ofrecen el servicio en UNA sola respuesta, para que el
+	// cliente no tenga que consultar uno por uno. Retrocompatible: con un
+	// emp_id concreto se devuelve el array plano de siempre.
+	if empID == "any" || empID == "__any__" {
+		elegibles, err := empleadosQueOfrecen(r.Context(), slug, servicioID)
+		if err != nil {
+			log.Printf("Error listando profesionales en %s: %v", slug, err)
+			http.Error(w, "Error calculando disponibilidad", http.StatusInternalServerError)
+			return
+		}
+		porHora := map[string]string{}
+		nombres := map[string]string{}
+		for _, e := range elegibles {
+			nombres[e.id] = e.name
+			s, err := getFreeSlots(r.Context(), slug, e.id, parsedDate, duration)
+			if err != nil {
+				log.Printf("Aviso: no se pudo calcular slots de %s en %s: %v", e.id, slug, err)
+				continue
+			}
+			for _, h := range s {
+				if _, ok := porHora[h]; !ok {
+					porHora[h] = e.id
+				}
+			}
+		}
+		unidos := make([]string, 0, len(porHora))
+		for h := range porHora {
+			unidos = append(unidos, h)
+		}
+		sort.Strings(unidos)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"slots":              unidos,
+			"asignado_por_hora":  porHora,
+			"profesionales":      nombres,
+		})
+		return
+	}
+
+	if empID == "" {
+		http.Error(w, "Faltan parámetros emp_id o fecha", http.StatusBadRequest)
+		return
+	}
+
 	slots, err := getFreeSlots(r.Context(), slug, empID, parsedDate, duration)
 	if err != nil {
 		log.Printf("Error obteniendo slots: %v", err)
@@ -502,6 +587,102 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(slots)
+}
+
+// getPrimerHuecoHandler busca el primer horario libre hacia adelante.
+// GET /api/v1/b/{slug}/slots/primer-hueco?servicio_id=&emp_id=(id|any)&desde=YYYY-MM-DD&dias=14
+// Evita que el cliente consulte día por día (N llamadas) para la pregunta
+// más común: "¿cuándo hay algo lo antes posible?".
+func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if isBusinessSuspended(r.Context(), slug) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "business_suspended",
+			"message": "Este negocio no está aceptando reservas en este momento.",
+		})
+		return
+	}
+
+	ctx := r.Context()
+	servicioID := r.URL.Query().Get("servicio_id")
+	empID := r.URL.Query().Get("emp_id")
+
+	dias := 14
+	if q := r.URL.Query().Get("dias"); q != "" {
+		var n int
+		if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 1 && n <= 30 {
+			dias = n
+		}
+	}
+
+	loc := shopLocation(ctx, slug)
+	inicio := time.Now().In(loc)
+	if desde := r.URL.Query().Get("desde"); desde != "" {
+		if p, err := time.Parse("2006-01-02", desde); err == nil {
+			inicio = time.Date(p.Year(), p.Month(), p.Day(), 0, 0, 0, 0, loc)
+		}
+	}
+
+	_, duration, _, _ := resolveService(ctx, slug, servicioID)
+
+	var objetivos []profesionalElegible
+	if empID == "" || empID == "any" || empID == "__any__" {
+		var err error
+		objetivos, err = empleadosQueOfrecen(ctx, slug, servicioID)
+		if err != nil {
+			http.Error(w, "Error calculando disponibilidad", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Get(ctx)
+		if err != nil {
+			http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
+			return
+		}
+		var emp Employee
+		doc.DataTo(&emp)
+		objetivos = []profesionalElegible{{id: empID, name: emp.Name}}
+	}
+	if len(objetivos) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "sin_profesional",
+			"message": "No hay profesionales disponibles para este servicio en este momento.",
+		})
+		return
+	}
+
+	for d := 0; d < dias; d++ {
+		y, m, day := inicio.AddDate(0, 0, d).Date()
+		dia := time.Date(y, m, day, 0, 0, 0, 0, loc)
+		for _, e := range objetivos {
+			s, err := getFreeSlots(ctx, slug, e.id, dia, duration)
+			if err != nil || len(s) == 0 {
+				continue
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":  true,
+				"fecha":    dia.Format("2006-01-02"),
+				"hora":     s[0],
+				"emp_id":   e.id,
+				"emp_name": e.name,
+			})
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotFound)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": false,
+		"error":   "no_hay_hueco",
+		"message": "No encontramos espacios libres en los próximos días. Prueba con otro profesional o escríbenos.",
+	})
 }
 
 // POST /api/v1/b/{slug}/book -> crea la reserva en Firestore y Google Calendar
@@ -1032,6 +1213,21 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
+	// REGLA DE NEGOCIO: el cliente no puede cancelar con menos de 2h de
+	// antelación (el campo `cancelable` de GET /citas lo anticipa en la UI).
+	// El dueño y el equipo sí pueden (emergencias, reorden de agenda).
+	// Antes la ventana solo se calculaba pero nunca se exigía.
+	if isClient && !clientePuedeCancelar(b.DateTime, time.Now()) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "too_late_to_cancel",
+			"message": "Ya falta poco para tu cita. Para cambios de última hora, escribe directamente al local.",
+		})
+		return
+	}
+
 	// Borrar el evento de Google Calendar del empleado si existe
 	if b.CalendarEvt != "" && b.CalendarEvt != "mock_event_123" {
 		deleteCalendarEvent(ctx, slug, b.EmpID, b.CalendarEvt)
@@ -1103,6 +1299,13 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		"service_name": b.ServiceName,
 		"date_time":    b.DateTime.Format(time.RFC3339),
 	})
+}
+
+// clientePuedeCancelar dice si un cliente aún está dentro de la ventana de
+// cancelación (2h o más antes de la cita). El dueño y el equipo no tienen
+// ventana: siempre pueden cancelar o mover.
+func clientePuedeCancelar(dateTime, now time.Time) bool {
+	return dateTime.Sub(now) >= 2*time.Hour
 }
 
 // clienteDocID genera el ID estable del documento de cliente a partir del

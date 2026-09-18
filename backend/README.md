@@ -40,19 +40,21 @@ sin auth → 401.
 ### Negocio y catálogo
 - `GET /health` — health check
 - `GET /api/v1/b/{slug}` — negocio, servicios y empleados
-- `GET /api/v1/b/{slug}/slots?emp_id=&servicio_id=&fecha=YYYY-MM-DD` — horarios disponibles
+- `GET /api/v1/b/{slug}/slots?emp_id=&servicio_id=&fecha=YYYY-MM-DD` — horarios disponibles (`emp_id=any` une a todos los que ofrecen el servicio: `{slots, asignado_por_hora, profesionales}`)
+- `GET /api/v1/b/{slug}/slots/primer-hueco?servicio_id=&emp_id=(id|any)&desde=&dias=14` — primer horario libre hacia adelante
 
 ### Reservas
 - `POST /api/v1/b/{slug}/book` — crea reserva (Firestore + Calendar)
 - `GET /api/v1/b/{slug}/citas?telefono=` — citas activas del cliente
-- `DELETE /api/v1/b/{slug}/citas/{id}` — cancela (ventana 2h; el dueño siempre puede)
+- `DELETE /api/v1/b/{slug}/citas/{id}` — cancela (el cliente solo con 2h+ de antelación; el dueño y el equipo siempre pueden)
+- `POST /api/v1/b/{slug}/citas/{id}/reschedule` — mueve la cita de día/hora (misma cita: no toca CRM; mueve el evento de Calendar; resetea `reminder_sent`)
 
 ### Gestión (solo dueño)
 - `DELETE /api/v1/b/{slug}/servicios/{id}` — eliminar servicio (en cascada)
 - `DELETE /api/v1/b/{slug}/empleados/{id}` — eliminar empleado (en cascada)
 - `POST /api/v1/b/{slug}/empleados/{id}/pin` — asignar PIN al empleado
 - `POST /api/v1/b/{slug}/no-show/{id}` — marcar cita como no-show (solo pasadas, + push al cliente)
-- `POST /api/v1/b/{slug}/citas/{id}/undo` — deshacer cancelación/no-show del mismo día
+- `POST /api/v1/b/{slug}/citas/{id}/undo` — deshacer cancelación/no-show del mismo día (recrea el evento de Calendar si se había borrado)
 - `POST /api/v1/b/{slug}/citas/{id}/client-push-token` — registrar token del cliente
 - `POST /api/v1/b/{slug}/register-push-token` — registrar push del dueño
 - `DELETE /api/v1/b/{slug}/push-token` — baja de push del dueño
@@ -80,7 +82,8 @@ sin auth → 401.
 | `main.go` | Servidor HTTP, rutas, modelos de datos, handlers principales |
 | `push.go` | Push FCM (dueño, empleado, cliente, test) y registro de tokens |
 | `reminders.go` | Cron `check-reminders`: recordatorios + resumen al dueño |
-| `undo.go` | Handler: `undoCitaHandler` (deshacer cancelación/no-show) |
+| `undo.go` | Handler: `undoCitaHandler` (deshacer cancelación/no-show, restaura Calendar) |
+| `reschedule.go` | Handler: `rescheduleCitaHandler` (mover cita sin tocar CRM) |
 | `noshow.go` | Handler: `markNoShowHandler` (no-show + ajuste CRM) |
 | `middleware.go` | CORS, security headers, rate limiting, logging |
 | `cache.go` | Caché en RAM del negocio (TTL 5min) |

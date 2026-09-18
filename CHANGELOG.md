@@ -1,5 +1,17 @@
 # Changelog — Turnobot
 
+## 2026-09-18 (backend: reglas por actor + reprogramar)
+
+### Reglas de negocio que se exigían en docs pero no en código
+- `main.go` — `DELETE citas/{id}` ahora exige la ventana de 2h al **cliente** (`too_late_to_cancel` con mensaje en palabras); dueño y equipo siempre pueden. Nueva `clientePuedeCancelar` + `policy_test.go`.
+- `undo.go` — deshacer una cancelación **recrea el evento de Google Calendar** (cancelar lo borraba y el campo quedaba huérfano).
+
+### Nuevos endpoints (retrocompatibles)
+- `GET slots?emp_id=any` — una sola llamada une a todos los que ofrecen el servicio (`{slots, asignado_por_hora, profesionales}`); con emp concreto sigue el array plano.
+- `GET slots/primer-hueco` — primer horario libre hasta 14 días (por profesional o `any`).
+- `POST citas/{id}/reschedule` — **mover** la cita sin cancelar+recrear: no toca CRM/visitas, mueve el evento de Calendar, resetea `reminder_sent`, respeta antelación mínima y tope diario.
+- `MisCitas.jsx` — botón "Cambiar hora" por cita (día + horas libres + confirmación); `BookingApp.jsx` usa `any` y `primer-hueco` con fallback al backend viejo.
+
 ## 2026-09-18
 
 ### Docs al día + TZ portal empleado
