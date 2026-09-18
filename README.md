@@ -35,24 +35,40 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
+| `/health` | GET | Health check (verifica Firestore) |
 | `/api/v1/b/{slug}` | GET | Datos del negocio, servicios y empleados |
 | `/api/v1/b/{slug}/slots` | GET | Horarios disponibles para un empleado/fecha |
-| `/api/v1/b/{slug}/book` | POST | Crear reserva (Firestore + Google Calendar) |
+| `/api/v1/b/{slug}/book` | POST | Crear reserva (Firestore + Google Calendar + push al dueño y empleado) |
 | `/api/v1/b/{slug}/citas` | GET | Citas activas del cliente por teléfono |
-| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita |
+| `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (dueño, empleado asignado o cliente) |
+| `/api/v1/b/{slug}/citas/{id}/undo` | POST | Deshacer cancelación/no-show del mismo día |
+| `/api/v1/b/{slug}/citas/{id}/client-push-token` | POST | Registrar token del cliente para su recordatorio |
+| `/api/v1/b/{slug}/no-show/{id}` | POST | Marcar cita como no-show (solo pasadas) |
 | `/api/v1/b/{slug}/servicios/{id}` | DELETE | Eliminar servicio (en cascada) |
 | `/api/v1/b/{slug}/empleados/{id}` | DELETE | Eliminar empleado (en cascada) |
-| `/api/v1/b/{slug}/no-show/{id}` | POST | Marcar cita como no-show |
+| `/api/v1/b/{slug}/empleados/{id}/pin` | POST | Asignar PIN al empleado (dueño) |
+| `/api/v1/b/{slug}/employee-login` | POST | Login del empleado con PIN (token 12h) |
+| `/api/v1/b/{slug}/employee/{id}/citas` | GET | Citas del empleado |
+| `/api/v1/b/{slug}/employee/{id}/register-push-token` | POST | Registrar push del empleado |
+| `/api/v1/b/{slug}/employee/{id}/push-token` | DELETE | Baja de push del empleado |
+| `/api/v1/b/{slug}/register-push-token` | POST | Registrar push del dueño |
+| `/api/v1/b/{slug}/push-token` | DELETE | Baja de push del dueño |
+| `/api/v1/b/{slug}/push-test` | POST | Push de prueba a los dispositivos del dueño |
+| `/api/v1/b/{slug}/cache/invalidate` | POST | Limpiar caché en RAM del negocio |
+| `/api/v1/check-reminders` | POST | Cron cada 15 min: recordatorios a clientes + resumen al dueño (header `X-Cron-Secret`) |
+| `/api/v1/push-ping` | POST | Telemetría de recepción push (diagnóstico) |
+| `/auth/google/login` | GET | Iniciar OAuth de Google Calendar |
+| `/auth/google/callback` | GET | Callback OAuth |
 
 ## No-Show
 
 | Archivo | Descripción |
 |---------|-------------|
-| `backend/noshow.go` | Handler HTTP: markNoShow (marca `no_show` + ajuste CRM) |
+| `backend/noshow.go` | Handler HTTP: markNoShow (marca `no_show` + ajuste CRM transaccional + push al cliente) |
 
 ### Flujo
 
-1. **Dueño marca "No Llegó"** → Reserva se marca como `no_show: true` y se ajusta el CRM
+1. **Dueño o empleado asignado marca "No Llegó"** (solo citas pasadas) → Reserva se marca como `no_show: true`, se ajusta el CRM y se avisa al cliente por push
 
 ## Firestore Indexes
 
@@ -78,6 +94,9 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth |
 | `GOOGLE_CLIENT_SECRET` | Client Secret de Google OAuth |
 | `REDIRECT_URL` | URL de callback OAuth |
+| `CRON_SECRET` | Secreto del cron `check-reminders` (header `X-Cron-Secret`) |
+| `EMPLOYEE_TOKEN_KEY` | Firma de sesiones de empleado, mín 32 chars (requerida: sin esto no arranca) |
+| `FRONTEND_URL` | URL pública del frontend (links y CORS) |
 | `PORT` | Puerto del servidor (default: 8080) |
 
 ## Multi-tenant

@@ -10,6 +10,8 @@ Copiar `.env.example` como referencia (no versionar valores reales):
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `REDIRECT_URL`
+- `CRON_SECRET` (auth del cron `check-reminders`)
+- `EMPLOYEE_TOKEN_KEY` (firma sesiones de empleado, mín 32 chars; requerida)
 - `FRONTEND_URL` (opcional; default `http://localhost:5173`)
 
 ## Desarrollo
@@ -48,7 +50,24 @@ sin auth → 401.
 ### Gestión (solo dueño)
 - `DELETE /api/v1/b/{slug}/servicios/{id}` — eliminar servicio (en cascada)
 - `DELETE /api/v1/b/{slug}/empleados/{id}` — eliminar empleado (en cascada)
-- `POST /api/v1/b/{slug}/no-show/{id}` — marcar cita como no-show (sin notificaciones)
+- `POST /api/v1/b/{slug}/empleados/{id}/pin` — asignar PIN al empleado
+- `POST /api/v1/b/{slug}/no-show/{id}` — marcar cita como no-show (solo pasadas, + push al cliente)
+- `POST /api/v1/b/{slug}/citas/{id}/undo` — deshacer cancelación/no-show del mismo día
+- `POST /api/v1/b/{slug}/citas/{id}/client-push-token` — registrar token del cliente
+- `POST /api/v1/b/{slug}/register-push-token` — registrar push del dueño
+- `DELETE /api/v1/b/{slug}/push-token` — baja de push del dueño
+- `POST /api/v1/b/{slug}/push-test` — push de prueba a los dispositivos del dueño
+- `POST /api/v1/b/{slug}/cache/invalidate` — limpiar caché en RAM
+
+### Empleados (login con PIN, token 12h)
+- `POST /api/v1/b/{slug}/employee-login` — login (lockout: 5 fallos = 15 min)
+- `GET /api/v1/b/{slug}/employee/{id}/citas` — citas asignadas
+- `POST /api/v1/b/{slug}/employee/{id}/register-push-token` — registrar push
+- `DELETE /api/v1/b/{slug}/employee/{id}/push-token` — baja de push
+
+### Cron y diagnóstico
+- `POST /api/v1/check-reminders` — recordatorios cada 15 min (header `X-Cron-Secret`)
+- `POST /api/v1/push-ping` — telemetría de recepción push
 
 ### OAuth
 - `GET /auth/google/login` — iniciar OAuth con Google
@@ -59,8 +78,13 @@ sin auth → 401.
 | Archivo | Descripción |
 |---------|-------------|
 | `main.go` | Servidor HTTP, rutas, modelos de datos, handlers principales |
+| `push.go` | Push FCM (dueño, empleado, cliente, test) y registro de tokens |
+| `reminders.go` | Cron `check-reminders`: recordatorios + resumen al dueño |
+| `undo.go` | Handler: `undoCitaHandler` (deshacer cancelación/no-show) |
 | `noshow.go` | Handler: `markNoShowHandler` (no-show + ajuste CRM) |
-| `seed.go` | Datos de prueba para desarrollo |
+| `middleware.go` | CORS, security headers, rate limiting, logging |
+| `cache.go` | Caché en RAM del negocio (TTL 5min) |
+| `seed.go` | Datos de prueba para desarrollo (nunca contra prod sin `SEED_ALLOW_PROD=1`) |
 
 ## Despliegue
 

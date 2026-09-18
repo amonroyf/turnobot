@@ -574,6 +574,15 @@ gcloud scheduler jobs create http firestore-backup-daily \
 
 ## 10. Monitoreo y Health Checks
 
+### Alerta de facturación (ya configurada)
+
+Presupuesto `TurnoBot mensual`: **$50.000 COP/mes** para este proyecto, con
+avisos por email al 50%, 90% y 100% del gasto. Verificar con:
+
+```bash
+gcloud billing budgets list --billing-account=01F0F7-F1C2CE-2274FB
+```
+
 ### Health check endpoint
 
 ```bash

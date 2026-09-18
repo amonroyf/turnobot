@@ -2571,7 +2571,9 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 	}
 
 	ctx := r.Context()
-	loc, _ := time.LoadLocation("America/Bogota")
+	// Zona del negocio (no hardcodeada): fuera de Colombia la fecha/hora
+	// salía desplazada en el portal del empleado.
+	loc := shopLocation(ctx, slug)
 
 	q := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).

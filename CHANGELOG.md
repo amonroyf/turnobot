@@ -1,5 +1,13 @@
 # Changelog — Turnobot
 
+## 2026-09-18
+
+### Docs al día + TZ portal empleado
+
+- `README.md` y `backend/README.md` — tabla completa de endpoints (undo, push-test, check-reminders, rutas de empleado…), vars `CRON_SECRET`/`EMPLOYEE_TOKEN_KEY`, No-Show actualizado
+- `.agents/skills/turnobot-deploy.md` — `VITE_API_URL` obligatoria en el build (el error que tumbó prod una vez)
+- `main.go` — `employeeCitasHandler` usa la zona del negocio en vez de Bogotá hardcodeada
+
 ## 2026-09-17
 
 ### Sin WhatsApp automático al confirmar

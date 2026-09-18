@@ -23,8 +23,9 @@ Skill reutilizable para aplicar cambios, verificar, testear y desplegar Turnobot
 # Backend Go
 cd backend && go build ./... && go test ./...
 
-# Frontend Vite
-cd frontend && npx vite build
+# Frontend Vite (VITE_API_URL OBLIGATORIA: sin ella el build apunta a vacío
+# y la app no carga ningún negocio en producción)
+cd frontend && VITE_API_URL="https://turnobot-850305350371.us-central1.run.app" npx vite build
 ```
 
 Ambos deben compilar sin errores antes de continuar.
