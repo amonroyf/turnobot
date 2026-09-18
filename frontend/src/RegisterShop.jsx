@@ -159,20 +159,23 @@ export default function RegisterShop() {
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2" aria-label={`Paso ${step} de 2`}>
+          Paso {step} de 2
+        </p>
         <h2 className="text-3xl font-extrabold text-gray-900">
-          {step === 1 ? 'Crea tu Cuenta' : 'Configura tu Negocio'}
+          {step === 1 ? 'Crea tu cuenta' : 'Nombra tu página'}
         </h2>
         <p className="mt-2 text-sm text-gray-600">
           {step === 1
-            ? 'Empieza a recibir reservas automáticamente'
-            : 'Elige cómo te encontrarán tus clientes'}
+            ? 'Con esta cuenta entrarás a tu agenda. Te toma 1 minuto.'
+            : 'Así te encontrarán tus clientes para reservar.'}
         </p>
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-white py-8 px-6 shadow rounded-2xl sm:px-10 border border-gray-100">
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm text-center">
+            <div role="alert" className="mb-4 bg-red-50 border border-red-200 text-red-600 p-3 rounded-lg text-sm text-center font-medium">
               {error}
             </div>
           )}
@@ -210,28 +213,36 @@ export default function RegisterShop() {
                 </button>
               ) : (
                 <form className="space-y-4" onSubmit={handlePasswordRegister}>
+                  <label className="block">
+                    <span className="block text-xs font-bold text-gray-700 mb-1">Correo electrónico</span>
                   <input
                     type="email"
                     required
                     autoComplete="email"
-                    placeholder="Correo electrónico"
+                    placeholder="tucorreo@ejemplo.com"
+                    aria-label="Correo electrónico"
                     value={formData.email}
                     onChange={(e) =>
                       setFormData({ ...formData, email: e.target.value })
                     }
-                    className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
+                    className="w-full min-h-[48px] p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
                   />
+                  </label>
+                  <label className="block">
+                    <span className="block text-xs font-bold text-gray-700 mb-1">Contraseña (mínimo 6 caracteres)</span>
                   <input
                     type="password"
                     required
                     autoComplete="new-password"
-                    placeholder="Contraseña (mínimo 6 caracteres)"
+                    placeholder="••••••"
+                    aria-label="Contraseña de mínimo 6 caracteres"
                     value={formData.password}
                     onChange={(e) =>
                       setFormData({ ...formData, password: e.target.value })
                     }
-                    className="w-full p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
+                    className="w-full min-h-[48px] p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
                   />
+                  </label>
                   <button
                     type="submit"
                     disabled={loading}
@@ -246,26 +257,26 @@ export default function RegisterShop() {
 
           {step === 2 && (
             <form className="space-y-5" onSubmit={handleCompleteRegistration}>
-              <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg text-center">
-                Sesión iniciada. Solo falta configurar tu negocio.
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg text-center font-medium">
+                ✅ Cuenta lista. Ahora crea tu página de reservas.
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Nombre del Local
+                <label className="block text-sm font-bold text-gray-700">
+                  ¿Cómo se llama tu negocio?
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="Ej. Clínica Wellness / Auto Detailing"
+                  placeholder="Ej. Barbería El Corte"
                   value={formData.name}
                   onChange={handleNameChange}
-                  className="mt-1 w-full p-3 border border-gray-300 rounded-xl focus:ring-black focus:border-black"
+                  className="mt-1 w-full min-h-[48px] p-3 border border-gray-300 rounded-xl focus:ring-black focus:border-black"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">
-                  Tu Enlace Personalizado
+                <label className="block text-sm font-bold text-gray-700">
+                  Tu enlace para compartir
                 </label>
                 <div className="mt-1 flex rounded-xl shadow-sm">
                   <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-300 bg-gray-50 text-gray-500 sm:text-sm">
@@ -274,6 +285,7 @@ export default function RegisterShop() {
                   <input
                     type="text"
                     required
+                    aria-describedby="ayuda-enlace"
                     value={formData.slug}
                     onChange={(e) =>
                       setFormData({
@@ -281,20 +293,25 @@ export default function RegisterShop() {
                         slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''),
                       })
                     }
-                    className="flex-1 block w-full min-w-0 p-3 border border-gray-300 rounded-none rounded-r-xl focus:ring-black focus:border-black"
+                    className="flex-1 block w-full min-w-0 min-h-[48px] p-3 border border-gray-300 rounded-none rounded-r-xl focus:ring-black focus:border-black"
                   />
                 </div>
-                <p className="mt-2 text-[10px] text-gray-500">
-                  Usa solo minúsculas, números y guiones. Ejemplo: <i>mi-negocio-bogota</i>
+                <p id="ayuda-enlace" className="mt-2 text-[11px] text-gray-500 font-medium">
+                  Solo minúsculas, números y guiones. Tus clientes entrarán a <strong>{window.location.host}/shop/{formData.slug || 'tu-enlace'}</strong>
                 </p>
+                {!esSlugValido((formData.slug || '').toLowerCase().trim()) && formData.slug && (
+                  <p role="alert" className="mt-1 text-[11px] text-red-600 font-semibold">
+                    Revisa el enlace: mínimo 3 caracteres, sin espacios ni símbolos.
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-50"
+                className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-black hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-black disabled:opacity-50 min-h-[52px]"
               >
-                {loading ? 'Validando...' : 'Finalizar Configuración'}
+                {loading ? 'Creando tu página...' : 'Crear mi página de reservas'}
               </button>
             </form>
           )}

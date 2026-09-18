@@ -110,12 +110,12 @@ function ChartSVG() {
 }
 
 const features = [
-  { icon: '📅', title: 'Calendario Anti-Errores', desc: 'Sincronizado con Google Calendar. Dile adiós a los turnos cruzados y a los huecos en la agenda.', svg: CalendarSVG },
-  { icon: '💰', title: 'Catálogo de Servicios', desc: 'Muestra tus precios y duraciones claramente. El cliente sabe exactamente qué va a pagar.' },
-  { icon: '👥', title: 'Multi-Profesional', desc: 'Cada profesional tiene su propia agenda y especialidad en un solo enlace.', svg: PeopleSVG },
-  { icon: '📓', title: 'Base de Datos (CRM)', desc: 'TurnoBot guarda el nombre y teléfono de todos tus clientes. Descárgalo en Excel cuando quieras.' },
-  { icon: '📊', title: 'Panel Administrativo', desc: 'Controla tu negocio desde el celular. Revisa cuántas citas tienes hoy y cuánto vas a facturar.', svg: ChartSVG },
-  { icon: '🔔', title: 'Notificaciones Push', desc: 'Recibe una alerta inmediata en tu celular cada vez que un cliente confirma un turno nuevo.' },
+  { icon: '📅', title: 'Calendario sin choques', desc: 'Se sincroniza con Google Calendar. Adiós a los turnos cruzados y a los huecos en la agenda.', svg: CalendarSVG },
+  { icon: '💰', title: 'Tus servicios con precio claro', desc: 'Muestra qué haces, cuánto dura y cuánto cuesta. El cliente reserva sabiendo qué va a pagar en tu local.' },
+  { icon: '👥', title: 'Todo tu equipo en un enlace', desc: 'Cada persona tiene su agenda y sus servicios, todo en un solo enlace para compartir.', svg: PeopleSVG },
+  { icon: '📓', title: 'Tus clientes guardados', desc: 'TurnoBot guarda nombre y teléfono de quien reserva. Descarga la lista en Excel cuando quieras.' },
+  { icon: '📊', title: 'Tu negocio desde el celular', desc: 'Mira cuántas citas tienes hoy y cuánto vas a recibir, estés donde estés.', svg: ChartSVG },
+  { icon: '🔔', title: 'Avisos al instante', desc: 'Te llega un aviso al celular cada vez que un cliente confirma, cancela o no llega.' },
 ];
 
 const steps = [
@@ -160,11 +160,11 @@ function HeroSection() {
             </FadeIn>
             <FadeIn delay={300}>
               <div className="flex flex-col sm:flex-row gap-4">
-                <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25">
-                  Iniciar Mes de Prueba
+                <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25 min-h-[56px]">
+                  Probar gratis 30 días
                 </a>
-                <a href="/shop/demo" target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10">
-                  Ver demo interactiva
+                <a href="#demo" className="inline-flex items-center justify-center gap-2 bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10 min-h-[56px]">
+                  Ver cómo se ve
                 </a>
               </div>
             </FadeIn>
@@ -198,7 +198,7 @@ function DemoSection() {
               Así reservan tus clientes
             </h2>
             <p className="text-lg text-gray-500">
-              Un link. Cuatro pasos. Reserva confirmada. Sin WhatsApp. Sin llamadas.
+              Un enlace. Cinco pasos guiados. Cita confirmada. Sin llamadas ni mensajes de ida y vuelta.
             </p>
           </div>
         </FadeIn>
@@ -348,17 +348,17 @@ function PricingSection() {
               <p className="text-5xl font-black text-gray-900 mb-2">$49.900<span className="text-lg font-bold text-gray-400">/mes</span></p>
               <p className="text-xs text-gray-500 font-medium">Equivale a menos de un tinto al día ($1.660 COP). <strong>No cobramos comisiones.</strong></p>
             </div>
-            <div className="grid sm:grid-cols-2 gap-4 mb-10 max-w-2xl mx-auto">
-              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Profesionales ilimitados</div>
+              <div className="grid sm:grid-cols-2 gap-4 mb-10 max-w-2xl mx-auto">
+              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Personas ilimitadas en tu equipo</div>
               <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Citas ilimitadas</div>
-              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> CRM y base de datos de clientes</div>
-              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Enlace público 24/7</div>
-              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Sincronización Google Calendar</div>
-              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Métricas y exportación CSV</div>
+              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Lista de clientes descargable en Excel</div>
+              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Tu enlace para reservar, 24/7</div>
+              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Sincronización con Google Calendar</div>
+              <div className="flex items-center gap-3 text-sm text-gray-600"><span className="text-green-500 font-bold text-lg">✓</span> Avisos al instante y control de no llegadas</div>
             </div>
             <div className="text-center">
-              <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-10 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25">
-                Iniciar mi mes de prueba
+              <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-10 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25 min-h-[56px]">
+                Probar gratis 30 días
               </a>
               <p className="text-xs text-gray-500 mt-4">Sin tarjeta de crédito. Cancela en cualquier momento.</p>
             </div>
@@ -388,8 +388,8 @@ function FAQSection() {
       answer: 'Sí. Cada profesional puede tener sus propios horarios, servicios y disponibilidad.',
     },
     {
-      question: '¿Puedo cancelar una cita?',
-      answer: 'Sí. Los clientes pueden cancelar con anticipación y el administrador puede gestionar las citas desde su panel.',
+      question: '¿El cliente puede cambiar o cancelar su cita?',
+      answer: 'Sí. El cliente ve sus citas con su número de WhatsApp y puede cancelarlas; el horario queda libre de inmediato. Como dueño también puedes cancelar o marcar “No llegó” desde tu agenda.',
     },
     {
       question: '¿Qué negocios pueden usar TurnoBot?',
@@ -470,13 +470,13 @@ function CTASection() {
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
         <FadeIn>
           <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black mb-6">
-            ¿Listo para dejar de perder clientes?
+            ¿Listo para no perder más clientes?
           </h2>
           <p className="text-lg text-gray-400 mb-10 max-w-2xl mx-auto">
-            Únete a los negocios que ya reservan solos. Tienes 30 días de prueba sin costo.
+            Crea tu página de reservas hoy. Tienes 30 días de prueba sin costo.
           </p>
-          <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25">
-            Iniciar Mi Prueba Gratis
+          <a href="/register" className="inline-flex items-center justify-center gap-2 bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25 min-h-[56px]">
+            Probar gratis 30 días
           </a>
           <p className="text-xs text-gray-500 mt-6">Sin tarjeta · Sin contrato · Cancela cuando quieras</p>
         </FadeIn>
@@ -496,8 +496,8 @@ function Footer() {
           </div>
           <div className="flex gap-6 text-sm">
             <a href="/" className="hover:text-white transition-colors">Inicio</a>
-            <a href="/admin" className="hover:text-white transition-colors">Admin</a>
-            <a href="/register" className="hover:text-white transition-colors">Crear negocio</a>
+            <a href="/admin" className="hover:text-white transition-colors">Entrar a mi panel</a>
+            <a href="/register" className="hover:text-white transition-colors">Crear mi página</a>
           </div>
         </div>
         <div className="border-t border-gray-800 mt-8 pt-8 text-center text-xs text-gray-600">

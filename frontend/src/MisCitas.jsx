@@ -50,7 +50,7 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
   };
 
   const cancelarCita = async (cita) => {
-    if (!window.confirm('¿Seguro que deseas cancelar esta cita?')) return;
+    if (!window.confirm('¿Cancelar esta cita? El horario quedará libre y no se puede deshacer. Si quieres otra hora, cancela aquí y vuelve a reservar en Agendar.')) return;
     setCancelando(cita.id);
     setError('');
     try {
@@ -88,31 +88,35 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
 
   return (
     <div className="space-y-4 pb-10">
-      <div className="flex items-center gap-2 mb-4">
-        <h2 className="font-bold text-gray-800 text-base">Consultar o cancelar citas</h2>
+      <div className="flex items-center gap-2 mb-1">
+        <h2 className="font-bold text-gray-800 text-base">Tus citas</h2>
       </div>
+      <p className="text-[11px] text-gray-500 font-medium mb-4">Escríbe tu WhatsApp para verlas. ¿Otra hora? Cancela y reserva de nuevo en Agendar.</p>
 
       <form onSubmit={buscarCitas} className="space-y-3">
+        <label className="block">
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tu WhatsApp</span>
         <input
-          type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+          type="tel" required placeholder="Ej. 300 123 4567"
           aria-label="Tu número de WhatsApp"
           inputMode="tel"
           autoComplete="tel"
           value={telefono}
           onChange={e => setTelefono(formatPhoneNumber(e.target.value))}
-          className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black shadow-2xs"
+          className="w-full min-h-[48px] p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-black shadow-2xs"
         />
+        </label>
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3.5 bg-black text-white font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50 shadow-md text-sm"
+          className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50 shadow-md text-sm"
         >
           {loading ? 'Buscando...' : 'Ver mis citas'}
         </button>
       </form>
 
       {error && (
-        <div className="p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
+        <div role="alert" className="p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
           {error}
         </div>
       )}
@@ -136,7 +140,8 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
       {citas && citas.length === 0 && !citaCancelada && (
         <div className="text-center p-8 bg-white border border-gray-200 rounded-2xl shadow-sm">
           <div className="text-4xl mb-3">📭</div>
-          <p className="text-sm font-medium text-gray-600">No tienes citas pendientes registradas con este número.</p>
+          <p className="text-sm font-bold text-gray-700">Sin citas con este número</p>
+          <p className="text-[11px] text-gray-500 font-medium mt-1">Revisa que sea el mismo WhatsApp con el que reservaste.</p>
         </div>
       )}
 
@@ -231,9 +236,10 @@ function CitaCard({ c, onCancel, cancelando }) {
           <button
             onClick={() => onCancel(c)}
             disabled={cancelando === c.id}
-            className="px-4 py-2 bg-red-50 text-red-600 font-bold text-xs rounded-xl disabled:opacity-50 active:scale-95 transition-transform"
+            title="Cancelar esta cita y liberar el horario"
+            className="min-h-[44px] px-4 py-2 bg-red-50 text-red-700 font-bold text-xs rounded-xl border border-red-200 disabled:opacity-50 active:scale-95 transition-transform"
           >
-            {cancelando === c.id ? 'Cancelando...' : 'Cancelar cita'}
+            {cancelando === c.id ? 'Cancelando…' : 'Cancelar cita'}
           </button>
         </div>
       )}
