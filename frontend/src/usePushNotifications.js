@@ -42,7 +42,16 @@ export default function usePushNotifications(negocioId) {
             tag: d.tag || 'turnobot-notification',
             requireInteraction: true,
           });
-          n.onclick = () => { window.focus(); n.close(); };
+          // Igual que el SW: tocar lleva a la página del aviso.
+          n.onclick = () => {
+            try {
+              if (d.url) window.location.href = d.url;
+              else window.focus();
+            } catch {
+              window.focus();
+            }
+            n.close();
+          };
         }
       } catch {
         // Sin notificación del sistema: el toast igual se mostró.
@@ -54,12 +63,12 @@ export default function usePushNotifications(negocioId) {
   const subscribe = useCallback(async () => {
     if (!messaging) {
       console.warn('Firebase Messaging no soportado en este navegador');
-      return;
+      return false;
     }
     try {
       const currentPermission = await Notification.requestPermission();
       setPermission(currentPermission);
-      if (currentPermission !== 'granted') return;
+      if (currentPermission !== 'granted') return false;
 
       const fcmToken = await getToken(messaging, {
         vapidKey: undefined // Using default FCM VAPID key from Firebase project
@@ -84,9 +93,12 @@ export default function usePushNotifications(negocioId) {
             body: JSON.stringify({ token: fcmToken })
           });
         }
+        return true;
       }
+      return false;
     } catch (err) {
       console.error('Error al suscribirse a push:', err);
+      return false;
     }
   }, [negocioId]);
 

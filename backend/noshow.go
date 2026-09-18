@@ -126,14 +126,14 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		return
 	}
 
-	// Push al cliente: notificar que su cita fue marcada como no-show
+	// Push al cliente: en sus palabras (sin la jerga "no-show").
 	if b.ClientPushToken != "" {
 		loc := shopLocation(ctx, slug)
 		fechaStr := b.DateTime.In(loc).Format("02/01")
 		horaStr := b.DateTime.In(loc).Format("15:04")
 		go sendPushToClient(context.Background(), b.ClientPushToken,
-			"⚠️ Cita marcada como no-show",
-			fmt.Sprintf("Tu cita de %s (%s a las %s) fue marcada como no-show.", b.ServiceName, fechaStr, horaStr),
+			"⚠️ No registramos tu llegada",
+			fmt.Sprintf("Tu cita de %s (%s a las %s) quedó marcada como no asistida. Escríbenos para reagendar.", b.ServiceName, fechaStr, horaStr),
 			"/shop/"+slug, "noshow-"+citaID)
 	}
 

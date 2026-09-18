@@ -102,6 +102,7 @@ sin auth → 401.
 | Antelación mínima | `min_notice_minutes`, default 0 | Configurable (Mindbody) | — |
 | Ventana de reserva | `booking_window_days`, default 30, tope 365 | Schedule window configurable (Mindbody) | — |
 | Rate limit escritura | 10/min por IP+negocio, solo `book`/`reschedule` | Anti-bot en booking | Staff (undo/no-show/PIN) sin límite estricto |
+| Teléfono | Formato E.164 válido (libphonenumber) + throttle 5 intentos/hora por número+negocio + tope 3/día | OTP por SMS/WhatsApp como prueba de titularidad | Sin OTP cualquiera reserva con número ajeno; el acoso (ver/cancelar citas de otro con su número) se mitiga con IDs no adivinables + consulta mínima de 7 dígitos |
 | Login empleado | PIN 4-6 + lockout 5 fallos/15min + token 12h | PIN por empleado (estándar simple) | Lockout en memoria (multi-instancia lo diluye) |
 
 Sin pagos en línea aún: el mercado cobra seña/cuota de no-show con tarjeta en

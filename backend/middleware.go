@@ -83,7 +83,11 @@ type visitor struct {
 
 var (
 	apiLimiter     = newRateLimiter(60, time.Minute) // 60 req/min por IP
-	bookingLimiter = newRateLimiter(10, time.Minute) // 10 bookings/min por IP
+	bookingLimiter = newRateLimiter(10, time.Minute) // 10 escrituras/min por IP+negocio
+	// phoneBookLimiter frena el abuso por número: un script que reserva una y
+	// otra vez con el mismo teléfono (propio o ajeno) choca aquí aunque rote
+	// IPs. 5 intentos/hora sobran para uso humano (el tope real es 3/día).
+	phoneBookLimiter = newRateLimiter(5, time.Hour) // 5 intentos/hora por teléfono+negocio
 )
 
 func newRateLimiter(limit int, window time.Duration) *rateLimiter {

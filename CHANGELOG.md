@@ -1,5 +1,21 @@
 # Changelog — Turnobot
 
+## 2026-09-18 (push: el checkbox ahora sí cumple + iOS honesto)
+
+- `BookingApp.jsx` — el "🔔 Avísame" era decorativo (el backend ignoraba el campo y había que tocar otro botón después). Ahora al confirmar se auto-activa si quedó marcado; si el permiso falla queda el reintento manual. Microcopy honesto ("te pediremos permiso una sola vez").
+- `BookingApp.jsx` — iPhone sin app instalada: Apple no despierta avisos web; se explica (Compartir → Añadir a inicio) en vez de prometer lo imposible.
+- `firebase-messaging-sw.js` — `renotify` en tags fijas (la 2da reserva ya no llega muda) + botón de acción según destino ("Ver mi cita" / "Ver mis citas" / "Ver agenda").
+- `usePushNotifications.js` — el aviso en primer plano navega a la página del aviso (antes solo enfocaba); `subscribe()` retorna éxito y el Admin muestra el error si falla.
+- `reminders.go` — título "Tu cita es mañana" (el caso más común con 24h); `noshow.go` — push al cliente sin jerga ("No registramos tu llegada… Escríbenos para reagendar").
+
+## 2026-09-18 (teléfono anti-abuso sin OTP)
+
+La validación verifica formato (libphonenumber → E.164), no titularidad.
+Endurecido sin costo por SMS:
+- Throttle por número: 5 intentos de reserva/hora por teléfono+negocio (`phone_rate_limited`), además del tope 3/día y 10/min por IP+negocio.
+- `GET /citas` exige ≥7 dígitos (frena barridos por prefijos).
+- Documentado el límite real: sin OTP cualquiera puede reservar con número ajeno; la prueba de titularidad costaría un SMS/WhatsApp por reserva. El acoso (cancelar citas de otro) exige adivinar el citaID + el teléfono.
+
 ## 2026-09-18 (Firestore rules: tokens fuera del doc público)
 
 **Hallazgo (auditoría S1 incompleta):** `negocios/{slug}` era de lectura pública Y guarda `push_token/push_tokens` del dueño (y el campo `refresh_token` existe en el esquema). Cualquiera con el slug leía los tokens FCM.

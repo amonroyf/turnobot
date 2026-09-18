@@ -1306,12 +1306,21 @@ export default function AdminDashboard() {
                   </button>
                 </div>
               ) : (
+                <>
                 <button
-                  onClick={pushNotifications.subscribe}
+                  onClick={async () => {
+                    setPushTestMsg('');
+                    const ok = await pushNotifications.subscribe();
+                    if (!ok) setPushTestMsg('⚠️ No se pudieron activar. Revisa el permiso del navegador e intenta de nuevo.');
+                  }}
                   className="w-full min-h-[48px] py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
                 >
                   🔔 Activar avisos en este dispositivo
                 </button>
+                {pushTestMsg && (
+                  <p role="alert" className="text-xs font-bold text-center p-3 rounded-xl bg-red-50 border border-red-200 text-red-700">{pushTestMsg}</p>
+                )}
+                </>
               )}
             </div>
 

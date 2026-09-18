@@ -528,6 +528,12 @@ export default function BookingApp() {
         }
         setPushStatus('idle');
         setStep(5);
+        // El checkbox "avisarme" ahora sí cumple: si quedó marcado, se intenta
+        // activar el aviso de una vez (sin otro toque). Si el permiso falla,
+        // queda el botón manual en la pantalla de éxito.
+        if (data.cita_id && booking.avisarme !== false && !avisosLimitadosIOS) {
+          setTimeout(() => activarRecordatorio(data.cita_id, booking.clienteTelefono), 400);
+        }
         return;
       }
       const data = await res.json().catch(() => null);
@@ -593,11 +599,14 @@ export default function BookingApp() {
   // Se ejecuta DESPUÉS de que la cita ya está confirmada (201), separando la
   // UX de reserva de la de permisos. Si falla o el usuario niega, la cita
   // simplemente queda sin recordatorio push (sin efecto adverso).
-  const activarRecordatorio = async () => {
-    if (pushStatus !== 'idle' || !citaId) return;
+  // Acepta el id/teléfono explícitos para el auto-intento justo al confirmar
+  // (el estado citaId aún no se actualizó en ese momento).
+  const activarRecordatorio = async (citaIdParam, telefonoParam) => {
+    const id = citaIdParam || citaId;
+    if (pushStatus !== 'idle' || !id) return;
     if (!messaging || typeof Notification === 'undefined') {
       setPushStatus('error');
-      setPushError('Este navegador no soporta notificaciones.');
+      setPushError('Este navegador no soporta notificaciones. Tu cita quedó guardada y puedes añadirla al calendario.');
       return;
     }
     setPushStatus('loading');
@@ -608,7 +617,7 @@ export default function BookingApp() {
       }
       if (Notification.permission !== 'granted') {
         setPushStatus('error');
-        setPushError('🔕 Permiso bloqueado: actívalo en los ajustes del navegador para este sitio.');
+        setPushError('🔕 Sin permiso no hay avisos: actívalo en los ajustes del navegador para este sitio e intenta de nuevo.');
         return;
       }
       const token = await getToken(messaging, { vapidKey: undefined });
@@ -618,12 +627,12 @@ export default function BookingApp() {
         return;
       }
       const res = await fetch(
-        `${API_URL}/api/v1/b/${slug}/citas/${citaId}/client-push-token`,
+        `${API_URL}/api/v1/b/${slug}/citas/${id}/client-push-token`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           // El teléfono verifica que quien registra es el dueño de la cita.
-          body: JSON.stringify({ token, phone: (booking.clienteTelefono || '').replace(/\D/g, '') }),
+          body: JSON.stringify({ token, phone: ((telefonoParam ?? booking.clienteTelefono) || '').replace(/\D/g, '') }),
         }
       );
       if (res.ok) {
@@ -637,6 +646,14 @@ export default function BookingApp() {
       setPushError('⚠️ Error de red. Intenta de nuevo.');
     }
   };
+
+  // iPhone sin app instalada: Apple no despierta avisos web en Safari.
+  // Se detecta para explicar en palabras (no prometer lo imposible).
+  const esIOS = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+  const appInstalada = typeof window !== 'undefined' && (
+    window.matchMedia?.('(display-mode: standalone)').matches || window.navigator?.standalone === true
+  );
+  const avisosLimitadosIOS = esIOS && !appInstalada;
 
   const slotsManana = slots.filter(h => parseInt(h.split(':')[0], 10) < 12);
   const slotsTarde = slots.filter(h => {
@@ -1177,6 +1194,9 @@ export default function BookingApp() {
                         />
                         <span className="text-xs font-semibold text-gray-700">
                           🔔 Avísame antes de mi cita en este dispositivo
+                          <span className="block text-[11px] font-medium text-gray-500 mt-0.5">
+                            Al confirmar te pediremos permiso una sola vez.
+                          </span>
                         </span>
                       </label>
                       <label className="flex items-center gap-3 px-1 cursor-pointer">
@@ -1263,36 +1283,46 @@ export default function BookingApp() {
                         📅 Otros calendarios (.ics)
                       </button>
 
-                      {/* Activar recordatorio push: aparece solo si la cita
-                          es futura, el navegador soporta FCM y no se activó
-                          ya. El permiso se pide aquí (no en el flujo de
-                          reserva) para no bloquear la confirmación. */}
-                      {citaId && pushStatus === 'idle' && messaging && typeof Notification !== 'undefined' && (
-                        <button
-                          type="button"
-                          onClick={activarRecordatorio}
-                          className="block w-full py-3.5 bg-blue-50 text-blue-700 font-bold rounded-xl text-center text-sm border border-blue-200 active:scale-95 transition-transform"
-                        >
-                          🔔 Activar recordatorio en este teléfono
-                        </button>
-                      )}
-                      {pushStatus === 'loading' && (
-                        <p className="text-xs text-blue-600 font-semibold py-2">⏳ Activando recordatorio…</p>
-                      )}
-                      {pushStatus === 'success' && (
-                        <p className="text-xs text-green-600 font-semibold py-2">✅ Recordatorio activado. Te avisaremos antes de tu cita.</p>
-                      )}
-                      {pushStatus === 'error' && (
-                        <div className="py-2 space-y-2">
-                          <p className="text-xs text-red-600 font-semibold">{pushError || '⚠️ No se pudo activar el recordatorio.'}</p>
-                          <button
-                            type="button"
-                            onClick={() => { setPushStatus('idle'); setPushError(''); }}
-                            className="text-xs text-blue-600 font-bold underline"
-                          >
-                            Intentar de nuevo
-                          </button>
+                      {/* Aviso push: el auto-intento corre al confirmar si quedó
+                          marcado; este botón es el reintento manual. En iPhone
+                          sin app instalada se explica el límite de Apple. */}
+                      {avisosLimitadosIOS ? (
+                        <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-left">
+                          <p className="text-xs font-bold text-amber-800">📲 ¿Usas iPhone? Instala la app para avisos</p>
+                          <p className="text-[11px] text-amber-700 font-medium mt-1">
+                            Safari no permite avisos web. Toca Compartir → “Añadir a pantalla de inicio”, abre TurnoBot desde ahí y activa el recordatorio. Mientras tanto tu cita quedó guardada y la tienes en el calendario de arriba.
+                          </p>
                         </div>
+                      ) : (
+                        <>
+                          {citaId && pushStatus === 'idle' && messaging && typeof Notification !== 'undefined' && (
+                            <button
+                              type="button"
+                              onClick={() => activarRecordatorio()}
+                              className="block w-full min-h-[48px] py-3.5 bg-blue-50 text-blue-700 font-bold rounded-xl text-center text-sm border border-blue-200 active:scale-95 transition-transform"
+                            >
+                              🔔 Activar recordatorio en este teléfono
+                            </button>
+                          )}
+                          {pushStatus === 'loading' && (
+                            <p role="status" className="text-xs text-blue-600 font-semibold py-2">⏳ Activando recordatorio…</p>
+                          )}
+                          {pushStatus === 'success' && (
+                            <p role="status" className="text-xs text-green-600 font-semibold py-2">✅ Recordatorio activado. Te avisaremos antes de tu cita en este dispositivo.</p>
+                          )}
+                          {pushStatus === 'error' && (
+                            <div className="py-2 space-y-2">
+                              <p role="alert" className="text-xs text-red-600 font-semibold">{pushError || '⚠️ No se pudo activar el recordatorio.'}</p>
+                              <button
+                                type="button"
+                                onClick={() => { setPushStatus('idle'); setPushError(''); setTimeout(() => activarRecordatorio(), 100); }}
+                                className="min-h-[44px] px-4 text-xs text-blue-600 font-bold underline"
+                              >
+                                Intentar de nuevo
+                              </button>
+                            </div>
+                          )}
+                        </>
                       )}
 
                       {/* WhatsApp ahora es opcional para dudas, no obligatorio */}

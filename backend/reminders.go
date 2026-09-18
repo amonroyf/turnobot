@@ -154,9 +154,18 @@ outer:
 			}
 
 			if it.b.ClientPushToken != "" {
-				title := "⏰ Tu cita es hoy"
-				if it.b.DateTime.In(loc).Format("2006-01-02") != now.In(loc).Format("2006-01-02") {
-					title = "⏰ Recordatorio de tu cita"
+				// Título en palabras del cliente: hoy / mañana / fecha.
+				// (Antes solo distinguía "hoy"; "mañana" es el caso más común
+				// con el default de 24h y merece su propio título.)
+				ahoraLoc := now.In(loc)
+				hoyStr := ahoraLoc.Format("2006-01-02")
+				mananaStr := ahoraLoc.AddDate(0, 0, 1).Format("2006-01-02")
+				citaStr := it.b.DateTime.In(loc).Format("2006-01-02")
+				title := "⏰ Recordatorio de tu cita"
+				if citaStr == hoyStr {
+					title = "⏰ Tu cita es hoy"
+				} else if citaStr == mananaStr {
+					title = "⏰ Tu cita es mañana"
 				}
 				body := fmt.Sprintf("%s en %s, %s a las %s", it.b.ServiceName, negName, fecha, hora)
 				sent, gone := sendPushToClient(ctx, it.b.ClientPushToken, title, body, "/shop/"+slug, "reminder-"+it.id)

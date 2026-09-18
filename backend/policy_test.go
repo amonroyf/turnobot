@@ -32,6 +32,18 @@ func TestClientePuedeCancelar(t *testing.T) {
 	}
 }
 
+// Throttle por teléfono: los primeros N intentos pasan, el resto se frena,
+// y con el tiempo se recuperan (token bucket).
+func TestPhoneBookLimiter(t *testing.T) {
+	rl := newRateLimiter(2, time.Hour)
+	key := "test-phone-throttle"
+	if !rl.allowKey(key) || !rl.allowKey(key) {
+		t.Fatal("los 2 primeros intentos deberían pasar")
+	}
+	if rl.allowKey(key) {
+		t.Fatal("el 3er intento debería frenarse")
+	}
+}
 // Ventana de undo por acción (no por fecha de la cita): permite corregir al
 // día siguiente un no-show marcado tarde.
 func TestMarcaReciente(t *testing.T) {

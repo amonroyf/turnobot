@@ -35,19 +35,27 @@ self.addEventListener('activate', (event) => {
 messaging.onBackgroundMessage((payload) => {
   const data = payload.data || {};
   const notificationTitle = data.title || 'Turnobot';
+  const tag = data.tag || 'turnobot-notification';
+  const url = data.url || '/admin';
+  // Las tags fijas (nueva reserva, cancelación) reemplazan a la anterior en
+  // bandeja: con renotify suenan/vibran igual, si no la 2da llegaría muda.
+  // Las tags únicas por cita (recordatorios, pruebas) no reemplazan nada.
+  const esFija = tag === 'new-booking' || tag === 'cancellation';
+  // La acción dice a dónde lleva: no es lo mismo ver la agenda que tu cita.
+  const accion = url.startsWith('/shop/') ? 'Ver mi cita'
+    : url.startsWith('/employee/') ? 'Ver mis citas'
+    : 'Ver agenda';
   const notificationOptions = {
     body: data.body || '',
     icon: data.icon || '/icons/icon-192x192.png',
     badge: '/icons/icon-192x192.png',
-    // Tag fijo por tipo de evento: una nueva reserva reemplaza la anterior
-    // en vez de apilarse en la bandeja de notificaciones.
-    tag: data.tag || 'turnobot-notification',
-    renotify: false,
+    tag,
+    renotify: esFija,
     // Persistente en la bandeja hasta que el usuario la descarte.
     requireInteraction: true,
     vibrate: [200, 100, 200],
-    data: { url: data.url || '/admin' },
-    actions: [{ action: 'open', title: 'Ver agenda' }]
+    data: { url },
+    actions: [{ action: 'open', title: accion }]
   };
 
   self.registration.showNotification(notificationTitle, notificationOptions);

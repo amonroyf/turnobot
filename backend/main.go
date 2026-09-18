@@ -769,7 +769,11 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Sanitizar y validar teléfono con libphonenumber (+E.164)
+	// Sanitizar y validar teléfono con libphonenumber (+E.164).
+	// NOTA: esto verifica FORMATO (rango real del operador), no titularidad:
+	// cualquiera puede reservar con el número de otro. La prueba real de
+	// titularidad sería un OTP por SMS/WhatsApp (con costo por mensaje).
+	// Mientras tanto: tope diario por número + throttle por número/hora.
 	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono, defaultPhoneRegion)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -782,6 +786,19 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 	req.ClienteTelefono = telefonoLimpio
+
+	// Throttle por teléfono: 5 intentos de reserva/hora por número+negocio.
+	if !phoneBookLimiter.allowKey(req.ClienteTelefono + "|" + slug) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "3600")
+		w.WriteHeader(http.StatusTooManyRequests)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "phone_rate_limited",
+			"message": "Demasiados intentos con este número. Espera una hora o escribe al local.",
+		})
+		return
+	}
 
 	ctx := context.Background()
 	parsedDate, err := time.Parse("2006-01-02", req.Fecha)
@@ -1103,6 +1120,12 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	telefono := r.URL.Query().Get("telefono")
 	if telefono == "" {
 		http.Error(w, "Falta parámetro telefono", http.StatusBadRequest)
+		return
+	}
+	// Freno a enumeración: sin al menos 7 dígitos no se busca nada (evita
+	// barridos con prefijos cortos; un número real siempre los supera).
+	if len(digitsOnly(telefono)) < 7 {
+		http.Error(w, "Número demasiado corto", http.StatusBadRequest)
 		return
 	}
 	ctx := r.Context()
