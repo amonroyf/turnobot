@@ -57,7 +57,7 @@ export default function EmployeeDashboard() {
   const handleLogin = async (e) => {
     e.preventDefault();
     if (!empSeleccionado || pin.length < 4) {
-      setError('Selecciona tu nombre e ingresa tu PIN.');
+      setError('Elige tu nombre y escribe tu clave de 4 a 6 números.');
       return;
     }
     setLoading(true);
@@ -70,7 +70,7 @@ export default function EmployeeDashboard() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.error || 'PIN incorrecto');
+        throw new Error(data?.error === 'PIN incorrecto' ? 'Esa clave no coincide. Intenta de nuevo o pídela al dueño.' : (data?.error || 'No pudimos entrar. Intenta de nuevo.'));
       }
       const data = await res.json();
       setToken(data.token);
@@ -124,7 +124,7 @@ export default function EmployeeDashboard() {
   const handleCancelar = async (citaId) => {
     const c = citas.find(item => item.id === citaId);
     if (!c) return;
-    if (!confirm(`¿Cancelar la cita de ${c.cliente}?`)) return;
+    if (!confirm(`¿Cancelar la cita de ${c.cliente}? El horario quedará libre. No se puede deshacer después de hoy.`)) return;
     setCancelando(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}`, {
@@ -144,7 +144,7 @@ export default function EmployeeDashboard() {
   };
 
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿Marcar esta cita como no-show?')) return;
+    if (!confirm('¿El cliente no vino? Se marcará como "No llegó".')) return;
     setNoShowMarking(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/no-show/${citaId}`, {
@@ -163,7 +163,7 @@ export default function EmployeeDashboard() {
   };
 
   const handleUndo = async (citaId) => {
-    if (!confirm('¿Deshacer esta acción? La cita volverá a estar activa.')) return;
+    if (!confirm('¿Devolver esta cita a activa? Volverá a aparecer en tu agenda de hoy.')) return;
     setUndoingId(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}/undo`, {
@@ -210,7 +210,8 @@ export default function EmployeeDashboard() {
         <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
           <p className="text-[10px] font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
           <h1 className="text-2xl font-extrabold text-gray-900">{negocio?.name || slug}</h1>
-          <p className="mt-2 text-sm text-gray-500">Portal del Profesional</p>
+          <p className="mt-2 text-sm text-gray-500 font-semibold">Tus citas de trabajo</p>
+          <p className="mt-1 text-[11px] text-gray-400 font-medium">Elige tu nombre y escribe la clave que te dio el dueño del local.</p>
         </div>
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -221,16 +222,17 @@ export default function EmployeeDashboard() {
                 <select
                   value={empSeleccionado || ''}
                   onChange={(e) => setEmpSeleccionado(e.target.value)}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Tu nombre en el equipo"
+                  className="w-full min-h-[48px] p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 >
-                  <option value="">Seleccionar...</option>
+                  <option value="">Toca para elegir…</option>
                   {empleados.map(e => (
                     <option key={e.id} value={e.id}>{e.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-700 mb-1">Tu PIN</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Tu clave (4 a 6 números)</label>
                 <input
                   type="password"
                   inputMode="numeric"
@@ -238,23 +240,24 @@ export default function EmployeeDashboard() {
                   placeholder="••••"
                   value={pin}
                   onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm text-center tracking-[0.5em] focus:border-black focus:outline-none"
+                  aria-label="Tu clave de acceso de 4 a 6 números"
+                  className="w-full min-h-[48px] p-3.5 border border-gray-200 rounded-xl text-sm text-center tracking-[0.5em] focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
               </div>
               {error && (
-                <div className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
+                <div role="alert" className="p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
                   {error}
                 </div>
               )}
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full p-4 bg-black text-white font-bold rounded-xl shadow-md active:scale-95 transition-transform text-sm disabled:opacity-50"
+                className="w-full min-h-[52px] p-4 bg-black text-white font-bold rounded-xl shadow-md active:scale-95 transition-transform text-sm disabled:opacity-50"
               >
-                {loading ? 'Entrando...' : 'Entrar'}
+                {loading ? 'Entrando...' : 'Ver mis citas'}
               </button>
             </form>
-            <p className="mt-4 text-center text-[10px] text-gray-400">Pide tu PIN al dueño del local.</p>
+            <p className="mt-4 text-center text-[11px] text-gray-500 font-medium">¿No tienes clave? Pídela al dueño del local: él la crea en Ajustes → Tu equipo → Clave.</p>
           </div>
         </div>
       </div>
@@ -276,22 +279,22 @@ export default function EmployeeDashboard() {
               pushNotifications.isSubscribed ? (
                 <button
                   onClick={() => pushNotifications.unsubscribe()}
-                  className="text-[10px] text-gray-500 font-bold underline"
+                  className="min-h-[44px] px-2 text-[11px] text-gray-500 font-bold underline"
                 >
-                  🔔 Desactivar
+                  🔔 Avisos sí
                 </button>
               ) : pushNotifications.permission === 'denied' ? (
-                <span className="text-[10px] text-red-500 font-bold">🔕 Bloqueadas</span>
+                <span className="text-[11px] text-red-500 font-bold">🔕 Avisos bloqueados</span>
               ) : (
                 <button
                   onClick={pushNotifications.subscribe}
-                  className="text-[10px] text-blue-600 font-bold underline"
+                  className="min-h-[44px] px-2 text-[11px] text-blue-600 font-bold underline"
                 >
-                  🔔 Activar notificaciones
+                  🔔 Activar avisos
                 </button>
               )
             )}
-            <button onClick={handleLogout} className="text-[11px] text-gray-500 font-semibold underline">
+            <button onClick={handleLogout} className="min-h-[44px] px-2 text-[11px] text-gray-500 font-semibold underline">
               Salir
             </button>
           </div>
@@ -314,24 +317,26 @@ export default function EmployeeDashboard() {
         )}
 
         {!loading && citas.length === 0 && (
-          <div className="text-center py-12 bg-white border border-gray-200 rounded-2xl">
+          <div className="text-center py-12 px-6 bg-white border border-gray-200 rounded-2xl">
             <div className="text-4xl mb-3">📅</div>
-            <p className="text-sm font-medium text-gray-600">No tienes citas próximas.</p>
+            <p className="text-sm font-bold text-gray-700">Sin citas por aquí</p>
+            <p className="text-xs text-gray-500 font-medium mt-1">Cuando un cliente reserve contigo, aparecerá en Hoy o Mañana.</p>
           </div>
         )}
 
         {!loading && citas.length > 0 && (
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filtrar citas por estado">
             {[
               { key: 'todas', label: 'Todas', count: citas.length },
               { key: 'activas', label: 'Activas', count: citas.filter(c => !c.cancelled && !c.no_show).length },
               { key: 'canceladas', label: 'Canceladas', count: citas.filter(c => c.cancelled).length },
-              { key: 'noshow', label: 'No-Show', count: citas.filter(c => c.no_show).length },
+              { key: 'noshow', label: 'No llegó', count: citas.filter(c => c.no_show).length },
             ].map(f => (
               <button
                 key={f.key}
                 onClick={() => setFiltroEstado(f.key)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                aria-pressed={filtroEstado === f.key}
+                className={`min-h-[44px] px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                   filtroEstado === f.key
                     ? 'bg-black text-white shadow-md'
                     : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
@@ -391,17 +396,17 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
   const isToday = c.fecha === new Date(ahora).toLocaleDateString('sv-SE', { timeZone: zona });
 
   return (
-    <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-60' : 'border-gray-200'} ${isCancelled ? 'bg-red-50 border-red-200' : ''} ${isNoShow ? 'bg-amber-50 border-amber-200' : ''}`}>
-      <div className="flex justify-between items-start">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="font-bold text-gray-900 text-sm">👤 {c.cliente}</p>
-            {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
-            {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase">No Show</span>}
+    <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-70' : 'border-gray-200'} ${isCancelled ? 'bg-red-50 border-red-200' : ''} ${isNoShow ? 'bg-amber-50 border-amber-200' : ''}`}>
+      <p className="text-base font-black text-gray-900">📅 {formatearFechaLarga(c.fecha)} <span className="text-gray-500 font-bold">a las {c.hora}</span></p>
+      <div className="flex justify-between items-start gap-2 mt-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-bold text-gray-800 text-sm">👤 {c.cliente}</p>
+            {isCancelled && <span className="text-[10px] font-black bg-red-700 text-white px-2 py-0.5 rounded uppercase">Cancelada</span>}
+            {isNoShow && <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded uppercase">No llegó</span>}
           </div>
           <p className="text-xs text-gray-600 font-medium mt-1">📋 {c.servicio}</p>
-          <p className="text-xs text-gray-500 mt-1">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
-          {c.notes && <p className="text-xs text-gray-400 italic mt-1">📝 {c.notes}</p>}
+          {c.notes && <p className="text-xs text-gray-500 italic mt-1">📝 {c.notes}</p>}
         </div>
         {c.precio > 0 && (
           <span className="text-xs font-black text-gray-900 bg-gray-100 px-2 py-1 rounded-lg shrink-0">
@@ -416,29 +421,32 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
             <button
               onClick={() => onNoShow(c.id)}
               disabled={noShowMarking === c.id}
-              className="text-[11px] text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
+              title="Marcar que el cliente no vino"
+              className="min-h-[44px] text-xs text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-4 py-2 rounded-xl border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
             >
-              {noShowMarking === c.id ? 'Marcando...' : 'No Llegó'}
+              {noShowMarking === c.id ? 'Marcando...' : 'No vino'}
             </button>
           )}
           <button
             onClick={() => onCancel(c.id)}
             disabled={cancelando === c.id}
-            className="text-[11px] text-red-600 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-red-100 bg-red-50 hover:bg-red-100 disabled:opacity-50"
+            title="Cancelar esta cita y liberar el horario"
+            className="min-h-[44px] text-xs text-red-700 font-bold active:scale-95 transition-all px-4 py-2 rounded-xl border border-red-200 bg-red-50 hover:bg-red-100 disabled:opacity-50"
           >
-            {cancelando === c.id ? '...' : 'Cancelar'}
+            {cancelando === c.id ? 'Cancelando…' : 'Cancelar cita'}
           </button>
         </div>
       )}
-      {/* Deshacer */}
+      {/* Deshacer (solo citas de hoy: el sistema no permite revivir días pasados) */}
       {(isCancelled || isNoShow) && isToday && (
         <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
           <button
             onClick={() => onUndo(c.id)}
             disabled={undoingId === c.id}
-            className="text-[11px] text-blue-600 font-semibold hover:text-blue-800 active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
+            title="Devolver la cita a activa"
+            className="min-h-[44px] text-xs text-blue-700 font-bold hover:text-blue-900 active:scale-95 transition-all px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 disabled:opacity-50"
           >
-            {undoingId === c.id ? 'Deshaciendo...' : '↩️ Deshacer'}
+            {undoingId === c.id ? 'Devolviendo…' : '↩️ Devolver a activa'}
           </button>
         </div>
       )}

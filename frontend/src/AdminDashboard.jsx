@@ -134,8 +134,9 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
-        <h3 className="text-lg font-bold mb-1 text-gray-900">Horario Laboral</h3>
-        <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
+        <h3 className="text-lg font-bold mb-1 text-gray-900">Horario de trabajo</h3>
+        <p className="text-sm text-gray-500 mb-1">{empleado.name}</p>
+        <p className="text-[11px] text-gray-400 font-medium mb-4">Días y turnos en que recibe reservas. Lo que desmarques queda cerrado.</p>
 
         {errorValidacion && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
@@ -231,8 +232,9 @@ export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose
   return (
     <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
-        <h3 className="text-lg font-bold mb-1 text-gray-900">Especialidades</h3>
-        <p className="text-sm text-gray-500 mb-4">{empleado.name}</p>
+        <h3 className="text-lg font-bold mb-1 text-gray-900">Qué servicios hace</h3>
+        <p className="text-sm text-gray-500 mb-1">{empleado.name}</p>
+        <p className="text-[11px] text-gray-400 font-medium mb-4">Solo recibirá reservas de lo que marques aquí.</p>
 
         <div className="space-y-2 max-h-[50vh] overflow-y-auto">
           {servicios.map((s) => (
@@ -294,8 +296,8 @@ function PinEmpleadoModal({ negocioId, empleado, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-bold text-gray-900 mb-1">PIN de {empleado.name}</h3>
-        <p className="text-xs text-gray-500 mb-4">El empleado usará este PIN para acceder a su agenda.</p>
+        <h3 className="text-lg font-bold text-gray-900 mb-1">Clave de acceso de {empleado.name}</h3>
+        <p className="text-xs text-gray-500 mb-4">Clave de 4 a 6 números. {empleado.name} la escribe en su enlace para ver solo sus citas. Puedes cambiarla cuando quieras.</p>
         {exito ? (
           <div className="text-center py-4">
             <p className="text-sm font-bold text-green-600">✓ PIN guardado</p>
@@ -572,7 +574,7 @@ export default function AdminDashboard() {
   };
 
   const handleEliminarServicio = async (servicio) => {
-    if (!confirm(`¿Eliminar "${servicio.name}"? También se cancelarán sus citas futuras.`)) return;
+    if (!confirm(`¿Eliminar "${servicio.name}"? Ya no aparecerá para reservar y se cancelarán sus citas futuras. No se puede deshacer.`)) return;
     setEliminando(servicio.id);
     try {
       const token = await user.getIdToken();
@@ -586,7 +588,7 @@ export default function AdminDashboard() {
   };
 
   const handleEliminarProfesional = async (profesional) => {
-    if (!confirm(`¿Eliminar a "${profesional.name}"? También se cancelarán sus citas futuras.`)) return;
+    if (!confirm(`¿Quitar a "${profesional.name}" del equipo? Se cancelarán sus citas futuras. No se puede deshacer.`)) return;
     setEliminando(profesional.id);
     try {
       const token = await user.getIdToken();
@@ -603,7 +605,7 @@ export default function AdminDashboard() {
     const r = reservas.find((item) => item.id === citaId);
     if (!r) return;
 
-    if (!confirm(`¿Seguro que deseas cancelar la cita de ${r.client_name}?`)) return;
+    if (!confirm(`¿Cancelar la cita de ${r.client_name}? El horario quedará libre para otros clientes.`)) return;
 
     setCancelando(citaId);
     try {
@@ -633,7 +635,7 @@ export default function AdminDashboard() {
   const [undoingId, setUndoingId] = useState('');
 
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿Marcar esta cita como no-show?')) return;
+    if (!confirm('¿El cliente no vino? Se marcará como "No llegó" y se restará de sus visitas.')) return;
     setNoShowMarking(citaId);
     try {
       const token = await user.getIdToken();
@@ -653,7 +655,7 @@ export default function AdminDashboard() {
   };
 
   const handleUndo = async (citaId) => {
-    if (!confirm('¿Deshacer esta acción? La cita volverá a estar activa.')) return;
+    if (!confirm('¿Devolver esta cita a activa? Volverá a aparecer en la agenda de hoy.')) return;
     setUndoingId(citaId);
     try {
       const token = await user.getIdToken();
@@ -796,7 +798,7 @@ export default function AdminDashboard() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h4 className="font-bold text-gray-900 text-sm">{r.client_name}</h4>
-                {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No Show</span>}
+                {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No llegó</span>}
                 {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Cancelada</span>}
               </div>
               <div className="space-y-1 mt-2">
@@ -933,8 +935,8 @@ export default function AdminDashboard() {
         {view === 'agenda' && (
           <div className="space-y-6">
             <div className="grid sm:grid-cols-2 gap-3">
-              <button onClick={() => copiarContenido('enlace')} className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
-                {contenidoCopiado === 'enlace' ? '✅ ¡Enlace copiado!' : '🔗 Copiar enlace limpio'}
+              <button onClick={() => copiarContenido('enlace')} className="w-full min-h-[48px] py-4 bg-blue-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
+                {contenidoCopiado === 'enlace' ? '✅ ¡Enlace copiado!' : '🔗 Copiar enlace de reservas'}
               </button>
               <button onClick={() => copiarContenido('mensaje')} className="w-full py-4 bg-green-600 text-white font-bold rounded-2xl shadow-md flex items-center justify-center gap-2 text-sm active:scale-95 transition-transform">
                 {contenidoCopiado === 'mensaje' ? '✅ ¡Mensaje copiado!' : '💬 Copiar mensaje para WhatsApp'}
@@ -951,7 +953,7 @@ export default function AdminDashboard() {
                   { key: 'todas', label: 'Todas', count: reservas.length },
                   { key: 'activas', label: 'Activas', count: reservas.filter(r => !r.cancelled && !r.no_show).length },
                   { key: 'canceladas', label: 'Canceladas', count: reservas.filter(r => r.cancelled).length },
-                  { key: 'noshow', label: 'No-Show', count: reservas.filter(r => r.no_show).length },
+                  { key: 'noshow', label: 'No llegó', count: reservas.filter(r => r.no_show).length },
                 ].map(f => (
                   <button
                     key={f.key}
@@ -1167,10 +1169,10 @@ export default function AdminDashboard() {
                               </a>
                             </div>
 
-                            {/* Info Financiera (LTV) */}
+                            {/* Info Financiera: lo que este cliente ha gastado en total */}
                             <div className="text-right shrink-0 flex flex-col items-end">
-                              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                Ingresos (LTV)
+                              <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
+                                Total gastado
                               </p>
                               <span className="block text-base font-black text-green-700 bg-green-50 px-3 py-1.5 rounded-xl border border-green-100">
                                 {formatDinero(Math.max(0, c.total_spent || 0))}
@@ -1192,14 +1194,17 @@ export default function AdminDashboard() {
           <div className="space-y-5">
             {/* WHATSAPP DEL NEGOCIO */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">WhatsApp de Reservas</h2>
-              <p className="text-[11px] font-medium text-gray-500 mb-4">Número al que llegan las notificaciones de los clientes.</p>
+              <h2 className="text-base font-bold text-gray-900 mb-1">WhatsApp de reservas</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">A este número te avisamos cuando un cliente reserve. También aparece como contacto en tu página de reservas.</p>
               <form onSubmit={handleGuardarWhatsApp} className="space-y-3">
                 <div className="flex gap-2">
+                  <label>
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">País</span>
                   <select
                     value={codigoPais}
                     onChange={(e) => setCodigoPais(e.target.value)}
-                    className="p-3.5 border border-gray-200 rounded-xl text-sm bg-white font-bold focus:border-black focus:outline-none"
+                    aria-label="Código de país"
+                    className="p-3.5 border border-gray-200 rounded-xl text-sm bg-white font-bold focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   >
                     <option value="57">🇨🇴 +57</option>
                     <option value="52">🇲🇽 +52</option>
@@ -1209,12 +1214,17 @@ export default function AdminDashboard() {
                     <option value="34">🇪🇸 +34</option>
                     <option value="1">🇺🇸 +1</option>
                   </select>
+                  </label>
+                  <label className="flex-1 min-w-0">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Número de WhatsApp</span>
                   <input
                     type="tel" inputMode="numeric" value={whatsApp}
                     onChange={(e) => setWhatsApp(e.target.value)}
                     placeholder="Ej. 3001234567"
-                    className="flex-1 w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    aria-label="Número de WhatsApp del negocio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   />
+                  </label>
                 </div>
                 <button type="submit" disabled={guardandoWhatsApp} className="w-full py-3.5 bg-green-600 text-white font-bold rounded-xl text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-sm">
                   {guardandoWhatsApp ? 'Guardando...' : 'Actualizar WhatsApp'}
@@ -1224,69 +1234,78 @@ export default function AdminDashboard() {
 
             {/* NOTIFICACIONES PUSH */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">🔔 Notificaciones Push</h2>
-              <p className="text-[11px] font-medium text-gray-500 mb-4">Recibe alertas al instante cuando un cliente reserve una cita.</p>
+              <h2 className="text-base font-bold text-gray-900 mb-1">🔔 Avisos de nuevas reservas</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Te avisamos en este dispositivo al instante cuando un cliente reserve, sin tener el panel abierto.</p>
               {pushNotifications.permission === 'denied' ? (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
-                  <p className="text-xs font-medium text-red-700">
-                    ❌ Las notificaciones están bloqueadas. Habilita los permisos en la configuración de tu navegador.
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                  <p className="text-xs font-bold text-red-700">
+                    ❌ Los avisos están bloqueados en este navegador.
                   </p>
+                  <p className="text-[11px] text-red-600 mt-1">Actívalos en los ajustes del navegador para este sitio y vuelve aquí.</p>
                 </div>
               ) : pushNotifications.isSubscribed ? (
                 <div className="space-y-3">
                   <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
-                    <p className="text-xs font-bold text-green-800">✅ Notificaciones activas</p>
-                    <p className="text-[10px] text-green-600 mt-1">Recibirás alertas cuando haya nuevas reservas.</p>
+                    <p className="text-xs font-bold text-green-800">✅ Avisos activados en este dispositivo</p>
+                    <p className="text-[11px] text-green-700 mt-1">Recibirás un aviso con cada reserva nueva.</p>
                   </div>
                   <button
                     onClick={enviarPushPrueba}
                     disabled={probandoPush}
-                    className="w-full py-3 bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 active:scale-95 transition-transform disabled:opacity-50"
+                    className="w-full min-h-[44px] py-3 bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 active:scale-95 transition-transform disabled:opacity-50"
                   >
                     {probandoPush ? '⏳ Enviando prueba...' : '📨 Enviarme una prueba'}
                   </button>
                   {pushTestMsg && (
-                    <p className="text-[11px] font-semibold text-center text-gray-600">{pushTestMsg}</p>
+                    <p role="status" className="text-xs font-bold text-center p-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">{pushTestMsg}</p>
                   )}
                   <button
                     onClick={pushNotifications.unsubscribe}
-                    className="w-full py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                    className="w-full min-h-[44px] py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
                   >
-                    Desactivar notificaciones
+                    Dejar de recibir avisos aquí
                   </button>
                 </div>
               ) : (
                 <button
                   onClick={pushNotifications.subscribe}
-                  className="w-full py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
+                  className="w-full min-h-[48px] py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
                 >
-                  🔔 Activar notificaciones
+                  🔔 Activar avisos en este dispositivo
                 </button>
               )}
             </div>
 
             {/* GESTIÓN DE SERVICIOS */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-4">Servicios Activos</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-1">Servicios que ofreces</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Lo que verán tus clientes en el paso 1 de la reserva: nombre, duración y precio.</p>
               <ul className="space-y-3 mb-4">
-                {servicios.length === 0 && <p className="text-sm font-medium text-gray-500 text-center py-4">No has agregado servicios.</p>}
+                {servicios.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Aún no hay servicios</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega el primero abajo 👇 para que los clientes puedan reservar.</p>
+                  </div>
+                )}
                 {servicios.map((s) => {
                   const encargados = profesionales.filter(
                     (p) => !p.servicios_ids || p.servicios_ids.includes(s.id)
                   );
                   return (
                     <li key={s.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
-                      <div className="flex justify-between items-center">
-                        <div>
+                      <div className="flex justify-between items-center gap-2">
+                        <div className="min-w-0">
                           <p className="font-bold text-gray-900">{s.name}</p>
-                          <p className="text-xs font-medium text-gray-500">{s.duration_minutes} min • {formatDinero(s.price)}</p>
+                          <p className="text-xs font-medium text-gray-500">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
                         </div>
-                        <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="text-red-500 font-black text-sm active:scale-90 transition-transform bg-red-50 w-8 h-8 rounded-full flex items-center justify-center">🗑️</button>
+                        <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
+                          {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
+                        </button>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase">Especialistas:</span>
+                        <span className="text-[11px] font-bold text-gray-500">Lo hacen:</span>
                         {encargados.length === 0 ? (
-                          <span className="text-[10px] text-red-500 font-semibold">Sin personal asignado</span>
+                          <span className="text-[11px] text-red-600 font-semibold">Nadie aún — asígnalo en “Qué servicios hace” del equipo</span>
                         ) : (
                           encargados.map((p) => (
                             <span key={p.id} className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
@@ -1302,11 +1321,16 @@ export default function AdminDashboard() {
 
               {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
               <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar un servicio nuevo</h3>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del servicio</span>
                 <input
-                  type="text" required placeholder="Nombre del servicio (ej. Consulta, Limpieza, Terapia)" value={nuevoServicio.name}
+                  type="text" required placeholder="Ej. Corte, Uñas, Limpieza" value={nuevoServicio.name}
                   onChange={(e) => setNuevoServicio({ ...nuevoServicio, name: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Nombre del servicio nuevo"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
+                </label>
                 <div className="flex gap-2">
                   <label className="flex-1 min-w-0">
                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
@@ -1333,27 +1357,37 @@ export default function AdminDashboard() {
 
             {/* GESTIÓN DE PROFESIONALES */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-4">Profesionales de la agenda</h2>
+              <h2 className="text-base font-bold text-gray-900 mb-1">Tu equipo</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Quienes atienden citas. Define qué servicios hace cada uno, su horario y su clave de acceso.</p>
               <ul className="space-y-3 mb-4">
-                {profesionales.length === 0 && <p className="text-sm font-medium text-gray-500 text-center py-4">No has agregado profesionales.</p>}
+                {profesionales.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Aún no hay equipo</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega a la primera persona abajo 👇 para empezar a recibir reservas.</p>
+                  </div>
+                )}
                 {profesionales.map((p) => (
                   <li key={p.id} className="p-4 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-3">
-                    <div className="flex justify-between items-center">
+                    <div className="flex justify-between items-center gap-2">
                       <p className="font-bold text-gray-900 text-base">{p.name}</p>
-                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} aria-label={`Eliminar profesional ${p.name}`} className="px-2.5 py-1.5 bg-red-50 text-red-600 font-bold rounded-lg text-xs active:scale-95 transition-transform">Eliminar</button>
+                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} aria-label={`Quitar a ${p.name} del equipo`} className="shrink-0 min-h-[44px] px-3 bg-red-50 text-red-600 font-bold rounded-xl text-xs border border-red-100 active:scale-95 transition-transform">
+                        {eliminando === p.id ? 'Quitando…' : 'Quitar'}
+                      </button>
                     </div>
                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
                       {p.calendar_id ? (
-                        <span className="flex-1 text-center py-2 bg-green-50 text-green-700 text-[11px] font-black rounded-lg border border-green-100">✓ Calendar Activo</span>
+                        <span className="flex-1 text-center py-2.5 bg-green-50 text-green-700 text-[11px] font-black rounded-lg border border-green-100">✓ Google Calendar conectado</span>
                       ) : (
-                        <a href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`} className="flex-1 text-center py-2 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm">🔗 Vincular Calendar</a>
+                        <a href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`} className="flex-1 text-center py-2.5 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm min-h-[44px] flex items-center justify-center">🔗 Conectar Google Calendar</a>
                       )}
-                      <button onClick={() => setServiciosModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Especialidad</button>
-                      <button onClick={() => setHorarioModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
-                      <button onClick={() => setPinModal(p)} className="px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 PIN</button>
+                      <button onClick={() => setServiciosModal(p)} title="Elegir qué servicios atiende esta persona" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Qué hace</button>
+                      <button onClick={() => setHorarioModal(p)} title="Definir días y turnos de trabajo" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
+                      <button onClick={() => setPinModal(p)} title="Ver o cambiar su clave de acceso" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 Clave</button>
                     </div>
-                    <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
-                      <span className="text-[10px] text-gray-400 shrink-0">🔗 Portal:</span>
+                    <div className="pt-2 border-t border-gray-100">
+                      <p className="text-[11px] font-bold text-gray-500 mb-1">Enlace para {p.name}</p>
+                      <p className="text-[11px] text-gray-400 font-medium mb-2">Compártelo con {p.name} para que vea sus citas con su clave.</p>
+                      <div className="flex items-center gap-2">
                       <a
                         href={`/employee/${negocio.id}`}
                         target="_blank"
@@ -1368,56 +1402,78 @@ export default function AdminDashboard() {
                           setContenidoCopiado(p.id);
                           setTimeout(() => setContenidoCopiado(''), 2000);
                         }}
-                        className="text-[10px] text-gray-500 hover:text-gray-700 font-semibold px-1.5 py-0.5 rounded bg-gray-100 hover:bg-gray-200 shrink-0"
+                        className="min-h-[44px] px-3 text-[11px] text-gray-700 font-bold rounded-lg bg-gray-100 hover:bg-gray-200 shrink-0"
                       >
-                        {contenidoCopiado === p.id ? '✓' : 'Copiar'}
+                        {contenidoCopiado === p.id ? '¡Copiado!' : 'Copiar enlace'}
                       </button>
+                      </div>
                     </div>
                   </li>
                 ))}
               </ul>
               {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium text-[11px] rounded-xl leading-relaxed">
-                  ⚠️ Algunos profesionales no tienen horario individual. Usa el botón <b>🕒 Horario</b> para definir sus turnos y descansos.
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
+                  ⚠️ A alguien del equipo le falta horario. Toca <b>🕒 Horario</b> en su tarjeta para definir sus días y turnos; sin eso no recibe reservas.
                 </div>
               )}
               <form onSubmit={handleAddProfesional} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar a alguien al equipo</h3>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre de la persona</span>
                 <input
-                  type="text" required placeholder="Nombre del profesional" value={nuevoProfesional.name}
+                  type="text" required placeholder="Ej. Camila, Andrés…" value={nuevoProfesional.name}
                   onChange={(e) => setNuevoProfesional({ name: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Nombre de la persona nueva del equipo"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
-                <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir Profesional</button>
+                </label>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir al equipo</button>
               </form>
             </div>
 
             {/* DATOS DEL LOCAL */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Información del Local</h2>
-              <p className="text-[11px] font-medium text-gray-500 mb-4">Estos datos se muestran en tu página pública.</p>
+              <h2 className="text-base font-bold text-gray-900 mb-1">Datos de tu página pública</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Lo que ven los clientes al reservar: nombre, dónde estás y cómo contactarte.</p>
               <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del negocio</span>
                 <input
-                  type="text" required placeholder="Nombre del Negocio" value={infoLocal.name}
+                  type="text" required placeholder="Ej. Barbería El Corte" value={infoLocal.name}
                   onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Nombre del negocio"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Dirección</span>
                 <input
-                  type="text" placeholder="Dirección física" value={infoLocal.direccion}
+                  type="text" placeholder="Ej. Calle 10 # 5-20, Bogotá" value={infoLocal.direccion}
                   onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Dirección del local"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Horario de atención</span>
                 <input
-                  type="text" placeholder="Horario (Ej. Lun - Sáb: 9am a 7pm)" value={infoLocal.horario}
+                  type="text" placeholder="Ej. Lun a Sáb, 9am a 7pm" value={infoLocal.horario}
                   onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Horario de atención"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Teléfono de contacto</span>
                 <input
-                  type="tel" placeholder="Teléfono de contacto (Fijo o Móvil)" value={infoLocal.telefono}
+                  type="tel" placeholder="Fijo o celular" value={infoLocal.telefono}
                   onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                  aria-label="Teléfono de contacto"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
-                <button type="submit" disabled={guardandoInfo} className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
-                  {guardandoInfo ? 'Guardando...' : 'Guardar Información'}
+                </label>
+                <button type="submit" disabled={guardandoInfo} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                  {guardandoInfo ? 'Guardando...' : 'Guardar datos'}
                 </button>
               </form>
             </div>
@@ -1448,16 +1504,16 @@ export default function AdminDashboard() {
         )}
       </main>
 
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2.5 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <button onClick={() => setView('agenda')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'agenda' ? 'text-black' : 'text-gray-400'}`}>
+      <nav aria-label="Secciones del panel" className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2.5 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <button onClick={() => setView('agenda')} aria-current={view === 'agenda' ? 'page' : undefined} className={`min-h-[48px] flex flex-col items-center justify-center gap-1 text-[11px] font-black transition-colors px-4 ${view === 'agenda' ? 'text-black' : 'text-gray-400'}`}>
           <IconoCalendario />
           <span>Agenda</span>
         </button>
-        <button onClick={() => setView('clientes')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'clientes' ? 'text-black' : 'text-gray-400'}`}>
+        <button onClick={() => setView('clientes')} aria-current={view === 'clientes' ? 'page' : undefined} className={`min-h-[48px] flex flex-col items-center justify-center gap-1 text-[11px] font-black transition-colors px-4 ${view === 'clientes' ? 'text-black' : 'text-gray-400'}`}>
           <IconoUsuarios />
           <span>Clientes</span>
         </button>
-        <button onClick={() => setView('ajustes')} className={`flex flex-col items-center gap-1 text-[11px] font-black transition-colors ${view === 'ajustes' ? 'text-black' : 'text-gray-400'}`}>
+        <button onClick={() => setView('ajustes')} aria-current={view === 'ajustes' ? 'page' : undefined} className={`min-h-[48px] flex flex-col items-center justify-center gap-1 text-[11px] font-black transition-colors px-4 ${view === 'ajustes' ? 'text-black' : 'text-gray-400'}`}>
           <IconoAjustes />
           <span>Ajustes</span>
         </button>
