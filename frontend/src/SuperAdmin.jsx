@@ -39,52 +39,58 @@ function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
 
   return (
     <div
-      className={`relative rounded-2xl border transition-all ${
+      className={`relative rounded-2xl border-2 transition-all ${
         selected
-          ? 'border-black bg-black text-white shadow-lg'
+          ? 'border-black bg-white shadow-lg ring-2 ring-black ring-offset-1'
           : suspended
             ? 'border-amber-200 bg-amber-50 shadow-sm'
-            : 'border-gray-200 bg-white hover:border-gray-300 shadow-sm'
+            : 'border-gray-200 bg-white hover:border-gray-400 shadow-sm'
       }`}
     >
       <button
         onClick={() => onSelect(negocio.id)}
-        className="w-full text-left p-5 active:scale-[0.99] transition-transform"
+        aria-label={`Ver detalle de ${negocio.name || negocio.id}`}
+        className="w-full text-left p-5 active:scale-[0.99] transition-transform focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black rounded-t-2xl"
       >
         <div className="flex justify-between items-start gap-3">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <p className={`font-bold text-base truncate ${selected ? 'text-white' : 'text-gray-900'}`}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-bold text-base truncate text-gray-900">
                 {negocio.name || negocio.id}
               </p>
               {suspended && (
-                <span className="text-[10px] font-black bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full shrink-0">
-                  SUSPENDIDO
+                <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded-full shrink-0">
+                  PAUSADO
+                </span>
+              )}
+              {selected && (
+                <span className="text-[10px] font-black bg-black text-white px-2 py-0.5 rounded-full shrink-0">
+                  VIENDO
                 </span>
               )}
             </div>
-            <p className={`text-xs mt-1 font-medium ${selected ? 'text-gray-300' : 'text-gray-400'}`}>
+            <p className="text-xs mt-1 font-medium text-gray-400">
               /{negocio.id}
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className={`text-lg font-black ${selected ? 'text-white' : 'text-gray-900'}`}>
+            <p className="text-lg font-black text-gray-900">
               {negocio.stats_citas_activas || 0}
             </p>
-            <p className={`text-[10px] font-bold uppercase ${selected ? 'text-gray-400' : 'text-gray-400'}`}>
-              citas
+            <p className="text-[11px] font-bold uppercase text-gray-500">
+              próximas
             </p>
           </div>
         </div>
-        <div className={`flex gap-4 mt-3 pt-3 border-t ${selected ? 'border-gray-700' : 'border-gray-100'}`}>
-          <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
+        <div className="flex gap-4 mt-3 pt-3 border-t border-gray-100">
+          <span className="text-xs font-bold text-gray-500">
             👥 {negocio.stats_total_clientes || 0} clientes
           </span>
-          <span className={`text-[11px] font-bold ${selected ? 'text-gray-300' : 'text-gray-500'}`}>
+          <span className="text-xs font-bold text-gray-500">
             💰 {formatDinero(negocio.stats_ingresos_totales || 0)}
           </span>
           {negocio.created_at?.seconds && (
-            <span className={`text-[10px] font-medium ml-auto ${selected ? 'text-gray-400' : 'text-gray-400'}`}>
+            <span className="text-[11px] font-medium ml-auto text-gray-400">
               Desde {new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' })}
             </span>
           )}
@@ -92,25 +98,24 @@ function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
       </button>
 
       {/* Botones de acción (fuera del área clickeable de selección) */}
-      <div className={`flex border-t ${selected ? 'border-gray-700' : 'border-gray-100'}`}>
+      <div className="flex border-t border-gray-100">
         <button
           onClick={(e) => { e.stopPropagation(); onToggleSuspend(negocio.id, suspended); }}
-          className={`flex-1 py-2.5 text-[11px] font-bold active:scale-95 transition-transform ${
+          title={suspended ? 'Los clientes podrán volver a reservar' : 'Los clientes no podrán reservar; las citas existentes se conservan'}
+          className={`flex-1 min-h-[44px] py-2.5 text-xs font-bold active:scale-95 transition-transform rounded-bl-2xl ${
             suspended
-              ? 'text-green-600 hover:bg-green-50'
-              : 'text-amber-600 hover:bg-amber-50'
+              ? 'text-green-700 hover:bg-green-50'
+              : 'text-amber-700 hover:bg-amber-50'
           }`}
         >
-          {suspended ? '✓ Reactivar' : '⏸ Suspender'}
+          {suspended ? '✓ Reanudar reservas' : '⏸ Pausar reservas'}
         </button>
-        <div className={`w-px ${selected ? 'bg-gray-700' : 'bg-gray-100'}`} />
+        <div className="w-px bg-gray-100" />
         <button
           onClick={(e) => { e.stopPropagation(); onSelect(negocio.id); }}
-          className={`flex-1 py-2.5 text-[11px] font-bold active:scale-95 transition-transform ${
-            selected ? 'text-gray-300 hover:bg-gray-800' : 'text-blue-600 hover:bg-blue-50'
-          }`}
+          className="flex-1 min-h-[44px] py-2.5 text-xs font-bold active:scale-95 transition-transform text-blue-700 hover:bg-blue-50 rounded-br-2xl"
         >
-          🔍 Ver Detalle
+          Ver detalle →
         </button>
       </div>
     </div>
@@ -242,19 +247,25 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
         suspended ? 'bg-amber-50 border-amber-200' : 'bg-white border-gray-100'
       }`}>
         <div className="flex justify-between items-start gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-lg font-black text-gray-900">{negocioId}</h2>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-lg font-black text-gray-900">{negocio?.name || negocioId}</h2>
               {suspended && (
-                <span className="text-[10px] font-black bg-amber-200 text-amber-800 px-2.5 py-1 rounded-full">
-                  ⚠️ SUSPENDIDO
+                <span className="text-[10px] font-black bg-amber-600 text-white px-2.5 py-1 rounded-full">
+                  ⚠️ PAUSADO
                 </span>
               )}
             </div>
-            <div className="flex gap-4 mt-3">
-              <span className="text-xs font-bold text-gray-500">📅 {reservas.length} citas activas</span>
-              <span className="text-xs font-bold text-gray-500">👥 {clientes.length} clientes</span>
-              <span className="text-xs font-bold text-gray-500">💰 {formatDinero(totalIngresos)} ingresos</span>
+            <p className="text-xs text-gray-400 font-medium mt-0.5">/{negocioId}</p>
+            {suspended && (
+              <p className="text-xs text-amber-700 font-semibold mt-2">
+                Los clientes ven “No disponible” y no pueden reservar. Las citas ya agendadas se conservan.
+              </p>
+            )}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
+              <span className="text-xs font-bold text-gray-600">📅 {reservas.length} citas próximas</span>
+              <span className="text-xs font-bold text-gray-600">👥 {clientes.length} clientes</span>
+              <span className="text-xs font-bold text-gray-600">💰 {formatDinero(totalIngresos)} sumados</span>
             </div>
           </div>
         </div>
@@ -262,76 +273,109 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
 
       {/* Acciones de administración */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">⚙️ Acciones de Administración</h3>
-        <div className="flex gap-3">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Qué quieres hacer</h3>
+        <p className="text-[11px] text-gray-500 font-medium mb-3">Ver su página como un cliente o borrarlo del todo (con doble confirmación).</p>
+        <div className="flex flex-col sm:flex-row gap-3">
           <a
             href={`/shop/${negocioId}`}
             target="_blank"
             rel="noreferrer"
-            className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl text-xs text-center active:scale-95 transition-transform shadow-sm"
+            className="flex-1 min-h-[48px] py-3 bg-blue-600 text-white font-bold rounded-xl text-xs text-center active:scale-95 transition-transform shadow-sm flex items-center justify-center"
           >
-            🔗 Ver Página Pública
+            🔗 Ver su página de reservas
           </a>
-          <a
-            href={`${API_URL}/auth/google/login?negocio_id=${negocioId}&emp_id=`}
-            target="_blank"
-            rel="noreferrer"
-            className="flex-1 py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs text-center active:scale-95 transition-transform"
+          <button
+            onClick={() => {
+              navigator.clipboard.writeText(`${window.location.origin}/shop/${negocioId}`);
+              alert('Enlace copiado.');
+            }}
+            className="flex-1 min-h-[48px] py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs text-center active:scale-95 transition-transform"
           >
-            🔑 Vincular Calendar
-          </a>
+            📋 Copiar enlace
+          </button>
           <button
             onClick={handleEliminarNegocio}
             disabled={eliminando}
-            className="flex-1 py-3 bg-red-50 text-red-600 font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50 border border-red-200"
+            title="Borra el negocio, sus servicios, su equipo, sus citas y sus clientes. No se puede deshacer."
+            className="flex-1 min-h-[48px] py-3 bg-red-50 text-red-700 font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50 border border-red-200"
           >
-            {eliminando ? 'Eliminando...' : '🗑️ Eliminar Negocio'}
+            {eliminando ? 'Borrando...' : '🗑️ Borrar negocio'}
           </button>
         </div>
       </div>
 
       {/* Datos de contacto y antigüedad */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-3 border-b border-gray-100 pb-2">
-          📋 Ficha Técnica del Propietario & Tenant
+        <h3 className="text-sm font-bold text-gray-900 mb-1 border-b border-gray-100 pb-2">
+          📋 Datos del negocio y su dueño
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
-          <p><strong>Owner UID:</strong> <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[11px] font-mono">{negocio?.owner_uid || 'N/A'}</code></p>
-          <p><strong>WhatsApp Local:</strong> {negocio?.whatsapp ? formatearTelefono(negocio.whatsapp) : 'Sin configurar'}</p>
-          <p><strong>Teléfono Contacto:</strong> {negocio?.telefono || 'N/A'}</p>
-          <p><strong>Dirección:</strong> {negocio?.direccion || 'N/A'}</p>
-          <p><strong>Zona Horaria:</strong> {negocio?.timezone || 'America/Bogota'}</p>
-          <p>
-            <strong>Fecha de Registro:</strong> {' '}
-            {negocio?.created_at?.seconds
-              ? new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
-              : 'N/A'}
-          </p>
-        </div>
+        <p className="text-[11px] text-gray-500 font-medium mb-3">Información interna para dar soporte. El código del dueño sirve para ubicar su cuenta.</p>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-600">
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Código del dueño</dt>
+            <dd className="mt-1 flex items-center gap-2">
+              <code className="bg-gray-100 px-1.5 py-0.5 rounded text-[11px] font-mono truncate">{negocio?.owner_uid || 'N/A'}</code>
+              {negocio?.owner_uid && (
+                <button
+                  onClick={() => navigator.clipboard.writeText(negocio.owner_uid)}
+                  className="min-h-[36px] px-2 text-[11px] font-bold text-gray-600 bg-gray-100 rounded-lg shrink-0"
+                >
+                  Copiar
+                </button>
+              )}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">WhatsApp del local</dt>
+            <dd className="mt-1 font-semibold text-gray-800">{negocio?.whatsapp ? formatearTelefono(negocio.whatsapp) : 'Sin configurar'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Teléfono</dt>
+            <dd className="mt-1 font-semibold text-gray-800">{negocio?.telefono || 'Sin configurar'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Dirección</dt>
+            <dd className="mt-1 font-semibold text-gray-800">{negocio?.direccion || 'Sin configurar'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Hora del negocio</dt>
+            <dd className="mt-1 font-semibold text-gray-800">{negocio?.timezone || 'America/Bogota'}</dd>
+          </div>
+          <div>
+            <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Registrado el</dt>
+            <dd className="mt-1 font-semibold text-gray-800">
+              {negocio?.created_at?.seconds
+                ? new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
+                : 'Sin fecha'}
+            </dd>
+          </div>
+        </dl>
       </div>
 
       {/* Próximas citas */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">Próximas Citas ({reservas.length})</h3>
+        <h3 className="text-sm font-bold text-gray-900 mb-1">Próximas citas ({reservas.length})</h3>
+        <p className="text-[11px] text-gray-500 font-medium mb-3">Solo futuras y no canceladas, en la hora del negocio.</p>
         {reservas.length === 0 ? (
-          <p className="text-xs text-gray-400 text-center py-4">No hay citas activas</p>
+          <p className="text-xs text-gray-400 text-center py-4">Sin citas próximas</p>
         ) : (
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {reservas.slice(0, 20).map((r) => {
               const t = r.date_time?.seconds * 1000;
-              const fecha = t ? new Date(t).toLocaleDateString('es-CO') : 'N/A';
+              const tz = negocio?.timezone || 'America/Bogota';
+              const fecha = t ? new Date(t).toLocaleDateString('es-CO', { timeZone: tz }) : 'Sin fecha';
               const hora = t
-                ? new Date(t).toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit' })
-                : 'N/A';
+                ? new Date(t).toLocaleTimeString('es-CO', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+                : '';
               return (
-                <div key={r.id} className="flex justify-between items-center py-2 border-b border-gray-50">
-                  <div>
-                    <p className="text-xs font-bold text-gray-900">{r.client_name}</p>
-                    <p className="text-[10px] text-gray-400">{r.service_name}</p>
+                <div key={r.id} className="flex justify-between items-center gap-2 py-2 border-b border-gray-50">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-gray-900 truncate">{r.client_name}</p>
+                    <p className="text-[11px] text-gray-500">{r.service_name}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <p className="text-xs font-bold text-gray-700">{fecha} {hora}</p>
-                    <p className="text-[10px] text-gray-400">{formatDinero(r.price)}</p>
+                    <p className="text-[11px] text-gray-500">{formatDinero(r.price)}</p>
                   </div>
                 </div>
               );
@@ -340,18 +384,19 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
         )}
       </div>
 
-      {/* Servicios y Empleados */}
-      <div className="grid grid-cols-2 gap-4">
+      {/* Servicios y Equipo */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-900 mb-3">Servicios ({servicios.length})</h3>
+          <h3 className="text-sm font-bold text-gray-900 mb-1">Servicios ({servicios.length})</h3>
+          <p className="text-[11px] text-gray-500 font-medium mb-3">Lo que sus clientes pueden reservar.</p>
           {servicios.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">Sin servicios</p>
+            <p className="text-xs text-gray-400 text-center py-4">Sin servicios todavía</p>
           ) : (
             <div className="space-y-2">
               {servicios.map((s) => (
-                <div key={s.id} className="flex justify-between items-center py-1.5">
-                  <p className="text-xs font-bold text-gray-700">{s.name}</p>
-                  <p className="text-[10px] text-gray-400">{s.duration_minutes}min</p>
+                <div key={s.id} className="flex justify-between items-center gap-2 py-1.5">
+                  <p className="text-xs font-bold text-gray-700 truncate">{s.name}</p>
+                  <p className="text-[11px] text-gray-500 shrink-0">{s.duration_minutes} min</p>
                 </div>
               ))}
             </div>
@@ -359,18 +404,19 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-          <h3 className="text-sm font-bold text-gray-900 mb-3">Equipo ({empleados.length})</h3>
+          <h3 className="text-sm font-bold text-gray-900 mb-1">Equipo ({empleados.length})</h3>
+          <p className="text-[11px] text-gray-500 font-medium mb-3">Quienes atienden, y si tienen Google Calendar.</p>
           {empleados.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-4">Sin equipo</p>
+            <p className="text-xs text-gray-400 text-center py-4">Sin equipo todavía</p>
           ) : (
             <div className="space-y-2">
               {empleados.map((e) => (
-                <div key={e.id} className="flex justify-between items-center py-1.5">
-                  <p className="text-xs font-bold text-gray-700">{e.name}</p>
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                <div key={e.id} className="flex justify-between items-center gap-2 py-1.5">
+                  <p className="text-xs font-bold text-gray-700 truncate">{e.name}</p>
+                  <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
                     e.calendar_id ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                   }`}>
-                    {e.calendar_id ? '✓ Cal' : 'Sin Cal'}
+                    {e.calendar_id ? '✓ Google' : 'Sin Google'}
                   </span>
                 </div>
               ))}
@@ -381,9 +427,12 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
 
       {/* Top Clientes */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">
-          Top Clientes ({clientes.length} total · {totalVisitas} visitas · {formatDinero(totalIngresos)} ingresos)
+        <h3 className="text-sm font-bold text-gray-900">
+          Mejores clientes
         </h3>
+        <p className="text-[11px] text-gray-500 font-medium mt-0.5 mb-3">
+          {clientes.length} en total · {totalVisitas} visitas · {formatDinero(totalIngresos)} sumados
+        </p>
         {clientes.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-4">Sin clientes registrados</p>
         ) : (
@@ -444,11 +493,11 @@ export default function SuperAdmin() {
 
   // Suspender / reactivar negocio
   const handleToggleSuspend = useCallback(async (negocioId, currentlySuspended) => {
-    const action = currentlySuspended ? 'reactivar' : 'suspender';
+    const action = currentlySuspended ? 'reanudar' : 'pausar';
     const confirmacion = window.confirm(
       currentlySuspended
-        ? `¿Reactivar el negocio "${negocioId}"?\n\nLos clientes podrán volver a agendar citas.`
-        : `¿Suspender el negocio "${negocioId}"?\n\nLos clientes NO podrán agendar nuevas citas. Las citas existentes no se ven afectadas.`,
+        ? `¿Reanudar las reservas de "${negocioId}"?\n\nLos clientes podrán volver a agendar citas.`
+        : `¿Pausar las reservas de "${negocioId}"?\n\nLos clientes verán “No disponible” y NO podrán agendar. Las citas ya agendadas se conservan.`,
     );
     if (!confirmacion) return;
 
@@ -466,7 +515,7 @@ export default function SuperAdmin() {
       } catch (err) {
         console.error('No se pudo invalidar caché:', err);
       }
-      alert(`✅ Negocio ${currentlySuspended ? 'reactivado' : 'suspendido'} correctamente.`);
+      alert(`✅ Reservas ${currentlySuspended ? 'reanudadas' : 'pausadas'} correctamente.`);
     } catch (err) {
       console.error(`Error al ${action} negocio:`, err);
       alert(`Error al ${action} el negocio. Intenta de nuevo.`);
@@ -496,8 +545,8 @@ export default function SuperAdmin() {
       <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
         <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
           <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
-          <h1 className="text-3xl font-extrabold text-gray-900">Panel SaaS</h1>
-          <p className="mt-2 text-sm text-gray-600">Administración de todos los negocios</p>
+          <h1 className="text-3xl font-extrabold text-gray-900">Negocios TurnoBot</h1>
+          <p className="mt-2 text-sm text-gray-600">Solo tú puedes entrar aquí: ver, pausar o borrar negocios.</p>
         </div>
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
           <div className="bg-white py-8 px-6 shadow rounded-2xl border border-gray-100">
@@ -556,16 +605,16 @@ export default function SuperAdmin() {
       <header className="px-5 py-4 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-xl font-black text-gray-900">TurnoBot SaaS</h1>
+            <h1 className="text-xl font-black text-gray-900">Negocios TurnoBot</h1>
             <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">
-              Panel de Administración
+              Todos los negocios en un solo lugar
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-gray-500 font-medium">{user.email}</span>
+            <span className="text-xs text-gray-500 font-medium max-w-[140px] truncate" title={user.email}>{user.email}</span>
             <button
               onClick={() => signOut(auth)}
-              className="text-xs font-bold text-red-500 bg-red-50 px-3 py-1.5 rounded-lg active:scale-95 transition-transform"
+              className="min-h-[44px] text-xs font-bold text-red-500 bg-red-50 px-4 py-2 rounded-lg active:scale-95 transition-transform"
             >
               Salir
             </button>
@@ -585,28 +634,30 @@ export default function SuperAdmin() {
           <>
             {/* Métricas Globales */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-              <MetricCard icon="🏢" label="Negocios" value={totalNegocios} sub={`${negociosActivos} activos · ${negociosSuspendidos} suspendidos`} />
-              <MetricCard icon="📅" label="Citas Activas" value={totalReservas} sub="próximas" />
-              <MetricCard icon="👥" label="Clientes" value={totalClientes} sub="en todos los negocios" />
-              <MetricCard icon="💰" label="Ingresos Totales" value={formatDinero(totalIngresos)} sub="LTV agregado" />
+              <MetricCard icon="🏢" label="Negocios" value={totalNegocios} sub={`${negociosActivos} recibiendo reservas · ${negociosSuspendidos} pausados`} />
+              <MetricCard icon="📅" label="Citas próximas" value={totalReservas} sub="futuras y no canceladas" />
+              <MetricCard icon="👥" label="Clientes" value={totalClientes} sub="sumando todos los negocios" />
+              <MetricCard icon="💰" label="Ingresos sumados" value={formatDinero(totalIngresos)} sub="de todos los negocios" />
             </div>
 
             {/* Lista de Negocios */}
             <div>
               <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-3">
                 <h2 className="text-sm font-bold text-gray-900 uppercase tracking-wider">
-                  Negocios Registrados ({totalNegocios})
+                  Negocios ({totalNegocios})
                 </h2>
                 <div className="relative w-full sm:w-64">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <span className="text-gray-400">🔍</span>
+                    <span className="text-gray-400" aria-hidden="true">🔍</span>
                   </div>
+                  <label className="sr-only" htmlFor="buscar-negocio">Buscar negocio por nombre o dirección</label>
                   <input
-                    type="text"
-                    placeholder="Buscar por nombre o ID..."
+                    id="buscar-negocio"
+                    type="search"
+                    placeholder="Buscar por nombre o dirección…"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="block w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-black focus:ring-1 focus:ring-black"
+                    className="block w-full min-h-[44px] pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm bg-white focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-black"
                   />
                 </div>
               </div>
