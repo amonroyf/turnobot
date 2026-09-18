@@ -92,7 +92,7 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 			return err
 		}
 		negRef := firestoreClient.Collection("negocios").Doc(slug)
-		return tx.Set(negRef, negocioStatsData(-1, b.Price), firestore.MergeAll)
+		return tx.Set(negRef, negocioStatsData(-1, -b.Price), firestore.MergeAll)
 	})
 	if err != nil {
 		if errors.Is(err, errYaAplicado) {
