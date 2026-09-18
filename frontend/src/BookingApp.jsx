@@ -30,6 +30,58 @@ const MESES_ES = [
   'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
 ];
 
+// "Cualquiera disponible": valor especial de empleadoId que une la
+// disponibilidad de todos los profesionales que ofrecen el servicio.
+// El backend sigue exigiendo un emp_id concreto, así que al confirmar se
+// resuelve a un profesional real (el primero con ese slot libre).
+const EMP_ANY = '__any__';
+const MAX_DIAS_HUECO = 14;
+
+const claveClienteGuardado = (slug) => `turnobot-cliente-${slug}`;
+
+const leerClienteGuardado = (slug) => {
+  try {
+    const raw = localStorage.getItem(claveClienteGuardado(slug));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object') return null;
+    return { nombre: d.nombre || '', telefono: d.telefono || '' };
+  } catch {
+    return null;
+  }
+};
+
+const fetchSlotsEmpleado = async (slug, empId, servicioId, fecha) => {
+  const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${servicioId}&fecha=${fecha}`);
+  if (!res.ok) throw new Error('Error del servidor');
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+};
+
+// Empleados que ofrecen un servicio (para no resetear de más al cambiar).
+const empleadosParaServicio = (negocio, servicioId) => (negocio?.empleados || [])
+  .filter((e) => !servicioId || !e.servicios_ids || e.servicios_ids.includes(servicioId))
+  .map((e) => e.id);
+
+// Duración en lenguaje natural: 45 -> "unos 45 minutos".
+const duracionAmable = (min) => {
+  const n = Number(min || 0);
+  if (!n) return 'Duración a convenir';
+  if (n < 60) return `unos ${n} minutos`;
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  return m ? `unas ${h} h ${m} min` : h === 1 ? '1 hora' : `unas ${h} horas`;
+};
+
+// Pasos del flujo (divulgación progresiva: el usuario siempre sabe dónde va).
+const PASOS = [
+  { n: 1, etiqueta: 'Servicio' },
+  { n: 2, etiqueta: 'Profesional' },
+  { n: 3, etiqueta: 'Día' },
+  { n: 4, etiqueta: 'Hora' },
+  { n: 5, etiqueta: 'Confirmar' },
+];
+
 function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone, ventanaDias }) {
   // "Hoy" y el límite de días de la ventana de reserva se calculan en la zona
   // del negocio, no en la del dispositivo (evita desfases con TZ distinta).
@@ -126,8 +178,23 @@ export default function BookingApp() {
   const enviandoRef = useRef(false);
   const [negocio, setNegocio] = useState(null);
   const [slots, setSlots] = useState([]);
+  // En modo "cualquiera": hora -> id del profesional asignado (primero libre).
+  const [slotsPorHora, setSlotsPorHora] = useState({});
   const [error, setError] = useState('');
   const [citaId, setCitaId] = useState('');
+  // Primer hueco disponible (búsqueda en próximos días) y tira semanal.
+  const [buscandoHueco, setBuscandoHueco] = useState(false);
+  const [primerHueco, setPrimerHueco] = useState(null);
+  const [semana, setSemana] = useState([]);
+  const [cargandoSemana, setCargandoSemana] = useState(false);
+  const semanaCacheRef = useRef({});
+  // Ref al fetcher actual (evita closures viejos en los onClick de pasos).
+  const fetchHorariosRef = useRef(null);
+  // Cliente recurrente: datos guardados en este dispositivo por negocio.
+  const [clienteGuardado, setClienteGuardado] = useState(null);
+  const [recordarDatos, setRecordarDatos] = useState(true);
+  // Búsqueda de servicios (ley de Hick: filtra cuando hay muchos).
+  const [busquedaServicio, setBusquedaServicio] = useState('');
   // Estado del push post-agendamiento: 'idle' | 'loading' | 'success' | 'error'
   const [pushStatus, setPushStatus] = useState('idle');
   const [pushError, setPushError] = useState('');
@@ -153,7 +220,19 @@ export default function BookingApp() {
         console.error("Error cargando negocio", err);
         setError("No pudimos cargar el negocio. Verifica el enlace.");
       });
+    setClienteGuardado(leerClienteGuardado(slug));
   }, [slug]);
+
+  // Pre-rellenar nombre/teléfono del cliente recurrente (sin borrar lo que
+  // ya esté escribiendo). Solo rellena campos vacíos.
+  useEffect(() => {
+    if (!clienteGuardado) return;
+    setBooking((prev) => ({
+      ...prev,
+      clienteNombre: prev.clienteNombre || clienteGuardado.nombre || '',
+      clienteTelefono: prev.clienteTelefono || clienteGuardado.telefono || '',
+    }));
+  }, [clienteGuardado]);
 
   // Auto-scroll al avanzar de paso (con margen para el header fijo) y a la
   // pantalla de éxito al confirmar.
@@ -170,23 +249,174 @@ export default function BookingApp() {
   }, [step, view]);
 
   const servicioElegido = negocio?.servicios?.find(s => s.id === booking.servicioId);
-  const empleadoElegido = negocio?.empleados?.find(e => e.id === booking.empleadoId);
+  // Profesionales que ofrecen el servicio elegido (base para modo "any").
+  const empleadosElegibles = (negocio?.empleados || []).filter(
+    (e) => !booking.servicioId || !e.servicios_ids || e.servicios_ids.includes(booking.servicioId)
+  );
+  const esModoAny = booking.empleadoId === EMP_ANY;
+  const empleadoElegido = esModoAny
+    ? (booking.hora && slotsPorHora[booking.hora]
+        ? negocio?.empleados?.find(e => e.id === slotsPorHora[booking.hora])
+        : null)
+    : negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
   const fetchHorarios = async (fecha, opts = {}) => {
+    if (!booking.servicioId || !booking.empleadoId) return;
     setLoading(true);
     if (!opts.preserveError) setError('');
-    setBooking({ ...booking, fecha });
+    // No se resetea la hora aquí: se conserva si sigue libre en la nueva
+    // rejilla (ver abajo). Solo se actualiza la fecha.
+    setBooking((prev) => ({ ...prev, fecha }));
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${booking.empleadoId}&servicio_id=${booking.servicioId}&fecha=${fecha}`);
-      if (!res.ok) throw new Error('Error del servidor');
-      const data = await res.json();
-      setSlots(data || []);
-      setStep(3);
+      let unidos = [];
+      let porHora = {};
+      if (booking.empleadoId === EMP_ANY) {
+        const resultados = await Promise.all(
+          empleadosElegibles.map(async (e) => {
+            try {
+              const s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+              return { empId: e.id, slots: s };
+            } catch {
+              return { empId: e.id, slots: [] };
+            }
+          })
+        );
+        for (const r of resultados) {
+          for (const h of r.slots) {
+            if (!(h in porHora)) porHora[h] = r.empId;
+          }
+        }
+        unidos = Object.keys(porHora).sort();
+      } else {
+        unidos = await fetchSlotsEmpleado(slug, booking.empleadoId, booking.servicioId, fecha);
+      }
+      setSlots(unidos);
+      setSlotsPorHora(porHora);
+      // Preservar la hora elegida si sigue disponible; si no, limpiarla
+      // pero mantener la fecha (antes se perdía todo).
+      setBooking((prev) => ({
+        ...prev,
+        fecha,
+        hora: prev.hora && unidos.includes(prev.hora) ? prev.hora : '',
+      }));
+      setStep((prevStep) => Math.max(prevStep, 3));
     } catch (err) {
       setError("Error buscando horarios");
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    fetchHorariosRef.current = fetchHorarios;
+  });
+
+  // Primer hueco: recorre los próximos días (día por día, en paralelo por
+  // profesional) hasta encontrar el primer slot libre. Respeta el modo
+  // "cualquiera" o el profesional elegido.
+  const buscarPrimerHueco = async () => {
+    if (!booking.servicioId || !booking.empleadoId || !negocio) return;
+    setBuscandoHueco(true);
+    setPrimerHueco(null);
+    setError('');
+    try {
+      const hoyStr = fechaHoyEnZona(negocio?.timezone);
+      const objetivos = booking.empleadoId === EMP_ANY ? empleadosElegibles : empleadosElegibles.filter(e => e.id === booking.empleadoId);
+      if (objetivos.length === 0) {
+        setError("No hay profesionales disponibles para este servicio en este momento.");
+        return;
+      }
+      for (let d = 0; d < MAX_DIAS_HUECO; d++) {
+        const fecha = sumarDias(hoyStr, d);
+        const resultados = await Promise.all(
+          objetivos.map(async (e) => {
+            const cacheKey = `${booking.servicioId}|${e.id}|${fecha}`;
+            if (semanaCacheRef.current[cacheKey] !== undefined) {
+              return { empId: e.id, empName: e.name, slots: semanaCacheRef.current[cacheKey] };
+            }
+            try {
+              const s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+              semanaCacheRef.current[cacheKey] = s;
+              return { empId: e.id, empName: e.name, slots: s };
+            } catch {
+              return { empId: e.id, empName: e.name, slots: [] };
+            }
+          })
+        );
+        const ordenados = resultados
+          .flatMap(r => r.slots.map(h => ({ fecha, hora: h, empId: r.empId, empName: r.empName })))
+          .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : a.hora < b.hora ? -1 : 1));
+        if (ordenados.length > 0) {
+          const h = ordenados[0];
+          setPrimerHueco(h);
+          // Saltar directo a ese día/hora sin perder servicio/profesional.
+          // En modo "any" se conserva ANY; la asignación se resuelve al confirmar.
+          setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: '' }));
+          await fetchHorarios(h.fecha, { preserveError: true });
+          setBooking((prev) => ({ ...prev, fecha: h.fecha, hora: h.hora }));
+          setStep(4);
+          return;
+        }
+      }
+      setError(`No encontramos espacios libres en los próximos ${MAX_DIAS_HUECO} días. Prueba con otro profesional o escríbenos.`);
+    } catch {
+      setError("Error buscando el primer hueco disponible.");
+    } finally {
+      setBuscandoHueco(false);
+    }
+  };
+
+  // Tira semanal comparativa: para la semana que contiene la fecha elegida
+  // (o hoy), muestra el conteo de slots por día. En modo "any" suma todos
+  // los profesionales; si no, solo el elegido. Cacheada por servicio/emp/día.
+  useEffect(() => {
+    const cargarSemana = async () => {
+      if (!negocio || !booking.servicioId || !booking.empleadoId) {
+        setSemana([]);
+        return;
+      }
+      setCargandoSemana(true);
+      try {
+        const base = booking.fecha || fechaHoyEnZona(negocio?.timezone);
+        const [by, bm, bd] = base.split('-').map(Number);
+        const ref = new Date(by, bm - 1, bd);
+        // Lunes como inicio de semana.
+        const dow = (ref.getDay() + 6) % 7;
+        const lunes = sumarDias(base, -dow);
+        const objetivos = booking.empleadoId === EMP_ANY ? empleadosElegibles : empleadosElegibles.filter(e => e.id === booking.empleadoId);
+        const dias = Array.from({ length: 7 }, (_, i) => sumarDias(lunes, i));
+        const hoyStr = fechaHoyEnZona(negocio?.timezone);
+        const filas = await Promise.all(
+          dias.map(async (fecha) => {
+            if (fecha < hoyStr) return { fecha, total: -1 };
+            let total = 0;
+            await Promise.all(
+              objetivos.map(async (e) => {
+                const cacheKey = `${booking.servicioId}|${e.id}|${fecha}`;
+                let s = semanaCacheRef.current[cacheKey];
+                if (s === undefined) {
+                  try {
+                    s = await fetchSlotsEmpleado(slug, e.id, booking.servicioId, fecha);
+                  } catch {
+                    s = [];
+                  }
+                  semanaCacheRef.current[cacheKey] = s;
+                }
+                total += s.length;
+              })
+            );
+            return { fecha, total };
+          })
+        );
+        setSemana(filas);
+      } catch {
+        // La tira es informativa: si falla, no bloquea la reserva.
+      } finally {
+        setCargandoSemana(false);
+      }
+    };
+    cargarSemana();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [negocio?.timezone, booking.servicioId, booking.empleadoId, booking.fecha]);
 
   const confirmarCita = async (e) => {
     e.preventDefault();
@@ -195,8 +425,23 @@ export default function BookingApp() {
     setLoading(true);
     setError('');
 
+    // En modo "cualquiera" el backend exige un profesional concreto: se
+    // resuelve a quien tenía ese slot libre (si cambió, al primero elegible
+    // y el backend revalida con 409).
+    let empleadoFinal = booking.empleadoId;
+    if (booking.empleadoId === EMP_ANY) {
+      empleadoFinal = slotsPorHora[booking.hora] || empleadosElegibles[0]?.id || '';
+    }
+    if (!empleadoFinal) {
+      setError("Elige un profesional para confirmar.");
+      enviandoRef.current = false;
+      setLoading(false);
+      return;
+    }
+
     const payload = {
       ...booking,
+      empleadoId: empleadoFinal,
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
     };
     try {
@@ -208,6 +453,26 @@ export default function BookingApp() {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.cita_id) setCitaId(data.cita_id);
+        // Cliente recurrente: guardar nombre/teléfono en este dispositivo
+        // (o borrarlos si desactivó "recordar").
+        try {
+          if (recordarDatos) {
+            localStorage.setItem(claveClienteGuardado(slug), JSON.stringify({
+              nombre: booking.clienteNombre.trim(),
+              telefono: formatPhoneNumber(booking.clienteTelefono),
+            }));
+            setClienteGuardado({ nombre: booking.clienteNombre.trim(), telefono: formatPhoneNumber(booking.clienteTelefono) });
+          } else {
+            localStorage.removeItem(claveClienteGuardado(slug));
+            setClienteGuardado(null);
+          }
+        } catch {
+          // localStorage lleno/bloqueado: no bloquea la confirmación.
+        }
+        // Conservar el profesional resuelto para el resumen de éxito.
+        if (booking.empleadoId === EMP_ANY) {
+          setSlotsPorHora((prev) => ({ ...prev, [booking.hora]: empleadoFinal }));
+        }
         setPushStatus('idle');
         setStep(5);
         return;
@@ -255,8 +520,12 @@ export default function BookingApp() {
   };
 
   const reiniciarAgendamiento = () => {
-    setBooking({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: '', clienteTelefono: '', clienteNotas: '', website: '' });
+    // Al volver al inicio se conservan nombre/teléfono (cliente recurrente);
+    // solo se reinicia servicio/profesional/fecha/hora.
+    setBooking((prev) => ({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: prev.clienteNombre, clienteTelefono: prev.clienteTelefono, clienteNotas: '', website: '' }));
     setSlots([]);
+    setSlotsPorHora({});
+    setPrimerHueco(null);
     setError('');
     setCitaId('');
     setPushStatus('idle');
@@ -438,55 +707,183 @@ export default function BookingApp() {
                   </button>
                 )}
 
+                {/* Barra de progreso 1–5 (orientación: el usuario sabe dónde va) */}
+                {step < 5 && (
+                  <ol aria-label="Progreso de la reserva" className="flex items-center gap-1 mb-1">
+                    {PASOS.map((p) => {
+                      const alcanzado = step >= p.n;
+                      const actual = step === p.n;
+                      return (
+                        <li key={p.n} className="flex-1">
+                          <div
+                            aria-current={actual ? 'step' : undefined}
+                            title={`Paso ${p.n}: ${p.etiqueta}`}
+                            className={`h-1.5 rounded-full ${alcanzado ? 'bg-black' : 'bg-gray-200'}`}
+                          />
+                          <p className={`mt-1 text-[9px] font-bold text-center leading-none ${actual ? 'text-black' : alcanzado ? 'text-gray-600' : 'text-gray-400'}`}>
+                            {p.n}. {p.etiqueta}
+                          </p>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+
                 {/* PASO 1 */}
                 {step >= 1 && (
-                  <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-50 pointer-events-none' : ''}`}>
-                    <h2 className="font-bold text-gray-800 mb-3 text-sm">1. Selecciona un servicio</h2>
-                    <div className="grid gap-3">
-                      {negocio.servicios?.map(s => {
+                  <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-60' : ''}`}>
+                    <h2 className="font-bold text-gray-800 mb-1 text-sm">1. ¿Qué te quieres hacer?</h2>
+                    <p className="text-[11px] text-gray-500 font-medium mb-3">
+                      Elige un servicio. El precio se paga en el local, aquí solo apartas tu turno.
+                    </p>
+                    {(!negocio.servicios || negocio.servicios.length === 0) ? (
+                      <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
+                        <p className="text-sm font-bold text-gray-700">Aún no hay servicios publicados</p>
+                        <p className="text-[11px] text-gray-500 font-medium mt-1">Escríbenos y te ayudamos a elegir por WhatsApp.</p>
+                      </div>
+                    ) : (
+                    <>
+                    {(negocio.servicios?.length || 0) > 4 && (
+                      <label className="block mb-3">
+                        <span className="sr-only">Buscar servicio</span>
+                        <input
+                          type="search"
+                          placeholder="🔍 Buscar (ej. corte, uñas, color…)"
+                          aria-label="Buscar servicio"
+                          value={busquedaServicio}
+                          onChange={(e) => setBusquedaServicio(e.target.value)}
+                          className="w-full p-3 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black shadow-2xs"
+                        />
+                      </label>
+                    )}
+                    <div role="radiogroup" aria-label="Servicios disponibles" className="grid gap-3">
+                      {negocio.servicios
+                        ?.filter((s) => !busquedaServicio.trim() || (s.name || '').toLowerCase().includes(busquedaServicio.trim().toLowerCase()))
+                        .map(s => {
                         const isActive = booking.servicioId === s.id;
                         return (
                           <button
                             key={s.id}
+                            role="radio"
+                            aria-checked={isActive}
+                            aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price)}`}
                             onClick={() => {
-                              setBooking({ ...booking, servicioId: s.id, empleadoId: '', fecha: '', hora: '' });
-                              setStep(1); 
+                              // Cambiar de servicio conserva profesional/fecha/
+                              // hora cuando siguen siendo válidos (no se
+                              // resetea todo): solo se ajusta lo incompatible.
+                              setBooking((prev) => {
+                                const next = { ...prev, servicioId: s.id };
+                                const empOk = !prev.empleadoId || prev.empleadoId === EMP_ANY || empleadosParaServicio(negocio, s.id).includes(prev.empleadoId);
+                                if (!empOk) {
+                                  next.empleadoId = '';
+                                  next.fecha = '';
+                                  next.hora = '';
+                                }
+                                return next;
+                              });
+                              setSlots([]);
+                              setSlotsPorHora({});
+                              setPrimerHueco(null);
+                              setStep(1);
                             }}
-                            className={`p-4 rounded-2xl border text-left flex items-center gap-3 transition-all active:scale-95 ${
-                              isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white active:bg-gray-100'
+                            className={`min-h-[68px] p-4 rounded-2xl border-2 text-left flex items-center gap-3 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
+                              isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-400 active:bg-gray-100'
                             }`}
                           >
-                            <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            <span aria-hidden="true" className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
                               isActive ? 'border-white' : 'border-gray-300'
                             }`}
                             >
-                              {isActive && <div className="w-2.5 h-2.5 bg-white rounded-full"></div>}
-                            </div>
-                            <div className="flex-1">
-                              <p className="font-bold text-sm">{s.name}</p>
-                              <p className="text-xs opacity-75">{s.duration_minutes} min</p>
-                            </div>
-                            <span className="font-black text-base">{formatDinero(s.price)}</span>
+                              {isActive && <span className="w-3 h-3 bg-white rounded-full"></span>}
+                            </span>
+                            <span className="flex-1 min-w-0">
+                              <span className="font-bold text-sm block leading-snug">{s.name}</span>
+                              <span className={`text-xs font-medium block mt-0.5 ${isActive ? 'text-gray-200' : 'text-gray-500'}`}>
+                                ⏱️ {duracionAmable(s.duration_minutes)}
+                              </span>
+                            </span>
+                            <span className="text-right shrink-0">
+                              <span className="font-black text-base block leading-none">{formatDinero(s.price)}</span>
+                              <span className={`text-[10px] font-semibold block mt-1 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>en el local</span>
+                            </span>
                           </button>
                         );
                       })}
+                      {negocio.servicios?.filter((s) => !busquedaServicio.trim() || (s.name || '').toLowerCase().includes(busquedaServicio.trim().toLowerCase())).length === 0 && (
+                        <div className="p-4 text-center bg-gray-50 border border-gray-200 rounded-2xl">
+                          <p className="text-gray-500 font-semibold text-xs">Sin resultados para “{busquedaServicio}”. Borra el texto para ver todo.</p>
+                        </div>
+                      )}
                     </div>
+                    {/* Retroalimentación: confirma en palabras lo elegido */}
+                    {servicioElegido && (
+                      <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
+                        ✅ Elegiste: <strong>{servicioElegido.name}</strong> — {duracionAmable(servicioElegido.duration_minutes)} — {formatDinero(servicioElegido.price)} en el local.
+                      </p>
+                    )}
+                    {negocio.whatsapp && (
+                      <a
+                        href={`https://wa.me/${negocio.whatsapp}?text=${encodeURIComponent('Hola, ¿qué servicio me recomiendan?')}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block mt-3 text-center text-[11px] font-bold text-gray-500 underline"
+                      >
+                        ¿No sabes cuál elegir? Pregúntanos por WhatsApp
+                      </a>
+                    )}
+                    </>
+                    )}
                   </div>
                 )}
 
                 {/* PASO 2 */}
                 {(step >= 1 && booking.servicioId) && (
-                  <div id="step-2" className={`scroll-mt-24 ${step > 2 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
-                    <h2 className="font-bold text-gray-800 mb-3 text-sm">2. Selecciona el profesional</h2>
+                  <div id="step-2" className={`scroll-mt-24 ${step > 2 ? 'opacity-70 mt-6' : 'mt-6'}`}>
+                    <h2 className="font-bold text-gray-800 mb-1 text-sm">2. ¿Quién te atiende?</h2>
+                    <p className="text-[11px] text-gray-500 font-medium mb-3">
+                      Elige a tu profesional o toca “Cualquiera disponible” para lo más rápido.
+                    </p>
                     <div className="grid grid-cols-2 gap-3">
-                      {negocio.empleados?.filter((e) => !e.servicios_ids || e.servicios_ids.includes(booking.servicioId)).map(e => {
+                      {/* Cualquiera disponible: une la disponibilidad de todos */}
+                      {empleadosElegibles.length > 1 && (
+                        <button
+                          key={EMP_ANY}
+                          onClick={() => {
+                            // Cambiar de profesional conserva fecha/hora si
+                            // siguen libres (se revalida con un refetch).
+                            const fechaActual = booking.fecha;
+                            setBooking((prev) => ({ ...prev, empleadoId: EMP_ANY }));
+                            setStep(2);
+                            if (fechaActual) {
+                              setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
+                            }
+                          }}
+                          className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs col-span-2 ${
+                            booking.empleadoId === EMP_ANY ? 'border-black bg-black text-white' : 'bg-white border-dashed border-gray-300 text-gray-800 active:bg-gray-100'
+                          }`}
+                        >
+                          <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
+                            booking.empleadoId === EMP_ANY ? 'bg-gray-800 text-white border-gray-700' : 'bg-amber-100 text-amber-800 border-amber-200'
+                          }`}>
+                            ⚡
+                          </span>
+                          <span className="leading-tight text-left">Cualquiera disponible
+                            <span className="block text-[11px] font-semibold opacity-70">Lo más rápido</span>
+                          </span>
+                        </button>
+                      )}
+                      {empleadosElegibles.map(e => {
                         const isActive = booking.empleadoId === e.id;
                         return (
                           <button
                             key={e.id}
                             onClick={() => {
-                              setBooking({ ...booking, empleadoId: e.id, fecha: '', hora: '' });
+                              const fechaActual = booking.fecha;
+                              setBooking((prev) => ({ ...prev, empleadoId: e.id }));
                               setStep(2);
+                              if (fechaActual) {
+                                setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
+                              }
                             }}
                             className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${
                               isActive ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
@@ -503,7 +900,7 @@ export default function BookingApp() {
                       })}
 
                       {/* Nadie ofrece el servicio seleccionado */}
-                      {(negocio.empleados?.filter((e) => !e.servicios_ids || e.servicios_ids.includes(booking.servicioId)).length || 0) === 0 && (
+                      {empleadosElegibles.length === 0 && (
                         <div className="col-span-2 p-4 text-center bg-gray-50 border border-gray-200 rounded-2xl">
                           <p className="text-gray-500 font-semibold text-xs">No hay profesionales disponibles para este servicio en este momento.</p>
                         </div>
@@ -512,22 +909,87 @@ export default function BookingApp() {
                   </div>
                 )}
 
-                {/* PASO 3 (Calendario) */}
-                {step >= 2 && (
-                  <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
+                {/* PASO 3 (Calendario + primer hueco + semana) */}
+                {step >= 2 && booking.empleadoId && (
+                  <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-70 mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">3. ¿Qué día quieres ir?</h2>
+                    <button
+                      type="button"
+                      onClick={buscarPrimerHueco}
+                      disabled={buscandoHueco}
+                      className="w-full mb-3 py-3 bg-amber-100 text-amber-900 font-bold rounded-xl text-xs border border-amber-200 active:scale-95 transition-transform disabled:opacity-50"
+                    >
+                      {buscandoHueco ? '⏳ Buscando el primer hueco…' : '⚡ Buscar primer hueco disponible'}
+                    </button>
+                    {primerHueco && (
+                      <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-800 font-semibold text-center">
+                        Primer hueco: {formatearFechaLarga(primerHueco.fecha)} a las {primerHueco.hora}
+                        {esModoAny ? ` con ${primerHueco.empName}` : ''} — ya lo seleccionamos abajo 👇
+                      </div>
+                    )}
+                    {/* Vista semanal comparativa: conteo por día (lunes-domingo) */}
+                    {semana.length > 0 && (
+                      <div className="mb-3 bg-white border border-gray-200 rounded-2xl p-3 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Semana</p>
+                          {cargandoSemana && <p className="text-[11px] text-gray-400 font-semibold">actualizando…</p>}
+                        </div>
+                        <div className="grid grid-cols-7 gap-1">
+                          {semana.map((d) => {
+                            const pasado = d.total < 0;
+                            const sinCupo = !pasado && d.total === 0;
+                            const esElegido = booking.fecha === d.fecha;
+                            const dd = Number(d.fecha.slice(8, 10));
+                            return (
+                              <button
+                                key={d.fecha}
+                                type="button"
+                                disabled={pasado}
+                                onClick={() => fetchHorarios(d.fecha)}
+                                title={pasado ? d.fecha : `${d.total} libres el ${d.fecha}`}
+                                className={`py-2 px-0.5 rounded-lg text-center transition-all active:scale-95 disabled:opacity-20 ${
+                                  esElegido ? 'bg-black text-white shadow-md' : sinCupo ? 'bg-gray-50 text-gray-300' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                                }`}
+                              >
+                                <span className="block text-[10px] font-bold uppercase">{DIAS_SEMANA_ABREV[new Date(d.fecha + 'T12:00:00').getDay()]}</span>
+                                <span className="block text-sm font-black">{dd}</span>
+                                <span className="block text-[10px] font-bold">{pasado ? '·' : `${d.total}`}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-2 text-[10px] text-gray-400 font-medium text-center">Número = espacios libres {esModoAny ? '(todos los profesionales)' : '(tu profesional)'}. Toca un día para ver horas.</p>
+                      </div>
+                    )}
                     <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} timezone={negocio?.timezone} ventanaDias={negocio?.booking_window_days} />
                     {loading && <p className="text-center text-xs font-semibold text-gray-500 py-4">Buscando espacios libres...</p>}
                   </div>
                 )}
+                {step >= 2 && booking.servicioId && !booking.empleadoId && (
+                  <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-center">
+                    <p className="text-xs text-amber-800 font-semibold">👆 Elige un profesional (o “Cualquiera disponible”) para ver el calendario.</p>
+                  </div>
+                )}
 
                 {/* PASO 4 (Horarios) */}
-                {step >= 3 && slots.length >= 0 && (
-                  <div id="step-4" className={`scroll-mt-24 ${step > 4 ? 'opacity-50 pointer-events-none mt-6' : 'mt-6'}`}>
+                {step >= 3 && booking.fecha && slots.length >= 0 && (
+                  <div id="step-4" className={`scroll-mt-24 ${step > 4 ? 'opacity-70 mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">4. Horarios para el {formatearFechaLarga(booking.fecha)}</h2>
+                    {esModoAny && slots.length > 0 && (
+                      <p className="mb-3 text-[11px] text-gray-500 font-semibold">⚡ Te asignaremos al primer profesional libre en la hora que elijas.</p>
+                    )}
                     {slots.length === 0 ? (
-                      <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
+                      <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl space-y-3">
                         <p className="text-red-500 font-semibold text-sm">No hay espacios disponibles este día.</p>
+                        <button
+                          type="button"
+                          onClick={buscarPrimerHueco}
+                          disabled={buscandoHueco}
+                          className="w-full py-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50"
+                        >
+                          {buscandoHueco ? 'Buscando…' : '⚡ Buscar primer hueco'}
+                        </button>
+                        <p className="text-[11px] text-gray-400 font-medium">…o prueba otro día en la semana de arriba 👆</p>
                       </div>
                     ) : (
                       <div className="space-y-4">
@@ -538,7 +1000,7 @@ export default function BookingApp() {
                               {slotsManana.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
@@ -557,7 +1019,7 @@ export default function BookingApp() {
                               {slotsTarde.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
@@ -576,7 +1038,7 @@ export default function BookingApp() {
                               {slotsNoche.map(hora => (
                                 <button
                                   key={hora}
-                                  onClick={() => { setBooking({ ...booking, hora }); setStep(4); }}
+                                  onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
                                   className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
@@ -589,23 +1051,43 @@ export default function BookingApp() {
                         )}
                       </div>
                     )}
+                    {esModoAny && booking.hora && empleadoElegido && (
+                      <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold text-center">
+                        👤 Te atenderá <strong>{empleadoElegido.name}</strong> (primer disponible a las {booking.hora})
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* PASO 5 (Confirmar) */}
-                {step >= 4 && step < 5 && (
+                {step >= 4 && booking.hora && step < 5 && (
                   <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6 scroll-mt-24">
                     <form onSubmit={confirmarCita} className="space-y-4">
                       <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
-                      
+
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
                         <p>📋 Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
-                        <p>👤 Profesional: <strong>{empleadoElegido?.name}</strong></p>
+                        <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name}</strong></p>
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
                           <p>📍 Dirección: <strong>{negocio.direccion}</strong></p>
                         )}
                       </div>
+
+                      {/* Cliente recurrente: un toque para reusar datos guardados */}
+                      {clienteGuardado && (!booking.clienteNombre || !booking.clienteTelefono) && (
+                        <button
+                          type="button"
+                          onClick={() => setBooking((prev) => ({
+                            ...prev,
+                            clienteNombre: prev.clienteNombre || clienteGuardado.nombre || '',
+                            clienteTelefono: prev.clienteTelefono || clienteGuardado.telefono || '',
+                          }))}
+                          className="w-full py-3 bg-emerald-50 text-emerald-800 font-bold rounded-xl text-xs border border-emerald-200 active:scale-95 transition-transform"
+                        >
+                          👋 Hola de nuevo{clienteGuardado.nombre ? `, ${clienteGuardado.nombre.split(' ')[0]}` : ''} — usar mis datos anteriores
+                        </button>
+                      )}
 
                       <input
                         type="text" required placeholder="Tu Nombre completo"
@@ -642,6 +1124,17 @@ export default function BookingApp() {
                         />
                         <span className="text-xs font-semibold text-gray-700">
                           🔔 Avísame antes de mi cita en este dispositivo
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-3 px-1 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={recordarDatos}
+                          onChange={(e) => setRecordarDatos(e.target.checked)}
+                          className="w-4 h-4 accent-black shrink-0"
+                        />
+                        <span className="text-[11px] font-medium text-gray-500">
+                          Recordar mis datos en este dispositivo para la próxima
                         </span>
                       </label>
                       {/* Honeypot anti-bots: invisible para humanos */}
