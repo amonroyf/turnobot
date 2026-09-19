@@ -278,6 +278,14 @@ export default function BookingApp() {
     setClienteGuardado(leerClienteGuardado(slug));
   }, [slug]);
 
+  // Actualizar <meta name="theme-color"> dinámicamente según la marca.
+  useEffect(() => {
+    const color = negocio?.marca?.color;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', color || '#000000');
+    return () => { if (meta) meta.setAttribute('content', '#000000'); };
+  }, [negocio?.marca?.color]);
+
   // Pre-rellenar nombre/teléfono del cliente recurrente (sin borrar lo que
   // ya esté escribiendo). Solo rellena campos vacíos.
   useEffect(() => {
@@ -809,29 +817,22 @@ export default function BookingApp() {
   return (
     <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}min-h-screen bg-gray-100 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 shadow-sm border-x border-gray-200">
-      <header className="text-center sticky top-0 z-40 shadow-2xs">
-        {/* Portada con color de marca o fallback blanco */}
+      <header className="px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-40 shadow-2xs flex items-center gap-3">
         <div
-          className="p-5"
+          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
           style={negocio?.marca?.color
-            ? { background: fondoMarca(negocio.marca.color), color: textoSobreMarca(negocio.marca.color) }
-            : { backgroundColor: '#fff', color: '#111' }}
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
+            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
         >
-          <div
-            className="w-12 h-12 rounded-full mx-auto flex items-center justify-center text-xl font-black border-2"
-            style={negocio?.marca?.color
-              ? { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.5)' }
-              : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
-          >
-            {inicialMarca(negocio?.name)}
-          </div>
-          <h1 className="text-lg font-bold mt-2">{negocio?.name || 'TurnoBot'}</h1>
-          {negocio?.marca?.eslogan && (
-            <p className="text-[11px] opacity-90 font-medium mt-0.5">{negocio.marca.eslogan}</p>
-          )}
+          {inicialMarca(negocio?.name)}
         </div>
-        <div className="bg-white border-b border-gray-100 px-4 py-2">
-          <p className="text-[10px] text-gray-400 font-medium">Reserva tu cita en segundos</p>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio?.name || 'TurnoBot'}</h1>
+          {negocio?.marca?.eslogan ? (
+            <p className="text-[10px] text-gray-400 font-medium truncate">{negocio.marca.eslogan}</p>
+          ) : (
+            <p className="text-[10px] text-gray-400 font-medium">Reserva tu cita en segundos</p>
+          )}
         </div>
       </header>
 

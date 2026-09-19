@@ -26,6 +26,20 @@
 .tema-marca .border-black {
   border-color: var(--marca) !important;
 }
+/* Hover y active: oscurecer el color de marca en vez de caer a gris. */
+.tema-marca .bg-black:hover,
+.tema-marca button.bg-black:hover {
+  background-color: color-mix(in srgb, var(--marca) 80%, #000) !important;
+}
+.tema-marca .bg-black:active,
+.tema-marca button.bg-black:active {
+  background-color: color-mix(in srgb, var(--marca) 65%, #000) !important;
+}
+/* Focus ring: usar color de marca en vez de negro. */
+.tema-marca .ring-black,
+.tema-marca .focus\:ring-black {
+  --tw-ring-color: var(--marca);
+}
 
 /* Respeta "reducir movimiento": desactiva el auto-scroll suave y spins. */
 @media (prefers-reduced-motion: reduce) {

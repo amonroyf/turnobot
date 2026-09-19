@@ -1203,10 +1203,20 @@ function AdminPanel() {
 
   return (
     <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-2xl mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased flex flex-col`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
-      <header className="px-5 py-4 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex flex-col justify-center items-center">
-        <h1 className="text-xl font-black text-gray-900 leading-none">{negocio.name}</h1>
-        <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-widest">Modo Administrador</p>
-        <p className="text-[9px] font-medium text-gray-300 mt-0.5">v{import.meta.env.VITE_APP_VERSION || '0.1.1'}</p>
+      <header className="px-5 py-3 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex items-center gap-3">
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
+          style={negocio?.marca?.color
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
+            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+        >
+          {inicialMarca(negocio.name)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio.name}</h1>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Admin</p>
+        </div>
+        <p className="text-[9px] font-medium text-gray-300 shrink-0">v{import.meta.env.VITE_APP_VERSION || '0.1.1'}</p>
       </header>
 
       {pushToast && (

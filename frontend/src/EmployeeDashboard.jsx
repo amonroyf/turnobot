@@ -4,7 +4,7 @@ import { formatearFechaLarga, horaEnZona, sumarDias } from './fecha.js';
 import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
-import { textoSobreMarca } from './marca.js';
+import { textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -298,37 +298,42 @@ function PortalEmpleado() {
   const empName = localStorage.getItem(`emp_name_${slug}`) || '';
 
   return (
-    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
-      <header className="px-5 py-4 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-lg font-black text-gray-900">{negocio?.name || slug}</h1>
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{empName}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {messaging && typeof Notification !== 'undefined' && (
-              pushNotifications.isSubscribed ? (
-                <button
-                  onClick={() => pushNotifications.unsubscribe()}
-                  className="min-h-[44px] px-2 text-[11px] text-gray-500 font-bold underline"
-                >
-                  🔔 Avisos sí
-                </button>
-              ) : pushNotifications.permission === 'denied' ? (
-                <span className="text-[11px] text-red-500 font-bold">🔕 Avisos bloqueados</span>
-              ) : (
-                <button
-                  onClick={pushNotifications.subscribe}
-                  className="min-h-[44px] px-2 text-[11px] text-blue-600 font-bold underline"
-                >
-                  🔔 Activar avisos
-                </button>
-              )
-            )}
-            <button onClick={handleLogout} className="min-h-[44px] px-2 text-[11px] text-gray-500 font-semibold underline">
-              Salir
-            </button>
-          </div>
+    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>      <header className="px-5 py-3 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex items-center gap-3">
+        <div
+          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
+          style={negocio?.marca?.color
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
+            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+        >
+          {inicialMarca(negocio?.name || slug)}
+        </div>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio?.name || slug}</h1>
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">{empName}</p>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          {messaging && typeof Notification !== 'undefined' && (
+            pushNotifications.isSubscribed ? (
+              <button
+                onClick={() => pushNotifications.unsubscribe()}
+                className="px-1.5 text-[10px] text-gray-500 font-bold underline"
+              >
+                🔔
+              </button>
+            ) : pushNotifications.permission === 'denied' ? (
+              <span className="text-[10px] text-red-500">🔕</span>
+            ) : (
+              <button
+                onClick={pushNotifications.subscribe}
+                className="px-1.5 text-[10px] text-blue-600 font-bold underline"
+              >
+                🔔
+              </button>
+            )
+          )}
+          <button onClick={handleLogout} className="px-1.5 text-[10px] text-gray-500 font-semibold underline">
+            Salir
+          </button>
         </div>
       </header>
 
