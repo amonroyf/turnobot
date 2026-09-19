@@ -51,6 +51,15 @@ const leerClienteGuardado = (slug) => {
   }
 };
 
+const fetchSlotsRecurso = async (slug, recursoId, servicioId, fecha, cupos = 1) => {
+  const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&servicio_id=${servicioId}&fecha=${fecha}&cupos=${cupos}`);
+  if (!res.ok) throw new Error('Error del servidor');
+  const data = await res.json();
+  // El backend responde objeto {slots, libres_por_hora} (o array en viejos).
+  if (Array.isArray(data)) return { slots: data, libres: {} };
+  return { slots: Array.isArray(data?.slots) ? data.slots : [], libres: data?.libres_por_hora || {} };
+};
+
 const fetchSlotsEmpleado = async (slug, empId, servicioId, fecha) => {
   const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${empId}&servicio_id=${servicioId}&fecha=${fecha}`);
   if (!res.ok) throw new Error('Error del servidor');
@@ -107,6 +116,16 @@ const PASOS = [
   { n: 3, etiqueta: 'Día' },
   { n: 4, etiqueta: 'Hora' },
   { n: 5, etiqueta: 'Confirmar' },
+];
+
+// Modo "reservar espacio" (canchas, boxes): sin servicio ni profesional.
+// Flujo propio: Espacio → Día → Hora → Confirmar.
+const PASOS_ESPACIO = [
+  { n: 1, etiqueta: 'Espacio' },
+  { n: 2, etiqueta: 'Día' },
+  { n: 3, etiqueta: 'Hora' },
+  { n: 4, etiqueta: 'Confirmar' },
+  { n: 5, etiqueta: 'Listo' },
 ];
 
 function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone, ventanaDias }) {
@@ -207,6 +226,8 @@ export default function BookingApp() {
   const [slots, setSlots] = useState([]);
   // En modo "cualquiera": hora -> id del profesional asignado (primero libre).
   const [slotsPorHora, setSlotsPorHora] = useState({});
+  // En modo espacio: hora -> cupos libres (para "quedan N").
+  const [libresPorHora, setLibresPorHora] = useState({});
   const [error, setError] = useState('');
   const [citaId, setCitaId] = useState('');
   // Primer hueco disponible (búsqueda en próximos días) y tira semanal.
@@ -220,6 +241,9 @@ export default function BookingApp() {
   // Cliente recurrente: datos guardados en este dispositivo por negocio.
   const [clienteGuardado, setClienteGuardado] = useState(null);
   const [recordarDatos, setRecordarDatos] = useState(true);
+  // Modo de reserva: 'servicio' (clásico) o 'espacio' (canchas/boxes, sin
+  // servicio ni profesional). Sin recursos en el negocio siempre es servicio.
+  const [modo, setModo] = useState(null);
   // Búsqueda de servicios (ley de Hick: filtra cuando hay muchos).
   const [busquedaServicio, setBusquedaServicio] = useState('');
   // Estado del push post-agendamiento: 'idle' | 'loading' | 'success' | 'error'
@@ -228,6 +252,9 @@ export default function BookingApp() {
   const [booking, setBooking] = useState({
     servicioId: '',
     empleadoId: '',
+    recursoId: '',
+    cupos: 1,
+    participantes: [],
     fecha: '',
     hora: '',
     clienteNombre: '',
@@ -287,8 +314,32 @@ export default function BookingApp() {
         : null)
     : negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
+  const hayRecursos = (negocio?.recursos || []).length > 0;
+  const recursoElegido = negocio?.recursos?.find(r => r.id === booking.recursoId);
+  // En modo espacio no hay servicio: el nombre se deriva del espacio.
+  const servicioNombre = servicioElegido?.name || (recursoElegido ? `Reserva de ${recursoElegido.name}` : '');
+  const pasos = modo === 'espacio' ? PASOS_ESPACIO : PASOS;
+  const modoEspacio = modo === 'espacio';
+  // Listo para ver calendario: espacio con su espacio, o servicio con
+  // profesional. Caminos separados: el servicio nunca pide espacio.
+  const listoParaCalendario = modoEspacio
+    ? !!booking.recursoId
+    : !!booking.servicioId && !!booking.empleadoId;
+
+  const elegirModo = (m) => {
+    setModo(m);
+    setBooking((prev) => ({ ...prev, servicioId: '', empleadoId: '', recursoId: '', cupos: 1, participantes: [], fecha: '', hora: '' }));
+    setSlots([]);
+    setSlotsPorHora({});
+    setLibresPorHora({});
+    setPrimerHueco(null);
+    setError('');
+    setStep(1);
+  };
+
   const fetchHorarios = async (fecha, opts = {}) => {
-    if (!booking.servicioId || !booking.empleadoId) return;
+    // Camino espacio: solo espacio. Camino servicio: servicio + profesional.
+    if (modoEspacio ? !booking.recursoId : (!booking.servicioId || !booking.empleadoId)) return;
     setLoading(true);
     if (!opts.preserveError) setError('');
     // No se resetea la hora aquí: se conserva si sigue libre en la nueva
@@ -297,7 +348,22 @@ export default function BookingApp() {
     try {
       let unidos = [];
       let porHora = {};
-      if (booking.empleadoId === EMP_ANY) {
+      setLibresPorHora({});
+      if (booking.recursoId) {
+        // Espacio elegido: su disponibilidad manda. Si además hay un
+        // profesional concreto, se intersecta (ambos deben estar libres).
+        const cupos = Math.max(1, Number(booking.cupos) || 1);
+        const rr = await fetchSlotsRecurso(slug, booking.recursoId, booking.servicioId, fecha, cupos);
+        unidos = rr.slots;
+        setLibresPorHora(rr.libres);
+        if (booking.empleadoId && booking.empleadoId !== EMP_ANY) {
+          const r = await fetchSlotsEmpleado(slug, booking.empleadoId, booking.servicioId, fecha);
+          const setEmp = new Set(r.slots);
+          unidos = unidos.filter((h) => setEmp.has(h));
+        }
+        // En modo "any" + espacio no se asigna profesional (el local asigna).
+        porHora = {};
+      } else if (booking.empleadoId === EMP_ANY) {
         // Una sola llamada al backend nuevo (objeto); si responde array plano
         // es un backend viejo y se hace fan-out por profesional (fallback).
         // OJO: el array del backend viejo con emp_id=any puede ser mock:
@@ -338,7 +404,7 @@ export default function BookingApp() {
   // Primer hueco: pregunta al backend (una sola llamada); si el backend es
   // viejo (404), recorre los próximos días día por día como fallback.
   const buscarPrimerHueco = async () => {
-    if (!booking.servicioId || !booking.empleadoId || !negocio) return;
+    if (modoEspacio ? (!booking.recursoId || !negocio) : (!booking.servicioId || !booking.empleadoId || !negocio)) return;
     setBuscandoHueco(true);
     setPrimerHueco(null);
     setError('');
@@ -353,7 +419,9 @@ export default function BookingApp() {
     };
     try {
       const empParam = booking.empleadoId === EMP_ANY ? 'any' : booking.empleadoId;
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${booking.servicioId}&emp_id=${empParam}&dias=${MAX_DIAS_HUECO}`);
+      const recParam = booking.recursoId ? `&recurso_id=${booking.recursoId}` : '';
+      const cupParam = booking.recursoId ? `&cupos=${Math.max(1, Number(booking.cupos) || 1)}` : '';
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${booking.servicioId}&emp_id=${empParam}${recParam}${cupParam}&dias=${MAX_DIAS_HUECO}`);
       if (res.ok) {
         const h = await res.json();
         if (h?.fecha && h?.hora) {
@@ -369,6 +437,23 @@ export default function BookingApp() {
       }
       // Fallback (backend sin /primer-hueco): escaneo día por día.
       const hoyStr = fechaHoyEnZona(negocio?.timezone);
+      if (booking.recursoId) {
+        const cupos = Math.max(1, Number(booking.cupos) || 1);
+        for (let d = 0; d < MAX_DIAS_HUECO; d++) {
+          const fecha = sumarDias(hoyStr, d);
+          try {
+            const rr = await fetchSlotsRecurso(slug, booking.recursoId, booking.servicioId, fecha, cupos);
+            if (rr.slots.length > 0) {
+              await aplicarHueco({ fecha, hora: rr.slots[0] });
+              return;
+            }
+          } catch {
+            // sigue al siguiente día
+          }
+        }
+        setError(`No encontramos espacios libres en los próximos ${MAX_DIAS_HUECO} días. Prueba con otro espacio o escríbenos.`);
+        return;
+      }
       const objetivos = booking.empleadoId === EMP_ANY ? empleadosElegibles : empleadosElegibles.filter(e => e.id === booking.empleadoId);
       if (objetivos.length === 0) {
         setError("No hay profesionales disponibles para este servicio en este momento.");
@@ -408,11 +493,11 @@ export default function BookingApp() {
   };
 
   // Tira semanal comparativa: para la semana que contiene la fecha elegida
-  // (o hoy), muestra el conteo de slots por día. En modo "any" suma todos
-  // los profesionales; si no, solo el elegido. Cacheada por servicio/emp/día.
+  // (o hoy), muestra el conteo de slots por día. Con espacio elegido cuenta
+  // el espacio; en modo "any" suma todos los profesionales; si no, el elegido.
   useEffect(() => {
     const cargarSemana = async () => {
-      if (!negocio || !booking.servicioId || !booking.empleadoId) {
+      if (!negocio || (modoEspacio ? !booking.recursoId : (!booking.servicioId || !booking.empleadoId))) {
         setSemana([]);
         return;
       }
@@ -430,6 +515,21 @@ export default function BookingApp() {
         const filas = await Promise.all(
           dias.map(async (fecha) => {
             if (fecha < hoyStr) return { fecha, total: -1 };
+            // Espacio elegido: cuenta el espacio (una sola llamada por día).
+            if (booking.recursoId) {
+              const cacheKey = `${booking.servicioId}|rec:${booking.recursoId}|cup${booking.cupos}|${fecha}`;
+              let s = semanaCacheRef.current[cacheKey];
+              if (s === undefined) {
+                try {
+                  const rr = await fetchSlotsRecurso(slug, booking.recursoId, booking.servicioId, fecha, Math.max(1, Number(booking.cupos) || 1));
+                  s = rr.slots;
+                } catch {
+                  s = [];
+                }
+                semanaCacheRef.current[cacheKey] = s;
+              }
+              return { fecha, total: s.length };
+            }
             // Modo "any": una sola llamada (objeto del backend nuevo). Si el
             // backend es viejo (array), fan-out por profesional.
             if (booking.empleadoId === EMP_ANY) {
@@ -469,7 +569,7 @@ export default function BookingApp() {
     };
     cargarSemana();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [negocio?.timezone, booking.servicioId, booking.empleadoId, booking.fecha]);
+  }, [negocio?.timezone, modo, booking.servicioId, booking.empleadoId, booking.recursoId, booking.cupos, booking.fecha]);
 
   const confirmarCita = async (e) => {
     e.preventDefault();
@@ -480,12 +580,13 @@ export default function BookingApp() {
 
     // En modo "cualquiera" el backend exige un profesional concreto: se
     // resuelve a quien tenía ese slot libre (si cambió, al primero elegible
-    // y el backend revalida con 409).
+    // y el backend revalida con 409). Con espacio y sin profesional, el local
+    // asigna (empleado vacío, permitido por el backend).
     let empleadoFinal = booking.empleadoId;
     if (booking.empleadoId === EMP_ANY) {
-      empleadoFinal = slotsPorHora[booking.hora] || empleadosElegibles[0]?.id || '';
+      empleadoFinal = booking.recursoId ? '' : (slotsPorHora[booking.hora] || empleadosElegibles[0]?.id || '');
     }
-    if (!empleadoFinal) {
+    if (!empleadoFinal && !booking.recursoId) {
       setError("Elige un profesional para confirmar.");
       enviandoRef.current = false;
       setLoading(false);
@@ -495,6 +596,9 @@ export default function BookingApp() {
     const payload = {
       ...booking,
       empleadoId: empleadoFinal,
+      recursoId: booking.recursoId || '',
+      cupos: booking.recursoId ? Math.max(1, Number(booking.cupos) || 1) : 1,
+      participantes: (booking.participantes || []).map((p) => String(p || '').trim()).filter(Boolean).slice(0, 20),
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
     };
     try {
@@ -523,7 +627,7 @@ export default function BookingApp() {
           // localStorage lleno/bloqueado: no bloquea la confirmación.
         }
         // Conservar el profesional resuelto para el resumen de éxito.
-        if (booking.empleadoId === EMP_ANY) {
+        if (booking.empleadoId === EMP_ANY && empleadoFinal) {
           setSlotsPorHora((prev) => ({ ...prev, [booking.hora]: empleadoFinal }));
         }
         setPushStatus('idle');
@@ -565,7 +669,7 @@ export default function BookingApp() {
   const descargarMiICS = () => {
     descargarICS({
       slug,
-      servicio: servicioElegido?.name || '',
+      servicio: servicioNombre,
       profesional: empleadoElegido?.name || '',
       fecha: booking.fecha,
       hora: booking.hora,
@@ -580,10 +684,11 @@ export default function BookingApp() {
 
   const reiniciarAgendamiento = () => {
     // Al volver al inicio se conservan nombre/teléfono (cliente recurrente);
-    // solo se reinicia servicio/profesional/fecha/hora.
-    setBooking((prev) => ({ servicioId: '', empleadoId: '', fecha: '', hora: '', clienteNombre: prev.clienteNombre, clienteTelefono: prev.clienteTelefono, clienteNotas: '', website: '' }));
+    // solo se reinicia servicio/profesional/espacio/fecha/hora.
+    setBooking((prev) => ({ servicioId: '', empleadoId: '', recursoId: '', cupos: 1, participantes: [], fecha: '', hora: '', clienteNombre: prev.clienteNombre, clienteTelefono: prev.clienteTelefono, clienteNotas: '', website: '' }));
     setSlots([]);
     setSlotsPorHora({});
+    setLibresPorHora({});
     setPrimerHueco(null);
     setError('');
     setCitaId('');
@@ -777,10 +882,10 @@ export default function BookingApp() {
                   </button>
                 )}
 
-                {/* Barra de progreso 1–5 (orientación: el usuario sabe dónde va) */}
+                {/* Barra de progreso (orientación: el usuario sabe dónde va) */}
                 {step < 5 && (
                   <ol aria-label="Progreso de la reserva" className="flex items-center gap-1 mb-1">
-                    {PASOS.map((p) => {
+                    {pasos.map((p) => {
                       const alcanzado = step >= p.n;
                       const actual = step === p.n;
                       return (
@@ -800,7 +905,43 @@ export default function BookingApp() {
                 )}
 
                 {/* PASO 1 */}
-                {step >= 1 && (
+                {/* Con espacios: primero se elige el camino (servicio o espacio).
+                    Sin espacios: directo a servicios como siempre. */}
+                {step >= 1 && hayRecursos && !modo && (
+                  <div id="step-1" className="scroll-mt-24">
+                    <h2 className="font-bold text-gray-800 mb-1 text-sm">1. ¿Qué quieres reservar?</h2>
+                    <p className="text-[11px] text-gray-500 font-medium mb-3">
+                      Tenemos atención por servicio y espacios para usar.
+                    </p>
+                    <div className="grid gap-3">
+                      <button
+                        type="button"
+                        onClick={() => elegirModo('servicio')}
+                        className="min-h-[76px] p-4 rounded-2xl border-2 border-gray-200 bg-white text-left flex items-center gap-3 active:scale-[0.98] hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      >
+                        <span className="text-3xl" aria-hidden="true">💈</span>
+                        <span className="flex-1">
+                          <span className="font-bold text-sm block">Reservar un servicio</span>
+                          <span className="text-xs text-gray-500 font-medium block">Corte, consulta, clase… con profesional</span>
+                        </span>
+                        <span aria-hidden="true" className="text-gray-300 font-black">›</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => elegirModo('espacio')}
+                        className="min-h-[76px] p-4 rounded-2xl border-2 border-gray-200 bg-white text-left flex items-center gap-3 active:scale-[0.98] hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      >
+                        <span className="text-3xl" aria-hidden="true">📍</span>
+                        <span className="flex-1">
+                          <span className="font-bold text-sm block">Reservar un espacio</span>
+                          <span className="text-xs text-gray-500 font-medium block">Cancha, box, sala… directo, sin servicio</span>
+                        </span>
+                        <span aria-hidden="true" className="text-gray-300 font-black">›</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {step >= 1 && (!hayRecursos || modo === 'servicio') && (
                   <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-60' : ''}`}>
                     <h2 className="font-bold text-gray-800 mb-1 text-sm">1. ¿Qué te quieres hacer?</h2>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
@@ -906,14 +1047,126 @@ export default function BookingApp() {
                   </div>
                 )}
 
-                {/* PASO 2 */}
-                {(step >= 1 && booking.servicioId) && (
+                {/* PASO 2 (espacio y/o profesional según el modo) */}
+                {(((modo === 'servicio' || !hayRecursos) && booking.servicioId) || modo === 'espacio') && (
                   <div id="step-2" className={`scroll-mt-24 ${step > 2 ? 'opacity-70 mt-6' : 'mt-6'}`}>
-                    <h2 className="font-bold text-gray-800 mb-1 text-sm">2. ¿Quién te atiende?</h2>
+                    {/* Espacio (solo camino Espacio: en modo servicio no se muestra
+                        para no mezclar; el espacio se reserva por su propio camino) */}
+                    {modo === 'espacio' && (
+                      <div className={modo === 'espacio' ? '' : 'mb-5'}>
+                        <h2 className="font-bold text-gray-800 mb-1 text-sm">{modo === 'espacio' ? '1. ¿Qué espacio?' : '¿Dónde?'}</h2>
+                        <p className="text-[11px] text-gray-500 font-medium mb-3">
+                          Si tu plan necesita un espacio concreto (cancha, box), elige cuál. Si no, sigue abajo.
+                        </p>
+                        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Espacios disponibles">
+                          {negocio.recursos.map((r) => {
+                            const isActive = booking.recursoId === r.id;
+                            return (
+                              <button
+                                key={r.id}
+                                role="radio"
+                                aria-checked={isActive}
+                                onClick={() => {
+                                  const fechaActual = booking.fecha;
+                                  // Al elegir espacio, el profesional pasa a
+                                  // "el local asigna" (puedes cambiarlo abajo).
+                                  setBooking((prev) => ({ ...prev, recursoId: isActive ? '' : r.id, cupos: 1, empleadoId: isActive ? prev.empleadoId : '' }));
+                                  setStep(2);
+                                  if (fechaActual && !isActive) {
+                                    setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
+                                  }
+                                }}
+                                className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${
+                                  isActive ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                }`}
+                              >
+                                <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border text-base ${
+                                  isActive ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'
+                                }`} aria-hidden="true">
+                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🔧' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : '📍'}
+                                </span>
+                                <span className="leading-tight text-left min-w-0">
+                                  <span className="block truncate">{r.name}</span>
+                                  <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}</span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {recursoElegido && (
+                          <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
+                            ✅ Espacio: <strong>{recursoElegido.name}</strong>
+                            {(recursoElegido.capacidad || 1) > 1
+                              ? ` (para ${recursoElegido.capacidad} personas — dime cuántos van).`
+                              : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
+                          </p>
+                        )}
+                        {/* ¿Cuántos van? (solo espacios grupales) */}
+                        {recursoElegido && (recursoElegido.capacidad || 1) > 1 && (
+                          <label className="block mt-3">
+                            <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Cuántos van?</span>
+                            <span className="flex gap-2 flex-wrap" role="radiogroup" aria-label="Número de personas">
+                              {Array.from({ length: Math.min(recursoElegido.capacidad, 20) }, (_, i) => i + 1).map((n) => (
+                                <button
+                                  key={n}
+                                  type="button"
+                                  role="radio"
+                                  aria-checked={Number(booking.cupos) === n}
+                                  onClick={() => {
+                                    const fechaActual = booking.fecha;
+                                    setBooking((prev) => ({ ...prev, cupos: n }));
+                                    if (fechaActual) {
+                                      setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
+                                    }
+                                  }}
+                                  className={`min-w-[44px] min-h-[44px] px-3 rounded-xl font-black text-sm active:scale-95 transition-all ${
+                                    Number(booking.cupos) === n ? 'bg-black text-white shadow-md' : 'bg-white border border-gray-200 text-gray-700'
+                                  }`}
+                                >
+                                  {n}
+                                </button>
+                              ))}
+                            </span>
+                          </label>
+                        )}
+                      </div>
+                    )}
+                    {/* Profesional (solo camino servicio; en modo espacio no aplica) */}
+                    {modo !== 'espacio' && (
+                    <>
+                    <h2 className="font-bold text-gray-800 mb-1 text-sm mt-6">2. ¿Quién te atiende?</h2>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
-                      Elige a tu profesional o toca “Cualquiera disponible” para lo más rápido.
+                      {booking.recursoId
+                        ? 'Puedes dejar que el local asigne o elegir a alguien.'
+                        : 'Elige a tu profesional o toca “Cualquiera disponible” para lo más rápido.'}
                     </p>
                     <div className="grid grid-cols-2 gap-3">
+                      {/* El local asigna (solo con espacio elegido) */}
+                      {booking.recursoId && (
+                        <button
+                          key="asigna"
+                          onClick={() => {
+                            const fechaActual = booking.fecha;
+                            setBooking((prev) => ({ ...prev, empleadoId: '' }));
+                            setStep(2);
+                            if (fechaActual) {
+                              setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
+                            }
+                          }}
+                          className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs col-span-2 ${
+                            booking.empleadoId === '' ? 'border-black bg-black text-white' : 'bg-white border-dashed border-gray-300 text-gray-800 active:bg-gray-100'
+                          }`}
+                        >
+                          <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
+                            booking.empleadoId === '' ? 'bg-gray-800 text-white border-gray-700' : 'bg-gray-100 text-gray-700 border-gray-200'
+                          }`}>
+                            🏠
+                          </span>
+                          <span className="leading-tight text-left">El local asigna
+                            <span className="block text-[11px] font-semibold opacity-70">Sin preferencia de persona</span>
+                          </span>
+                        </button>
+                      )}
                       {/* Cualquiera disponible: une la disponibilidad de todos */}
                       {empleadosElegibles.length > 1 && (
                         <button
@@ -976,13 +1229,15 @@ export default function BookingApp() {
                         </div>
                       )}
                     </div>
+                    </>
+                    )}
                   </div>
                 )}
 
                 {/* PASO 3 (Calendario + primer hueco + semana) */}
-                {step >= 2 && booking.empleadoId && (
+                {step >= 2 && listoParaCalendario && (
                   <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-70 mt-6' : 'mt-6'}`}>
-                    <h2 className="font-bold text-gray-800 mb-3 text-sm">3. ¿Qué día quieres ir?</h2>
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">{modoEspacio ? '2. ¿Qué día quieres ir?' : '3. ¿Qué día quieres ir?'}</h2>
                     <button
                       type="button"
                       onClick={buscarPrimerHueco}
@@ -1028,24 +1283,38 @@ export default function BookingApp() {
                             );
                           })}
                         </div>
-                        <p className="mt-2 text-[10px] text-gray-400 font-medium text-center">Número = espacios libres {esModoAny ? '(todos los profesionales)' : '(tu profesional)'}. Toca un día para ver horas.</p>
+                        <p className="mt-2 text-[10px] text-gray-400 font-medium text-center">Número = espacios libres {booking.recursoId ? '(tu espacio)' : esModoAny ? '(todos los profesionales)' : '(tu profesional)'}. Toca un día para ver horas.</p>
                       </div>
                     )}
                     <CalendarioGrid fechaSeleccionada={booking.fecha} onSeleccionar={fetchHorarios} timezone={negocio?.timezone} ventanaDias={negocio?.booking_window_days} />
                     {loading && <p className="text-center text-xs font-semibold text-gray-500 py-4">Buscando espacios libres...</p>}
                   </div>
                 )}
-                {step >= 2 && booking.servicioId && !booking.empleadoId && (
+                {step >= 2 && !listoParaCalendario && (
                   <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-2xl text-center">
-                    <p className="text-xs text-amber-800 font-semibold">👆 Elige un profesional (o “Cualquiera disponible”) para ver el calendario.</p>
+                    <p className="text-xs text-amber-800 font-semibold">
+                      {modoEspacio
+                        ? '👆 Elige un espacio arriba para ver el calendario.'
+                        : booking.servicioId
+                          ? '👆 Elige un profesional (o “Cualquiera disponible”) para ver el calendario.'
+                          : '👆 Elige primero qué quieres reservar.'}
+                    </p>
+                    {hayRecursos && modo && (
+                      <button type="button" onClick={() => elegirModo(null)} className="mt-2 text-[11px] font-bold text-gray-500 underline">
+                        Cambiar entre servicio y espacio
+                      </button>
+                    )}
                   </div>
                 )}
 
                 {/* PASO 4 (Horarios) */}
                 {step >= 3 && booking.fecha && slots.length >= 0 && (
                   <div id="step-4" className={`scroll-mt-24 ${step > 4 ? 'opacity-70 mt-6' : 'mt-6'}`}>
-                    <h2 className="font-bold text-gray-800 mb-3 text-sm">4. Horarios para el {formatearFechaLarga(booking.fecha)}</h2>
-                    {esModoAny && slots.length > 0 && (
+                    <h2 className="font-bold text-gray-800 mb-3 text-sm">{modoEspacio ? '3. Elige la hora' : '4. Horarios para el ' + formatearFechaLarga(booking.fecha)}</h2>
+                    {recursoElegido && (
+                      <p className="mb-3 text-[11px] text-gray-500 font-semibold">📍 Disponibilidad de <strong>{recursoElegido.name}</strong>.</p>
+                    )}
+                    {esModoAny && !booking.recursoId && slots.length > 0 && (
                       <p className="mb-3 text-[11px] text-gray-500 font-semibold">⚡ Te asignaremos al primer profesional libre en la hora que elijas.</p>
                     )}
                     {slots.length === 0 ? (
@@ -1075,7 +1344,12 @@ export default function BookingApp() {
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
-                                  {hora}
+                                  <span className="block">{hora}</span>
+                                  {booking.recursoId && libresPorHora[hora] != null && libresPorHora[hora] <= 5 && (
+                                    <span className={`block text-[10px] font-bold mt-0.5 ${booking.hora === hora ? 'text-gray-300' : 'text-amber-600'}`}>
+                                      ¡Quedan {libresPorHora[hora]}!
+                                    </span>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -1094,7 +1368,12 @@ export default function BookingApp() {
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
-                                  {hora}
+                                  <span className="block">{hora}</span>
+                                  {booking.recursoId && libresPorHora[hora] != null && libresPorHora[hora] <= 5 && (
+                                    <span className={`block text-[10px] font-bold mt-0.5 ${booking.hora === hora ? 'text-gray-300' : 'text-amber-600'}`}>
+                                      ¡Quedan {libresPorHora[hora]}!
+                                    </span>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -1113,7 +1392,12 @@ export default function BookingApp() {
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
-                                  {hora}
+                                  <span className="block">{hora}</span>
+                                  {booking.recursoId && libresPorHora[hora] != null && libresPorHora[hora] <= 5 && (
+                                    <span className={`block text-[10px] font-bold mt-0.5 ${booking.hora === hora ? 'text-gray-300' : 'text-amber-600'}`}>
+                                      ¡Quedan {libresPorHora[hora]}!
+                                    </span>
+                                  )}
                                 </button>
                               ))}
                             </div>
@@ -1133,11 +1417,14 @@ export default function BookingApp() {
                 {step >= 4 && booking.hora && step < 5 && (
                   <div id="step-5" className="mt-6 border-t border-gray-200 pt-6 pb-6 scroll-mt-24">
                     <form onSubmit={confirmarCita} className="space-y-4">
-                      <h2 className="font-bold text-gray-800 text-sm">5. Tus datos para confirmar</h2>
+                      <h2 className="font-bold text-gray-800 text-sm">{modoEspacio ? '4. Tus datos para confirmar' : '5. Tus datos para confirmar'}</h2>
 
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>📋 Servicio: <strong>{servicioElegido?.name}</strong> ({formatDinero(servicioElegido?.price)})</p>
-                        <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name}</strong></p>
+                        <p>📋 {modoEspacio ? 'Reserva' : 'Servicio'}: <strong>{servicioNombre}</strong>{servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : ''}</p>
+                        <p>👤 Profesional: <strong>{booking.recursoId && !empleadoElegido ? 'El local asigna' : esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name}</strong></p>
+                        {recursoElegido && (
+                          <p>📍 Espacio: <strong>{recursoElegido.name}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</strong></p>
+                        )}
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
                           <p>📍 Dirección: <strong>{negocio.direccion}</strong></p>
@@ -1176,6 +1463,31 @@ export default function BookingApp() {
                         onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
                         className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                       />
+                      {/* Acompañantes (opcional): quiénes van además de ti */}
+                      {booking.recursoId && Number(booking.cupos) > 1 && (
+                        <div className="space-y-2">
+                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                            ¿Quiénes van? (opcional, hasta {Math.min(Number(booking.cupos), 10)} nombres)
+                          </p>
+                          {Array.from({ length: Math.min(Number(booking.cupos), 10) }, (_, i) => (
+                            <input
+                              key={i}
+                              type="text"
+                              placeholder={`Acompañante ${i + 1}`}
+                              aria-label={`Nombre del acompañante ${i + 1}`}
+                              autoComplete="off"
+                              maxLength={100}
+                              value={(booking.participantes || [])[i] || ''}
+                              onChange={(e) => setBooking((prev) => {
+                                const arr = [...(prev.participantes || [])];
+                                arr[i] = e.target.value;
+                                return { ...prev, participantes: arr };
+                              })}
+                              className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
+                            />
+                          ))}
+                        </div>
+                      )}
                       <textarea
                         placeholder="¿Algo que debamos saber? (opcional, máx 500 caracteres)"
                         aria-label="Descripción de lo que necesitas (opcional)"
@@ -1240,8 +1552,12 @@ export default function BookingApp() {
                     </p>
 
                     <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
-                      <p>📋 <strong>Servicio:</strong> {servicioElegido?.name}</p>
-                      <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name}</p>
+                      <p>📋 <strong>{modoEspacio ? 'Reserva' : 'Servicio'}:</strong> {servicioNombre}</p>
+                      <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : '')}</p>
+                      {recursoElegido && <p>📍 <strong>Espacio:</strong> {recursoElegido.name}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</p>}
+                      {(booking.participantes || []).filter(Boolean).length > 0 && (
+                        <p>🧑‍🤝‍🧑 <strong>Van:</strong> {booking.participantes.filter(Boolean).join(', ')}</p>
+                      )}
                       <p>📅 <strong>Fecha:</strong> {formatearFechaLarga(booking.fecha)}</p>
                       <p>🕐 <strong>Hora:</strong> {booking.hora}</p>
                       {booking.clienteNotas && <p>📝 <strong>Notas:</strong> {booking.clienteNotas}</p>}
@@ -1254,7 +1570,7 @@ export default function BookingApp() {
                     <div className="space-y-3 pt-2">
                       <a
                         href={generarEnlaceGoogleCalendar({
-                          servicio: servicioElegido?.name || '',
+                          servicio: servicioNombre,
                           profesional: empleadoElegido?.name || '',
                           fecha: booking.fecha,
                           hora: booking.hora,

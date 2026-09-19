@@ -177,21 +177,46 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 	}
 
 	// Disponibilidad del nuevo slot con la duración real de la cita.
+	// Con recurso se verifica el espacio (y el profesional si lo hay).
 	dur := b.DurationMinute
 	if dur <= 0 {
 		dur = 60
 	}
-	slots, err := getFreeSlots(ctx, slug, b.EmpID, parsedDate, dur)
-	if err != nil {
-		log.Printf("Error verificando disponibilidad para mover %s: %v", citaID, err)
-		http.Error(w, "Error verificando disponibilidad", http.StatusInternalServerError)
-		return
+	libre := true
+	if b.RecursoID != "" {
+		cuposMover := b.Cupos
+		if cuposMover < 1 {
+			cuposMover = 1
+		}
+		var slotsRec []string
+		slotsRec, _, err = disponibilidadRecurso(ctx, slug, b.RecursoID, parsedDate, dur, cuposMover)
+		if err != nil {
+			log.Printf("Error verificando disponibilidad del espacio para mover %s: %v", citaID, err)
+			http.Error(w, "Error verificando disponibilidad", http.StatusInternalServerError)
+			return
+		}
+		libre = false
+		for _, s := range slotsRec {
+			if s == req.Hora {
+				libre = true
+				break
+			}
+		}
 	}
-	libre := false
-	for _, s := range slots {
-		if s == req.Hora {
-			libre = true
-			break
+	if libre && b.EmpID != "" {
+		var slots []string
+		slots, err = getFreeSlots(ctx, slug, b.EmpID, parsedDate, dur)
+		if err != nil {
+			log.Printf("Error verificando disponibilidad para mover %s: %v", citaID, err)
+			http.Error(w, "Error verificando disponibilidad", http.StatusInternalServerError)
+			return
+		}
+		libre = false
+		for _, s := range slots {
+			if s == req.Hora {
+				libre = true
+				break
+			}
 		}
 	}
 	if !libre {
@@ -207,15 +232,19 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 
 	// Mover en Calendar: crear el nuevo primero; si falla, no se toca nada.
 	// El viejo se borra solo si el nuevo quedó creado (sin huérfanos).
+	// Sin profesional no hay calendario: se conserva el id vacío.
 	direccion := ""
 	if negDoc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx); err == nil {
 		var neg Negocio
 		negDoc.DataTo(&neg)
 		direccion = neg.Direccion
 	}
-	nuevoEvento := createCalendarEvent(ctx, slug, b.EmpID, b.ServiceName, dur, nuevo, b.Notes, b.ClientName, b.UserPhone, direccion)
-	if nuevoEvento == "" {
-		log.Printf("Aviso: no se pudo crear el evento nuevo al mover %s", citaID)
+	nuevoEvento := ""
+	if b.EmpID != "" {
+		nuevoEvento = createCalendarEvent(ctx, slug, b.EmpID, b.ServiceName, dur, nuevo, b.Notes, b.ClientName, b.UserPhone, direccion)
+		if nuevoEvento == "" {
+			log.Printf("Aviso: no se pudo crear el evento nuevo al mover %s", citaID)
+		}
 	}
 	viejoEvento := b.CalendarEvt
 

@@ -78,10 +78,11 @@ func getCachedNegocio(ctx context.Context, slug string) (Negocio, error) {
 	neg.ID = doc.Ref.ID
 
 	// Poblar subcolecciones para que el Set guarde la respuesta completa
-	// (el frontend espera servicios/empleados en la misma respuesta).
+	// (el frontend espera servicios/empleados/recursos en la misma respuesta).
 	// Arrays nunca nil: la UI hace .map directo.
 	neg.Servicios = []Service{}
 	neg.Empleados = []Employee{}
+	neg.Recursos = []Recurso{}
 
 	if svcsDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Documents(ctx).GetAll(); err != nil {
 		log.Printf("getCachedNegocio: error cargando servicios de %s: %v", slug, err)
@@ -102,6 +103,20 @@ func getCachedNegocio(ctx context.Context, slug string) (Negocio, error) {
 			d.DataTo(&emp)
 			emp.ID = d.Ref.ID
 			neg.Empleados = append(neg.Empleados, emp)
+		}
+	}
+
+	if recDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Documents(ctx).GetAll(); err != nil {
+		log.Printf("getCachedNegocio: error cargando recursos de %s: %v", slug, err)
+	} else {
+		for _, d := range recDocs {
+			var rec Recurso
+			d.DataTo(&rec)
+			rec.ID = d.Ref.ID
+			if rec.Capacidad < 1 {
+				rec.Capacidad = 1
+			}
+			neg.Recursos = append(neg.Recursos, rec)
 		}
 	}
 

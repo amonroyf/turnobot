@@ -531,3 +531,323 @@ func TestFirstLinesSuffix(t *testing.T) {
 		t.Errorf("too short: %d", len(got))
 	}
 }
+
+func seedRecurso(t *testing.T, ctx context.Context, slug, id, nombre string) {
+	t.Helper()
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(id).Set(ctx, map[string]interface{}{
+		"name": nombre, "tipo": "cancha", "capacidad": 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBookConRecursoSinEmpleado(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-rec")
+	seedTienda(t, ctx, slug)
+	seedRecurso(t, ctx, slug, "rec1", "Cancha 1")
+
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "recursoId": "rec1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "+573001111111",
+	})
+	if code != http.StatusCreated || out["success"] != true {
+		t.Fatalf("code=%d out=%v", code, out)
+	}
+	// La reserva guarda el recurso desnormalizado y sin evento de Calendar.
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573001111111")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.RecursoID != "rec1" || b.RecursoName != "Cancha 1" {
+		t.Fatalf("recurso=%q/%q", b.RecursoID, b.RecursoName)
+	}
+	if b.CalendarEvt != "" {
+		t.Fatalf("sin profesional no debe haber evento de Calendar, hay %q", b.CalendarEvt)
+	}
+	// La hora ocupada ya no sale libre para el recurso.
+	slots, err := getFreeSlotsRecurso(ctx, slug, "rec1", mustParseFecha(t, mañanaStr()), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contiene(slots, "10:00") {
+		t.Fatal("el slot ocupado del recurso no debió listarse libre")
+	}
+}
+
+func TestBookRecursoSolapeYLibre(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-rec2")
+	seedTienda(t, ctx, slug)
+	seedRecurso(t, ctx, slug, "rec1", "Cancha 1")
+	seedRecurso(t, ctx, slug, "rec2", "Cancha 2")
+	fecha := mañanaStr()
+
+	book := func(phone, recurso, hora string) int {
+		code, _ := postBook(t, slug, map[string]string{
+			"servicioId": "svc1", "recursoId": recurso,
+			"fecha": fecha, "hora": hora,
+			"clienteNombre": "X", "clienteTelefono": phone,
+		})
+		return code
+	}
+	if c := book("+573002222221", "rec1", "10:00"); c != http.StatusCreated {
+		t.Fatalf("primera reserva code=%d", c)
+	}
+	// Mismo recurso, misma hora, otro teléfono -> conflicto.
+	if c := book("+573002222222", "rec1", "10:00"); c != http.StatusConflict {
+		t.Fatalf("solape mismo recurso code=%d, esperaba 409", c)
+	}
+	// Otro recurso, misma hora -> libre.
+	if c := book("+573002222223", "rec2", "10:00"); c != http.StatusCreated {
+		t.Fatalf("otro recurso code=%d, esperaba 201", c)
+	}
+	// Mismo recurso, otra hora -> libre.
+	if c := book("+573002222224", "rec1", "11:00"); c != http.StatusCreated {
+		t.Fatalf("otra hora code=%d, esperaba 201", c)
+	}
+	// Recurso inexistente -> 400.
+	if c := book("+573002222225", "no-existe", "12:00"); c != http.StatusBadRequest {
+		t.Fatalf("recurso inexistente code=%d, esperaba 400", c)
+	}
+	// Sin profesional ni recurso -> 400.
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1",
+		"fecha":      fecha, "hora": "12:00",
+		"clienteNombre": "X", "clienteTelefono": "+573002222226",
+	})
+	if code != http.StatusBadRequest {
+		t.Fatalf("sin destino code=%d, esperaba 400", code)
+	}
+}
+
+func seedRecursoCap(t *testing.T, ctx context.Context, slug, id string, capacidad, overbooking int) {
+	t.Helper()
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(id).Set(ctx, map[string]interface{}{
+		"name": "Clase " + id, "tipo": "clase", "capacidad": capacidad, "overbooking_pct": overbooking,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecursoCuposLlenadoYOverbooking(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-cupo")
+	seedTienda(t, ctx, slug)
+	seedRecursoCap(t, ctx, slug, "rec1", 4, 0)
+	fecha := mañanaStr()
+
+	book := func(phone string, cupos int) int {
+		// postBook es map[string]string (sin cupos): se serializa manual.
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "recursoId": "rec1",
+			"fecha": fecha, "hora": "10:00",
+			"clienteNombre": "X", "clienteTelefono": phone,
+			"cupos": cupos,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+
+	// 4 cupos de 4: entran.
+	for i := 0; i < 4; i++ {
+		if c := book("+57300333330"+string(rune('0'+i)), 1); c != http.StatusCreated {
+			t.Fatalf("cupo %d code=%d, esperaba 201", i+1, c)
+		}
+	}
+	// 5to: sin cupo.
+	if c := book("+573003333304", 1); c != http.StatusConflict {
+		t.Fatalf("lleno code=%d, esperaba 409", c)
+	}
+	// Otra hora: libre.
+	payload := map[string]string{
+		"servicioId": "svc1", "recursoId": "rec1",
+		"fecha": fecha, "hora": "11:00",
+		"clienteNombre": "X", "clienteTelefono": "+573003333305",
+	}
+	if code, _ := postBook(t, slug, payload); code != http.StatusCreated {
+		t.Fatalf("otra hora code=%d, esperaba 201", code)
+	}
+	// Una reserva no puede pedir más que la capacidad.
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "recursoId": "rec1",
+		"fecha": fecha, "hora": "11:00",
+		"clienteNombre": "X", "clienteTelefono": "+573003333306",
+		"cupos": 5,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("cupos>cap code=%d, esperaba 400", rec.Code)
+	}
+
+	// Overbooking 25% en cap 4 = 5 efectivos: el 5to sí entra.
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"overbooking_pct": 25,
+	}, firestore.MergeAll)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c := book("+573003333307", 1); c != http.StatusCreated {
+		t.Fatalf("overbooking code=%d, esperaba 201", c)
+	}
+	if c := book("+573003333308", 1); c != http.StatusConflict {
+		t.Fatalf("sobre overbooking code=%d, esperaba 409", c)
+	}
+}
+
+func TestRecursoHorarioPropioYBuffer(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-rec3")
+	seedTienda(t, ctx, slug)
+	// Recurso con horario propio (solo lunes 10:00-12:00) y buffer 30 min.
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Box 1", "tipo": "box", "capacidad": 3,
+		"buffer_minutos": 45,
+		"horario": map[string]interface{}{
+			"lunes":     map[string]interface{}{"activo": true, "turnos": []interface{}{map[string]interface{}{"inicio": "10:00", "fin": "12:00"}}},
+			"martes":    map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+			"miercoles": map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+			"jueves":    map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+			"viernes":   map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+			"sabado":    map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+			"domingo":   map[string]interface{}{"activo": false, "turnos": []interface{}{}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Próximo lunes (máx 7 intentos por si hoy es lunes pasado el horario).
+	var lunes time.Time
+	for d := 1; d <= 8; d++ {
+		cand := time.Now().AddDate(0, 0, d)
+		if cand.Weekday() == time.Monday {
+			lunes = cand
+			break
+		}
+	}
+	fecha := lunes.Format("2006-01-02")
+	slots, _, err := disponibilidadRecurso(ctx, slug, "rec1", lunes, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Rejilla 60 min en 10:00-12:00 -> 10:00 y 11:00.
+	if len(slots) == 0 {
+		t.Fatalf("el lunes con horario propio debería tener slots en %s", fecha)
+	}
+	// Martes (día inactivo con horario propio) -> vacío.
+	var martes time.Time
+	for d := 1; d <= 8; d++ {
+		cand := time.Now().AddDate(0, 0, d)
+		if cand.Weekday() == time.Tuesday {
+			martes = cand
+			break
+		}
+	}
+	slotsM, _, err := disponibilidadRecurso(ctx, slug, "rec1", martes, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slotsM) != 0 {
+		t.Fatalf("el martes inactivo debería estar vacío, hay %v", slotsM)
+	}
+
+	// Reserva lunes 10:00 (30 min + 45 aseo = hasta 11:15): bloquea 11:00.
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "recursoId": "rec1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573004444441",
+		"cupos":         3,
+		"participantes": []string{"Ana", "Luis"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("book con participantes code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573004444441")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if len(b.Participantes) != 2 || b.Participantes[0] != "Ana" {
+		t.Fatalf("participantes=%v", b.Participantes)
+	}
+	slots2, _, err := disponibilidadRecurso(ctx, slug, "rec1", lunes, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 10:00 ocupada y 11:00 bloqueada por el buffer (10:00+60+30 > 11:00).
+	for _, s := range slots2 {
+		if s == "10:00" || s == "11:00" {
+			t.Fatalf("slot %s debió estar bloqueado (reserva+buffer), libres=%v", s, slots2)
+		}
+	}
+}
+
+func TestBookRecursoSinServicio(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-rec4")
+	seedTienda(t, ctx, slug)
+	seedRecurso(t, ctx, slug, "rec1", "Cancha 1")
+
+	// Modo "reservar espacio": sin servicioId ni empleadoId.
+	body, _ := json.Marshal(map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573005555551",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573005555551")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.ServiceName != "Reserva de Cancha 1" {
+		t.Fatalf("service=%q", b.ServiceName)
+	}
+	if b.EmpID != "" {
+		t.Fatalf("emp=%q, esperaba vacío (el local asigna)", b.EmpID)
+	}
+
+	// Sin servicio Y sin recurso -> 400.
+	body2, _ := json.Marshal(map[string]interface{}{
+		"fecha": mañanaStr(), "hora": "11:00",
+		"clienteNombre": "X", "clienteTelefono": "+573005555552",
+	})
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body2))
+	req2.Header.Set("Content-Type", "application/json")
+	rec2 := httptest.NewRecorder()
+	bookHandler(rec2, req2, slug)
+	if rec2.Code != http.StatusBadRequest {
+		t.Fatalf("sin servicio ni recurso code=%d, esperaba 400", rec2.Code)
+	}
+}

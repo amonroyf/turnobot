@@ -37,9 +37,9 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 |----------|--------|-------------|
 | `/health` | GET | Health check (verifica Firestore) |
 | `/api/v1/b/{slug}` | GET | Datos del negocio, servicios y empleados |
-| `/api/v1/b/{slug}/slots` | GET | Horarios disponibles para un empleado/fecha (`emp_id=any` = todos) |
-| `/api/v1/b/{slug}/slots/primer-hueco` | GET | Primer horario libre hacia adelante |
-| `/api/v1/b/{slug}/book` | POST | Crear reserva (Firestore + Google Calendar + push al dueño y empleado) |
+| `/api/v1/b/{slug}/slots` | GET | Horarios por empleado (`emp_id`), todos (`any`), espacio (`recurso_id` + `cupos` → `{slots, libres_por_hora}`) o primer hueco |
+| `/api/v1/b/{slug}/slots/primer-hueco` | GET | Primer horario libre (profesional o `recurso_id`) |
+| `/api/v1/b/{slug}/book` | POST | Crear reserva (servicio y/o espacio; espacio puro sin servicio ni profesional) |
 | `/api/v1/b/{slug}/citas` | GET | Citas activas del cliente por teléfono |
 | `/api/v1/b/{slug}/citas/{id}` | DELETE | Cancelar cita (nunca pasadas; cliente con antelación configurable, default 24h) |
 | `/api/v1/b/{slug}/citas/{id}/reschedule` | POST | Mover cita de día/hora (misma cita, mueve Calendar) |
@@ -48,6 +48,7 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 | `/api/v1/b/{slug}/no-show/{id}` | POST | Marcar cita como no-show (solo pasadas) |
 | `/api/v1/b/{slug}/servicios/{id}` | DELETE | Eliminar servicio (en cascada) |
 | `/api/v1/b/{slug}/empleados/{id}` | DELETE | Eliminar empleado (en cascada) |
+| `/api/v1/b/{slug}/recursos/{id}` | DELETE | Borrar espacio (rechaza 409 si tiene citas futuras) |
 | `/api/v1/b/{slug}/empleados/{id}/pin` | POST | Asignar PIN al empleado (dueño) |
 | `/api/v1/b/{slug}/employee-login` | POST | Login del empleado con PIN (token 12h) |
 | `/api/v1/b/{slug}/employee/{id}/citas` | GET | Citas del empleado |

@@ -45,10 +45,29 @@ service cloud.firestore {
              isValidHorarioSemanal(request.resource.data.horario);
     }
 
+    // Un recurso: capacidad sana (1-100), extra 0-100%, aseo 0-120 min y
+    // horario con la misma forma que el de empleados.
+    function politicasRecursoValidas() {
+      return (!('capacidad' in request.resource.data) ||
+              (request.resource.data.capacidad is number &&
+               request.resource.data.capacidad >= 1 &&
+               request.resource.data.capacidad <= 100)) &&
+             (!('overbooking_pct' in request.resource.data) ||
+              (request.resource.data.overbooking_pct is number &&
+               request.resource.data.overbooking_pct >= 0 &&
+               request.resource.data.overbooking_pct <= 100)) &&
+             (!('buffer_minutos' in request.resource.data) ||
+              (request.resource.data.buffer_minutos is number &&
+               request.resource.data.buffer_minutos >= 0 &&
+               request.resource.data.buffer_minutos <= 120)) &&
+             (!('horario' in request.resource.data) ||
+              request.resource.data.horario == null ||
+              isValidHorarioSemanal(request.resource.data.horario));
+    }
+
     // Las políticas de reserva solo aceptan rangos sanos (el backend también
     // los acota; esto frena escrituras absurdas desde el SDK del dueño).
-    function politicasValidas() {
-      return (!('cancel_window_hours' in request.resource.data) ||
+    function politicasValidas() {      return (!('cancel_window_hours' in request.resource.data) ||
               (request.resource.data.cancel_window_hours is number &&
                request.resource.data.cancel_window_hours >= 1 &&
                request.resource.data.cancel_window_hours <= 72)) &&
@@ -114,6 +133,20 @@ service cloud.firestore {
       match /servicios/{servicioId} {
         allow read: if true;
         allow write: if isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
+      }
+
+      // Subcolección RECURSOS (canchas, boxes, espacios): catálogo público
+      // (solo nombre/tipo/capacidad, como servicios); escribe el dueño.
+      // Las reservas del recurso las crea el backend (ver reservas).
+      match /recursos/{recursoId} {
+        allow read: if true;
+        allow create: if (isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2') &&
+          request.resource.data.name is string &&
+          request.resource.data.name.size() >= 1 &&
+          request.resource.data.name.size() <= 100;
+        allow update: if (isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2') &&
+          politicasRecursoValidas();
+        allow delete: if isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
       }
 
       match /empleados/{empId} {

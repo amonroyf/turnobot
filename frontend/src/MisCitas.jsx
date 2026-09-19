@@ -244,7 +244,11 @@ function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMov
     setErrorMover('');
     setHoraElegida('');
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${c.emp_id}&fecha=${fecha}`);
+      // Con espacio se consulta el espacio; si no, el profesional.
+      const qs = c.recurso_id
+        ? `recurso_id=${c.recurso_id}`
+        : `emp_id=${c.emp_id}`;
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?${qs}&fecha=${fecha}`);
       if (!res.ok) throw new Error('Error del servidor');
       const data = await res.json();
       setHorasLibres(Array.isArray(data) ? data : (data?.slots || []));
@@ -283,7 +287,9 @@ function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMov
             <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
             {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
           </div>
-          <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || c.emp_id}</p>
+          <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || (c.recurso ? 'El local asigna' : c.emp_id)}</p>
+          {c.recurso && <p className="text-xs text-gray-600 font-medium">📍 {c.recurso}{c.cupos > 1 ? ` (${c.cupos} personas)` : ''}</p>}
+          {(c.van || []).length > 0 && <p className="text-xs text-gray-500">🧑‍🤝‍🧑 Van: {c.van.join(', ')}</p>}
           <p className="text-xs text-gray-600 font-medium">📅 {formatearFechaLarga(c.fecha)} a las {c.hora}</p>
         </div>
         {c.price > 0 && (

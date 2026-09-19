@@ -436,6 +436,8 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
             {isNoShow && <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded uppercase">No llegó</span>}
           </div>
           <p className="text-xs text-gray-600 font-medium mt-1">📋 {c.servicio}</p>
+          {c.recurso && <p className="text-xs text-gray-600 font-medium mt-1">📍 {c.recurso}</p>}
+          {(c.van || []).length > 0 && <p className="text-xs text-gray-500 mt-1">🧑‍🤝‍🧑 Van: {c.van.join(', ')}</p>}
           {c.notes && <p className="text-xs text-gray-500 italic mt-1">📝 {c.notes}</p>}
         </div>
         {c.precio > 0 && (

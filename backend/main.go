@@ -140,6 +140,7 @@ type Negocio struct {
 	CreatedAt            time.Time     `firestore:"created_at" json:"created_at,omitempty"`
 	Servicios            []Service     `json:"servicios"`
 	Empleados            []Employee    `json:"empleados"`
+	Recursos             []Recurso     `json:"recursos"`
 }
 
 // Turno represents a single work shift within a day.
@@ -184,6 +185,35 @@ type Employee struct {
 	PushToken string `firestore:"push_token" json:"-"`
 }
 
+// Recurso reservable de un negocio (cancha, box, camilla, consultorio,
+// silla...). Capacidad = cupos por intervalo (1 = exclusivo).
+// OverbookingPct permite vender por encima (ej. 10 = 110% para clases con
+// ausentismo típico). Horario propio opcional (si no, jornada del negocio).
+// BufferMinutos deja un colchón de limpieza entre reservas (0 = ninguno).
+type Recurso struct {
+	ID             string          `json:"id"`
+	Name           string          `firestore:"name" json:"name"`
+	Tipo           string          `firestore:"tipo" json:"tipo"`
+	Capacidad      int             `firestore:"capacidad" json:"capacidad"`
+	OverbookingPct int             `firestore:"overbooking_pct" json:"overbooking_pct"`
+	Horario        *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
+	BufferMinutos  int             `firestore:"buffer_minutos" json:"buffer_minutos"`
+}
+
+// capacidadEfectiva redondea hacia abajo (20 cap + 10% = 22).
+func (r Recurso) capacidadEfectiva() int {
+	if r.Capacidad < 1 {
+		return 1
+	}
+	if r.OverbookingPct < 0 {
+		r.OverbookingPct = 0
+	}
+	if r.OverbookingPct > 100 {
+		r.OverbookingPct = 100
+	}
+	return r.Capacidad * (100 + r.OverbookingPct) / 100
+}
+
 // Service offered by a business.
 type Service struct {
 	ID       string `json:"id"`
@@ -196,6 +226,15 @@ type Service struct {
 type BookingRequest struct {
 	ServicioID      string `json:"servicioId"`
 	EmpleadoID      string `json:"empleadoId"`
+	// RecursoID es opcional (cancha/box/espacio). Si viene, la exclusividad
+	// se verifica contra el recurso; el empleado puede omitirse (el local
+	// asigna) y en ese caso no se crea evento de Calendar.
+	RecursoID       string `json:"recursoId,omitempty"`
+	// Cupos pedidos en el recurso (default 1). Tope: la capacidad del recurso.
+	Cupos           int    `json:"cupos,omitempty"`
+	// Participantes: nombres de acompañantes (opcional, máx = cupos-1; el
+	// cliente es el cupo 1 y ya va en clienteNombre).
+	Participantes   []string `json:"participantes,omitempty"`
 	Fecha           string `json:"fecha"`
 	Hora            string `json:"hora"`
 	ClienteNombre   string `json:"clienteNombre"`
@@ -216,6 +255,16 @@ type Booking struct {
 	NegocioID      string    `firestore:"negocio_id"`
 	OwnerUID       string    `firestore:"owner_uid"`
 	EmpID          string    `firestore:"emp_id"`
+	// RecursoID/RecursoName: espacio reservado (vacío = solo profesional).
+	// RecursoName se desnormaliza como ServiceName para mostrar sin joins.
+	RecursoID      string    `firestore:"recurso_id,omitempty"`
+	RecursoName    string    `firestore:"recurso_name,omitempty"`
+	// Cupos: cuántos lugares ocupa esta reserva en el recurso (default 1).
+	// Con capacidad 1 equivale a ocupación exclusiva (Fase 1).
+	Cupos          int       `firestore:"cupos,omitempty"`
+	// Participantes: nombres de quienes van (opcional, máx = cupos).
+	// La persona 1 es el cliente (ClientName); aquí van los acompañantes.
+	Participantes  []string  `firestore:"participantes,omitempty" json:"participantes,omitempty"`
 	UserPhone      string    `firestore:"user_phone"`
 	ClientName     string    `firestore:"client_name"`
 	ServiceName    string    `firestore:"service_name"`
@@ -417,6 +466,14 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Borrar recurso: DELETE /api/v1/b/{slug}/recursos/{recursoID} (solo dueño).
+	// Con citas futuras activas se rechaza (409) en vez de cascada: el dueño
+	// reubica o cancela primero. Sin futuras, borrado directo.
+	if len(parts) == 3 && parts[1] == "recursos" && r.Method == http.MethodDelete {
+		deleteRecursoHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Login de empleado con PIN: POST /api/v1/b/{slug}/employee-login
 	if len(parts) == 2 && parts[1] == "employee-login" && r.Method == http.MethodPost {
 		employeeLoginHandler(w, r, slug)
@@ -530,6 +587,7 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	empID := r.URL.Query().Get("emp_id")
 	servicioID := r.URL.Query().Get("servicio_id")
+	recursoID := r.URL.Query().Get("recurso_id")
 	fechaStr := r.URL.Query().Get("fecha")
 
 	if fechaStr == "" {
@@ -546,6 +604,30 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Agrega la lectura del servicio para calcular la rejilla según su duración
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
+
+	// Modo recurso (recurso_id): disponibilidad del espacio (cancha, box...),
+	// no de una persona. Responde objeto con libres por hora para pintar
+	// "quedan N" (cupos grupales, Fase 2).
+	if recursoID != "" {
+		cupos := 1
+		if q := r.URL.Query().Get("cupos"); q != "" {
+			var n int
+			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 1 {
+				cupos = n
+			}
+		}
+		slots, libres, err := disponibilidadRecurso(r.Context(), slug, recursoID, parsedDate, duration, cupos)
+		if err != nil {
+			http.Error(w, "Recurso no encontrado", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"slots":           slots,
+			"libres_por_hora": libres,
+		})
+		return
+	}
 
 	// Modo "cualquiera" (emp_id=any): une la disponibilidad de todos los
 	// profesionales que ofrecen el servicio en UNA sola respuesta, para que el
@@ -622,6 +704,7 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 	ctx := r.Context()
 	servicioID := r.URL.Query().Get("servicio_id")
 	empID := r.URL.Query().Get("emp_id")
+	recursoID := r.URL.Query().Get("recurso_id")
 
 	dias := 14
 	if q := r.URL.Query().Get("dias"); q != "" {
@@ -640,6 +723,45 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 	}
 
 	_, duration, _, _ := resolveService(ctx, slug, servicioID)
+
+	// Con recurso se escanea el espacio (sin profesional asignado).
+	if recursoID != "" {
+		rec, ok := resolveRecurso(ctx, slug, recursoID)
+		if !ok {
+			http.Error(w, "Recurso no encontrado", http.StatusBadRequest)
+			return
+		}
+		cupos := 1
+		if q := r.URL.Query().Get("cupos"); q != "" {
+			var n int
+			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 1 {
+				cupos = n
+			}
+		}
+		for d := 0; d < dias; d++ {
+			y, m, day := inicio.AddDate(0, 0, d).Date()
+			dia := time.Date(y, m, day, 0, 0, 0, 0, loc)
+			if s, _, err := disponibilidadRecurso(ctx, slug, recursoID, dia, duration, cupos); err == nil && len(s) > 0 {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success":      true,
+					"fecha":        dia.Format("2006-01-02"),
+					"hora":         s[0],
+					"recurso_id":   recursoID,
+					"recurso_name": rec.Name,
+				})
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "no_hay_hueco",
+			"message": "No encontramos espacios libres en los próximos días. Prueba con otro espacio o escríbenos.",
+		})
+		return
+	}
 
 	var objetivos []profesionalElegible
 	if empID == "" || empID == "any" || empID == "__any__" {
@@ -699,6 +821,91 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 	})
 }
 
+// errSinCupo indica que el recurso no tiene cupo suficiente en ese horario.
+var errSinCupo = errors.New("recurso sin cupo suficiente")
+
+// verificarCuposTx suma los cupos ocupados que solapan el intervalo dentro de
+// la transacción (cierra la carrera de dos reservas simultáneas al mismo cupo).
+// Aplica el buffer de limpieza del recurso al final de cada reserva.
+func verificarCuposTx(tx *firestore.Transaction, slug string, rec Recurso, cuposPedidos int, eventDateTime, eventEnd time.Time) error {
+	buffer := time.Duration(rec.BufferMinutos) * time.Minute
+	if buffer < 0 {
+		buffer = 0
+	}
+	if buffer > 120*time.Minute {
+		buffer = 120 * time.Minute
+	}
+	q := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("recurso_id", "==", rec.ID).
+		Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+		Where("date_time", "<", eventEnd)
+	docs, err := tx.Documents(q).GetAll()
+	if err != nil {
+		return err
+	}
+	ocupados := 0
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		if err := d.DataTo(&b); err != nil {
+			continue
+		}
+		dur := time.Duration(b.DurationMinute) * time.Minute
+		if dur <= 0 {
+			dur = 60 * time.Minute
+		}
+		if eventDateTime.Before(b.DateTime.Add(dur).Add(buffer)) && b.DateTime.Before(eventEnd) {
+			c := b.Cupos
+			if c < 1 {
+				c = 1
+			}
+			ocupados += c
+		}
+	}
+	if ocupados+cuposPedidos > rec.capacidadEfectiva() {
+		return errSinCupo
+	}
+	return nil
+}
+
+// verificarSolapeTx revisa dentro de la transacción que el nuevo intervalo no
+// choque con reservas activas del mismo empleado o recurso (campo dinámico).
+// Valor vacío = no se verifica esa dimensión.
+func verificarSolapeTx(tx *firestore.Transaction, slug, campo, valor string, eventDateTime, eventEnd time.Time) error {
+	if valor == "" {
+		return nil
+	}
+	q := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where(campo, "==", valor).
+		Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+		Where("date_time", "<", eventEnd)
+	docs, err := tx.Documents(q).GetAll()
+	if err != nil {
+		return err
+	}
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		if err := d.DataTo(&b); err != nil {
+			continue
+		}
+		dur := time.Duration(b.DurationMinute) * time.Minute
+		if dur <= 0 {
+			dur = 60 * time.Minute
+		}
+		if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
+			return errSlotConflict
+		}
+	}
+	return nil
+}
+
 // POST /api/v1/b/{slug}/book -> crea la reserva en Firestore y Google Calendar
 func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	var req BookingRequest
@@ -733,14 +940,37 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
-	// Validar campos requeridos
-	if req.ServicioID == "" || req.EmpleadoID == "" || req.Fecha == "" || req.Hora == "" || req.ClienteNombre == "" || req.ClienteTelefono == "" {
+	// Validar campos requeridos. El profesional es opcional cuando hay
+	// recurso (el local asigna: canchas, boxes...); sin recurso sigue siendo
+	// obligatorio como siempre. El servicio es opcional con recurso (modo
+	// "reservar espacio": la reserva es del espacio, 60 min, precio 0).
+	if req.Fecha == "" || req.Hora == "" || req.ClienteNombre == "" || req.ClienteTelefono == "" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "missing_fields",
-			"message": "Faltan campos requeridos: servicio, profesional, fecha, hora, nombre y teléfono son obligatorios.",
+			"message": "Faltan campos requeridos: fecha, hora, nombre y teléfono son obligatorios.",
+		})
+		return
+	}
+	if req.EmpleadoID == "" && req.RecursoID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "missing_fields",
+			"message": "Elige un profesional o un espacio (cancha, box) para tu reserva.",
+		})
+		return
+	}
+	if req.ServicioID == "" && req.RecursoID == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "missing_fields",
+			"message": "Elige un servicio para tu reserva.",
 		})
 		return
 	}
@@ -835,36 +1065,115 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Resolver el nombre y la duración real del servicio a partir de su ID.
 	// Un servicio inexistente se rechaza: evita reservas basura con precio 0.
-	serviceName, duration, precioServicio, found := resolveService(ctx, slug, req.ServicioID)
-	if !found {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "servicio_no_encontrado",
-			"message": "El servicio seleccionado ya no existe. Por favor elige otro.",
-		})
-		return
+	// Sin servicio pero con recurso (modo "reservar espacio"): reserva genérica
+	// del espacio, 60 min, precio 0.
+	serviceName := ""
+	duration := 60
+	precioServicio := 0
+	if req.ServicioID != "" {
+		var found bool
+		serviceName, duration, precioServicio, found = resolveService(ctx, slug, req.ServicioID)
+		if !found {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "servicio_no_encontrado",
+				"message": "El servicio seleccionado ya no existe. Por favor elige otro.",
+			})
+			return
+		}
 	}
 
-	// El empleado debe ofrecer este servicio (multi-especialidad). Falla
-	// rápido aquí; la transacción lo re-verifica contra TOCTOU.
-	empDoc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID).Get(ctx)
-	if err != nil {
-		http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
-		return
+	// El recurso (si viene) debe existir. Se resuelve su nombre para
+	// desnormalizarlo en la reserva (igual que service_name).
+	var recurso Recurso
+	cuposPedidos := 1
+	var participantes []string
+	if req.RecursoID != "" {
+		var ok bool
+		recurso, ok = resolveRecurso(ctx, slug, req.RecursoID)
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "recurso_no_encontrado",
+				"message": "El espacio seleccionado ya no existe. Por favor elige otro.",
+			})
+			return
+		}
+		// Modo "reservar espacio" sin servicio: nombre genérico del espacio.
+		if serviceName == "" {
+			serviceName = "Reserva de " + recurso.Name
+		}
+		// Cupos: 1 por defecto; tope = capacidad del recurso (una sola
+		// reserva no supera la capacidad; el overbooking aplica a la suma).
+		if req.Cupos > 1 {
+			if req.Cupos > recurso.Capacidad {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "cupos_exceden",
+					"message": fmt.Sprintf("Este espacio admite máximo %d personas por reserva.", recurso.Capacidad),
+				})
+				return
+			}
+			cuposPedidos = req.Cupos
+		}
+		// Participantes: nombres de quienes van (opcional, máx = cupos, cada
+		// uno 1-100 caracteres). Vacíos se descartan en silencio.
+		participantes = nil
+		for _, p := range req.Participantes {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if len(p) > 100 {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "participante_largo",
+					"message": "Cada nombre debe tener máximo 100 caracteres.",
+				})
+				return
+			}
+			participantes = append(participantes, p)
+		}
+		if len(participantes) > cuposPedidos {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "muchos_participantes",
+				"message": fmt.Sprintf("Son %d cupos: sobran nombres. Quita o pide más cupos.", cuposPedidos),
+			})
+			return
+		}
 	}
+
+	// El empleado (si viene) debe ofrecer este servicio (multi-especialidad).
+	// Falla rápido aquí; la transacción lo re-verifica contra TOCTOU.
 	var empData Employee
-	empDoc.DataTo(&empData)
-	if !ofreceServicio(empData, req.ServicioID) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"error":   "servicio_no_ofrecido",
-			"message": "El profesional seleccionado no realiza este servicio. Por favor, elige a otro profesional.",
-		})
-		return
+	if req.EmpleadoID != "" {
+		empDoc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID).Get(ctx)
+		if err != nil {
+			http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
+			return
+		}
+		empDoc.DataTo(&empData)
+		if !ofreceServicio(empData, req.ServicioID) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "servicio_no_ofrecido",
+				"message": "El profesional seleccionado no realiza este servicio. Por favor, elige a otro profesional.",
+			})
+			return
+		}
 	}
 
 	// Antelación mínima: no se puede reservar con menos aviso del configurado
@@ -891,22 +1200,42 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// 1. Verificación estricta de disponibilidad en el último milisegundo.
-	// Verificación con la rejilla de duración pura.
-	slotsActuales, err := getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
-	if err != nil {
-		log.Printf("Error verificando disponibilidad en el calendario: %v", err)
-		http.Error(w, "Error verificando disponibilidad en el calendario", http.StatusInternalServerError)
-		return
+	// Con recurso se verifica el espacio; si no, el profesional (rejilla de
+	// duración pura). Con ambos, el slot debe estar libre en los dos.
+	disponible := true
+	var slotsRec, slotsActuales []string
+	if req.RecursoID != "" {
+		var err error
+		slotsRec, _, err = disponibilidadRecurso(ctx, slug, req.RecursoID, parsedDate, duration, cuposPedidos)
+		if err != nil {
+			http.Error(w, "Error verificando disponibilidad del espacio", http.StatusInternalServerError)
+			return
+		}
+		disponible = false
+		for _, s := range slotsRec {
+			if s == req.Hora {
+				disponible = true
+				break
+			}
+		}
 	}
-	disponible := false
-	for _, s := range slotsActuales {
-		if s == req.Hora {
-			disponible = true
-			break
+	if disponible && req.EmpleadoID != "" {
+		slotsActuales, err = getFreeSlots(ctx, slug, req.EmpleadoID, parsedDate, duration)
+		if err != nil {
+			log.Printf("Error verificando disponibilidad en el calendario: %v", err)
+			http.Error(w, "Error verificando disponibilidad en el calendario", http.StatusInternalServerError)
+			return
+		}
+		disponible = false
+		for _, s := range slotsActuales {
+			if s == req.Hora {
+				disponible = true
+				break
+			}
 		}
 	}
 	if !disponible {
-		log.Printf("Slot ocupado al confirmar: %s %s para emp %s en %s", req.Fecha, req.Hora, req.EmpleadoID, slug)
+		log.Printf("Slot ocupado al confirmar: %s %s para emp %s rec %s en %s", req.Fecha, req.Hora, req.EmpleadoID, req.RecursoID, slug)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -927,8 +1256,25 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	negDoc.DataTo(&negocioInfo)
 
 	// Crear evento en Google Calendar (o mock si no hay OAuth configurado)
-	// con la duración real del servicio.
-	eventID := createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, req.ClienteNotas, req.ClienteNombre, req.ClienteTelefono, negocioInfo.Direccion)
+	// con la duración real del servicio. Sin profesional no hay calendario:
+	// el evento queda vacío y la fuente de verdad es Firestore.
+	eventID := ""
+	calendarioNotas := req.ClienteNotas
+	if recurso.Name != "" {
+		if calendarioNotas != "" {
+			calendarioNotas += "\n"
+		}
+		calendarioNotas += "Espacio: " + recurso.Name
+		if cuposPedidos > 1 {
+			calendarioNotas += fmt.Sprintf(" (%d personas)", cuposPedidos)
+		}
+		if len(participantes) > 0 {
+			calendarioNotas += "\nVan: " + strings.Join(participantes, ", ")
+		}
+	}
+	if req.EmpleadoID != "" {
+		eventID = createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, calendarioNotas, req.ClienteNombre, req.ClienteTelefono, negocioInfo.Direccion)
+	}
 
 	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
 	// transacción para cerrar la race condition de doble reserva, y crea la
@@ -949,29 +1295,14 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 			// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
 			// largas previas que solapen con la nueva.
-			q := firestoreClient.Collection("reservas").
-				Where("negocio_id", "==", slug).
-				Where("emp_id", "==", req.EmpleadoID).
-				Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
-				Where("date_time", "<", eventEnd)
-			docs, err := tx.Documents(q).GetAll()
-			if err != nil {
+			// Profesional: exclusividad (un choque = conflicto).
+			// Recurso: cupos (ocupados + pedidos vs capacidad efectiva).
+			if err := verificarSolapeTx(tx, slug, "emp_id", req.EmpleadoID, eventDateTime, eventEnd); err != nil {
 				return err
 			}
-			for _, d := range docs {
-				if d.Data()["cancelled"] == true {
-					continue
-				}
-				var b Booking
-				if err := d.DataTo(&b); err != nil {
-					continue
-				}
-				dur := time.Duration(b.DurationMinute) * time.Minute
-				if dur <= 0 {
-					dur = 60 * time.Minute
-				}
-				if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
-					return errSlotConflict
+			if req.RecursoID != "" {
+				if err := verificarCuposTx(tx, slug, recurso, cuposPedidos, eventDateTime, eventEnd); err != nil {
+					return err
 				}
 			}
 			// Lecturas ANTES de cualquier escritura: Firestore prohíbe
@@ -982,21 +1313,28 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 			// Re-verificar especialidad dentro de la transacción: el dueño
 			// pudo editar servicios_ids entre la validación previa y el commit.
-			empRef := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID)
-			empSnap, errEmp := tx.Get(empRef)
-			if errEmp != nil {
-				return errEmp
-			}
-			var empTxn Employee
-			empSnap.DataTo(&empTxn)
-			if !ofreceServicio(empTxn, req.ServicioID) {
-				return errServicioNoOfrecido
+			// Solo si hay profesional Y servicio (modo espacio puro no aplica).
+			if req.EmpleadoID != "" && req.ServicioID != "" {
+				empRef := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(req.EmpleadoID)
+				empSnap, errEmp := tx.Get(empRef)
+				if errEmp != nil {
+					return errEmp
+				}
+				var empTxn Employee
+				empSnap.DataTo(&empTxn)
+				if !ofreceServicio(empTxn, req.ServicioID) {
+					return errServicioNoOfrecido
+				}
 			}
 
 			if err := tx.Create(newRef, Booking{
 				NegocioID:      slug,
 				OwnerUID:       negocioInfo.OwnerUID,
 				EmpID:          req.EmpleadoID,
+				RecursoID:      req.RecursoID,
+				RecursoName:    recurso.Name,
+				Cupos:          cuposPedidos,
+				Participantes:  participantes,
 				UserPhone:      req.ClienteTelefono,
 				ClientName:     req.ClienteNombre,
 				ServiceName:    serviceName,
@@ -1048,7 +1386,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	var txnErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		txnErr = bookTxn()
-		if txnErr == nil || errors.Is(txnErr, errSlotConflict) || errors.Is(txnErr, errServicioNoOfrecido) {
+		if txnErr == nil || errors.Is(txnErr, errSlotConflict) || errors.Is(txnErr, errServicioNoOfrecido) || errors.Is(txnErr, errSinCupo) {
 			break
 		}
 		log.Printf("Reintentando transacción de reserva en %s (intento %d/3): %v", slug, attempt+1, txnErr)
@@ -1068,6 +1406,17 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				"success": false,
 				"error":   "slot_taken",
 				"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
+			})
+			return
+		}
+		if errors.Is(txnErr, errSinCupo) {
+			log.Printf("Sin cupo en recurso: %s %s rec %s en %s", req.Fecha, req.Hora, req.RecursoID, slug)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "sin_cupo",
+				"message": "Ya no quedan cupos en ese horario. Elige otro.",
 			})
 			return
 		}
@@ -1102,16 +1451,24 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		"price":        precioServicio,
 	})
 
+	// Etiqueta para pushes: "Corte (Cancha 1)" cuando hay espacio.
+	pushServicio := serviceName
+	if recurso.Name != "" {
+		pushServicio = serviceName + " (" + recurso.Name + ")"
+	}
+
 	// Push notification fire-and-forget: notificar al dueño que hay reserva nueva
-	go sendPushToOwner(context.Background(), slug, req.ClienteNombre, serviceName,
+	go sendPushToOwner(context.Background(), slug, req.ClienteNombre, pushServicio,
 		eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04"))
 
-	// Push al profesional asignado (si activó notificaciones en su portal).
-	go sendPushToEmployee(context.Background(), slug, req.EmpleadoID, empData.PushToken,
-		fmt.Sprintf("📅 Nueva reserva: %s", req.ClienteNombre),
-		fmt.Sprintf("%s — %s a las %s", serviceName,
-			eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04")),
-		"emp-booking-"+citaID)
+	// Push al profesional asignado (si hay uno y activó notificaciones).
+	if req.EmpleadoID != "" {
+		go sendPushToEmployee(context.Background(), slug, req.EmpleadoID, empData.PushToken,
+			fmt.Sprintf("📅 Nueva reserva: %s", req.ClienteNombre),
+			fmt.Sprintf("%s — %s a las %s", pushServicio,
+				eventDateTime.Format("2006-01-02"), eventDateTime.Format("15:04")),
+			"emp-booking-"+citaID)
+	}
 }
 
 
@@ -1180,6 +1537,10 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		Hora       string `json:"hora"`
 		EmpID      string `json:"emp_id"`
 		EmpName    string `json:"emp_name"`
+		RecursoID  string `json:"recurso_id,omitempty"`
+		Recurso    string `json:"recurso,omitempty"`
+		Cupos      int    `json:"cupos,omitempty"`
+		Van        []string `json:"van,omitempty"`
 		Cancelable bool   `json:"cancelable"`
 		Cancelled  bool   `json:"cancelled"`
 		Iso        string `json:"iso"`
@@ -1199,6 +1560,10 @@ func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			Hora:       b.DateTime.In(loc).Format("15:04"),
 			EmpID:      b.EmpID,
 			EmpName:    empNames[b.EmpID],
+			RecursoID:  b.RecursoID,
+			Recurso:    b.RecursoName,
+			Cupos:      b.Cupos,
+			Van:        b.Participantes,
 			Cancelable: clientePuedeCancelar(b.DateTime, now, ventanaCancelList),
 			Cancelled:  d.Data()["cancelled"] == true,
 			Iso:        b.DateTime.In(loc).Format(time.RFC3339),
@@ -1718,6 +2083,58 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 		"success":        true,
 		"message":        "Profesional eliminado",
 		"citas_borradas": deleted,
+	})
+}
+
+// DELETE /api/v1/b/{slug}/recursos/{recursoID} -> borra un recurso (solo dueño).
+// Con citas futuras activas responde 409 (el dueño reubica o cancela primero)
+// en vez de borrar en cascada: un box con agenda no desaparece por accidente.
+func deleteRecursoHandler(w http.ResponseWriter, r *http.Request, slug, recursoID string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+
+	ctx := r.Context()
+	recRef := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(recursoID)
+	if _, err := recRef.Get(ctx); err != nil {
+		http.Error(w, "Recurso no encontrado", http.StatusNotFound)
+		return
+	}
+
+	futuras, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("recurso_id", "==", recursoID).
+		Where("date_time", ">=", time.Now()).
+		Limit(1).
+		Documents(ctx).GetAll()
+	if err != nil {
+		http.Error(w, "Error verificando citas del recurso", http.StatusInternalServerError)
+		return
+	}
+	for _, d := range futuras {
+		if d.Data()["cancelled"] != true {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "recurso_con_citas",
+				"message": "Este espacio tiene citas futuras. Reubícalas o cancélalas antes de borrarlo.",
+			})
+			return
+		}
+	}
+
+	if _, err := recRef.Delete(ctx); err != nil {
+		http.Error(w, "Error eliminando el recurso", http.StatusInternalServerError)
+		return
+	}
+	negocioCache.Invalidate(slug)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Recurso eliminado",
 	})
 }
 
@@ -2458,6 +2875,151 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 	return intervals
 }
 
+// resolveRecurso devuelve el recurso del negocio o false si no existe.
+func resolveRecurso(ctx context.Context, slug, recursoID string) (Recurso, bool) {
+	if recursoID == "" {
+		return Recurso{}, false
+	}
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(recursoID).Get(ctx)
+	if err != nil {
+		return Recurso{}, false
+	}
+	var rec Recurso
+	doc.DataTo(&rec)
+	rec.ID = doc.Ref.ID
+	if rec.Capacidad < 1 {
+		rec.Capacidad = 1
+	}
+	return rec, true
+}
+
+// getFreeSlotsRecurso envuelve disponibilidadRecurso (compatibilidad: 1 cupo).
+func getFreeSlotsRecurso(ctx context.Context, negocioID, recursoID string, day time.Time, durationMinutes int) ([]string, error) {
+	slots, _, err := disponibilidadRecurso(ctx, negocioID, recursoID, day, durationMinutes, 1)
+	return slots, err
+}
+
+// disponibilidadRecurso devuelve los slots con cupo suficiente y el mapa de
+// libres por hora (capacidad efectiva menos ocupados). Usa el horario propio
+// del recurso si existe (si no, la jornada del negocio) y respeta su buffer
+// de limpieza: cada reserva ocupa [inicio, fin+buffer).
+func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time.Time, durationMinutes, cuposPedidos int) (slots []string, libres map[string]int, err error) {
+	rec, ok := resolveRecurso(ctx, slug, recursoID)
+	if !ok {
+		return nil, nil, fmt.Errorf("recurso no encontrado")
+	}
+	if cuposPedidos < 1 {
+		cuposPedidos = 1
+	}
+	if rec.BufferMinutos < 0 {
+		rec.BufferMinutos = 0
+	}
+	if rec.BufferMinutos > 120 {
+		rec.BufferMinutos = 120
+	}
+	buffer := time.Duration(rec.BufferMinutos) * time.Minute
+	efectiva := rec.capacidadEfectiva()
+
+	// Intervalos del día: horario propio o jornada del negocio.
+	var shiftIntervals [][2]time.Time
+	if rec.Horario != nil {
+		if dia := employeeDayHorario(rec.Horario, day.Weekday()); dia != nil {
+			shiftIntervals = splitShiftIntervals(ctx, slug, dia, day)
+		}
+		// Con horario propio pero día inactivo: vacío (igual que empleados).
+	} else {
+		startDay, endDay := workDayRange(ctx, slug, day)
+		shiftIntervals = [][2]time.Time{{startDay, endDay}}
+	}
+
+	slotDuration := time.Duration(durationMinutes) * time.Minute
+	if slotDuration <= 0 {
+		slotDuration = 60 * time.Minute
+	}
+
+	now := time.Now()
+	maxBookingTime := now.Add(time.Duration(negocioBookingWindow(ctx, slug)) * 24 * time.Hour)
+	earliest := now.Add(time.Duration(negocioMinNotice(ctx, slug)) * time.Minute)
+
+	var bookStart, bookEnd time.Time
+	if len(shiftIntervals) > 0 {
+		bookStart, bookEnd = shiftIntervals[0][0], shiftIntervals[0][1]
+		for _, iv := range shiftIntervals[1:] {
+			if iv[0].Before(bookStart) {
+				bookStart = iv[0]
+			}
+			if iv[1].After(bookEnd) {
+				bookEnd = iv[1]
+			}
+		}
+	} else {
+		y, m, d := day.Date()
+		loc := shopLocation(ctx, slug)
+		bookStart, bookEnd = time.Date(y, m, d, 0, 0, 0, 0, loc), time.Date(y, m, d, 0, 0, 0, 0, loc).Add(24*time.Hour)
+	}
+	docs, qerr := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("recurso_id", "==", recursoID).
+		Where("date_time", ">=", bookStart).
+		Where("date_time", "<", bookEnd).
+		Documents(ctx).GetAll()
+	if qerr != nil {
+		log.Printf("Aviso: no se pudieron cargar reservas del recurso %s: %v", recursoID, qerr)
+		return nil, nil, qerr
+	}
+
+	libres = map[string]int{}
+	for _, iv := range shiftIntervals {
+		for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
+			if !t.After(earliest) || !t.Before(maxBookingTime) {
+				continue
+			}
+			candEnd := t.Add(slotDuration)
+			// El candidato choca si solapa [inicio, fin+buffer) de otra reserva.
+			ocupados := 0
+			for _, d := range docs {
+				if d.Data()["cancelled"] == true {
+					continue
+				}
+				var b Booking
+				if err := d.DataTo(&b); err != nil {
+					continue
+				}
+				dur := time.Duration(b.DurationMinute) * time.Minute
+				if dur <= 0 {
+					dur = 60 * time.Minute
+				}
+				// Buffer solo al final: la reserva ocupa [inicio, fin+buffer).
+			// Así un turno puede empezar justo cuando termina otro + su aseo,
+			// sin exigir doble hueco.
+			if t.Before(b.DateTime.Add(dur).Add(buffer)) && b.DateTime.Before(candEnd) {
+					c := b.Cupos
+					if c < 1 {
+						c = 1
+					}
+					ocupados += c
+				}
+			}
+			quedan := efectiva - ocupados
+			if quedan < 0 {
+				quedan = 0
+			}
+			h := t.Format("15:04")
+			libres[h] = quedan
+			if ocupados+cuposPedidos <= efectiva {
+				slots = append(slots, h)
+			}
+			if len(slots) >= 48 {
+				break
+			}
+		}
+		if len(slots) >= 48 {
+			break
+		}
+	}
+	return slots, libres, nil
+}
+
 // hasBookingOnDate verifica si el cliente ya alcanzó el límite familiar/anti-spam
 // de 3 citas para el mismo día natural, utilizando índices compuestos hiper-rápidos.
 func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested time.Time) bool {
@@ -2873,6 +3435,8 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 		Precio    int    `json:"precio"`
 		Fecha     string `json:"fecha"`
 		Hora      string `json:"hora"`
+		Recurso   string `json:"recurso,omitempty"`
+		Van       []string `json:"van,omitempty"`
 		Iso       string `json:"iso"`
 		Notes     string `json:"notes,omitempty"`
 		NoShow    bool   `json:"no_show"`
@@ -2895,6 +3459,8 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 			Precio:    b.Price,
 			Fecha:     b.DateTime.In(loc).Format("2006-01-02"),
 			Hora:      b.DateTime.In(loc).Format("15:04"),
+			Recurso:   b.RecursoName,
+			Van:       b.Participantes,
 			Iso:       b.DateTime.In(loc).Format(time.RFC3339),
 			Notes:     b.Notes,
 			NoShow:    b.NoShow,

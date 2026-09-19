@@ -40,8 +40,9 @@ sin auth → 401.
 ### Negocio y catálogo
 - `GET /health` — health check
 - `GET /api/v1/b/{slug}` — negocio, servicios y empleados
-- `GET /api/v1/b/{slug}/slots?emp_id=&servicio_id=&fecha=YYYY-MM-DD` — horarios disponibles (`emp_id=any` une a todos los que ofrecen el servicio: `{slots, asignado_por_hora, profesionales}`)
-- `GET /api/v1/b/{slug}/slots/primer-hueco?servicio_id=&emp_id=(id|any)&desde=&dias=14` — primer horario libre hacia adelante
+- `GET /api/v1/b/{slug}/slots?emp_id=&servicio_id=&fecha=YYYY-MM-DD` — horarios del profesional (`emp_id=any` une a todos: `{slots, asignado_por_hora, profesionales}`)
+- `GET /api/v1/b/{slug}/slots?recurso_id=&servicio_id=&fecha=` — horarios del espacio (ocupación exclusiva, jornada del negocio)
+- `GET /api/v1/b/{slug}/slots/primer-hueco?servicio_id=&emp_id=(id|any)&recurso_id=&desde=&dias=14` — primer horario libre hacia adelante
 
 ### Reservas
 - `POST /api/v1/b/{slug}/book` — crea reserva (Firestore + Calendar)
@@ -50,7 +51,9 @@ sin auth → 401.
 - `POST /api/v1/b/{slug}/citas/{id}/reschedule` — mueve la cita de día/hora (misma cita: no toca CRM; mueve el evento de Calendar; resetea `reminder_sent`)
 
 ### Gestión (solo dueño)
-- `DELETE /api/v1/b/{slug}/servicios/{id}` — eliminar servicio (en cascada)- `DELETE /api/v1/b/{slug}/empleados/{id}` — eliminar empleado (en cascada)
+- `DELETE /api/v1/b/{slug}/servicios/{id}` — eliminar servicio (en cascada)
+- `DELETE /api/v1/b/{slug}/empleados/{id}` — eliminar empleado (en cascada)
+- `DELETE /api/v1/b/{slug}/recursos/{id}` — borrar espacio (409 si tiene citas futuras)
 - `POST /api/v1/b/{slug}/empleados/{id}/pin` — asignar PIN al empleado
 - `POST /api/v1/b/{slug}/no-show/{id}` — marcar cita como no-show (solo pasadas, + push al cliente)
 - `POST /api/v1/b/{slug}/citas/{id}/undo` — deshacer cancelación/no-show (cita de hoy o acción <24h; recrea el evento de Calendar si se había borrado)

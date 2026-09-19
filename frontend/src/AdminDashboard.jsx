@@ -32,9 +32,43 @@ const defaultHorario = {
 };
 
 export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
+  return (
+    <HorarioModal
+      titulo="Horario de trabajo"
+      nombre={empleado.name}
+      bajada="Días y turnos en que recibe reservas. Lo que desmarques queda cerrado."
+      horarioInicial={empleado.horario}
+      onGuardar={async (horario) => {
+        const empRef = doc(db, `negocios/${negocioId}/empleados`, empleado.id);
+        await updateDoc(empRef, { horario });
+      }}
+      exito={`Horario de ${empleado.name} actualizado.`}
+      onClose={onClose}
+    />
+  );
+}
+
+export function HorarioRecursoModal({ negocioId, recurso, onClose }) {
+  return (
+    <HorarioModal
+      titulo="Horario del espacio"
+      nombre={recurso.name}
+      bajada="Días y turnos en que se puede reservar. Déjalo vacío para usar la jornada del negocio."
+      horarioInicial={recurso.horario}
+      onGuardar={async (horario) => {
+        const recRef = doc(db, `negocios/${negocioId}/recursos`, recurso.id);
+        await updateDoc(recRef, { horario });
+      }}
+      exito={`Horario de ${recurso.name} actualizado.`}
+      onClose={onClose}
+    />
+  );
+}
+
+function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito, onClose }) {
   const { avisar } = useDialogo();
   const [horario, setHorario] = useState(() => {
-    const base = empleado.horario || {};
+    const base = horarioInicial || {};
     const completo = {};
     for (const d of DIAS_SEMANA) {
       const dia = base[d] || defaultHorario[d];
@@ -97,9 +131,8 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   const guardarHorario = async () => {
     setGuardando(true);
     try {
-      const empRef = doc(db, `negocios/${negocioId}/empleados`, empleado.id);
-      await updateDoc(empRef, { horario });
-      await avisar(`Horario de ${empleado.name} actualizado.`, 'exito');
+      await onGuardar(horario);
+      await avisar(exito, 'exito');
       onClose();
     } catch (err) {
       await avisar('No se pudo guardar el horario. Intenta de nuevo.', 'error');
@@ -136,9 +169,9 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
-        <h3 className="text-lg font-bold mb-1 text-gray-900">Horario de trabajo</h3>
-        <p className="text-sm text-gray-500 mb-1">{empleado.name}</p>
-        <p className="text-[11px] text-gray-400 font-medium mb-4">Días y turnos en que recibe reservas. Lo que desmarques queda cerrado.</p>
+        <h3 className="text-lg font-bold mb-1 text-gray-900">{titulo}</h3>
+        <p className="text-sm text-gray-500 mb-1">{nombre}</p>
+        <p className="text-[11px] text-gray-400 font-medium mb-4">{bajada}</p>
 
         {errorValidacion && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
@@ -357,6 +390,7 @@ function AdminPanel() {
 
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
+  const [recursos, setRecursos] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -371,8 +405,30 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1 });
+  const [editandoRecurso, setEditandoRecurso] = useState(null);
+  const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1, overbooking: 0, buffer: 0 });
+  const [guardandoRecurso, setGuardandoRecurso] = useState(false);
+
+  const guardarRecurso = async (recurso) => {
+    const capacidad = Math.min(100, Math.max(1, Number(editRecursoVals.capacidad) || 1));
+    const overbooking = Math.min(100, Math.max(0, Number(editRecursoVals.overbooking) || 0));
+    const buffer = Math.min(120, Math.max(0, Number(editRecursoVals.buffer) || 0));
+    setGuardandoRecurso(true);
+    try {
+      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), {
+        capacidad, overbooking_pct: overbooking, buffer_minutos: buffer,
+      });
+      setEditandoRecurso(null);
+      invalidarCache();
+    } catch (err) {
+      await avisar('No se pudo guardar. Intenta de nuevo.', 'error');
+    }
+    setGuardandoRecurso(false);
+  };
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
+  const [horarioRecursoModal, setHorarioRecursoModal] = useState(null);
   const [serviciosModal, setServiciosModal] = useState(null);
   const [pinModal, setPinModal] = useState(null);
   const [whatsApp, setWhatsApp] = useState('');
@@ -422,6 +478,10 @@ function AdminPanel() {
 
           onSnapshot(collection(db, `negocios/${docSnap.id}/empleados`), (snapshot) =>
             setProfesionales(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
+          );
+
+          onSnapshot(collection(db, `negocios/${docSnap.id}/recursos`), (snapshot) =>
+            setRecursos(snapshot.docs.map((d) => ({ id: d.id, ...d.data() }))),
           );
 
           // 1. AGENDA OPTIMIZADA: solo descarga de HOY en adelante con
@@ -630,6 +690,52 @@ function AdminPanel() {
       });
     } catch (err) {
       await avisar('No se pudo eliminar el servicio.', 'error');
+    }
+    setEliminando('');
+  };
+
+  const handleAddRecurso = async (e) => {
+    e.preventDefault();
+    const nombre = (nuevoRecurso.name || '').trim();
+    if (!nombre) {
+      await avisar('Ponle un nombre al espacio (ej. Cancha 1).', 'error');
+      return;
+    }
+    try {
+      await addDoc(collection(db, `negocios/${negocio.id}/recursos`), {
+        name: nombre,
+        tipo: nuevoRecurso.tipo || 'otro',
+        capacidad: Math.min(100, Math.max(1, Number(nuevoRecurso.capacidad) || 1)),
+        created_at: new Date(),
+      });
+      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1 });
+      invalidarCache();
+    } catch (err) {
+      await avisar('No se pudo guardar el espacio. Intenta de nuevo.', 'error');
+    }
+  };
+
+  const handleEliminarRecurso = async (recurso) => {
+    const ok = await confirmar({
+      titulo: `¿Borrar "${recurso.name}"?`,
+      detalle: 'Ya no aparecerá para reservar.',
+      consecuencia: 'Si tiene citas futuras, primero reubícalas o cancélalas.',
+      confirmarTexto: 'Sí, borrar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
+    setEliminando(recurso.id);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/recursos/${recurso.id}`, {
+        method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || 'No se pudo borrar el espacio.', 'error');
+      }
+    } catch (err) {
+      await avisar('No se pudo borrar el espacio.', 'error');
     }
     setEliminando('');
   };
@@ -882,6 +988,14 @@ function AdminPanel() {
                 <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
                   <span className="text-gray-400">📋</span> {r.service_name}
                 </p>
+                {r.recurso_name && (
+                  <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
+                    <span className="text-gray-400">📍</span> {r.recurso_name}{r.cupos > 1 ? ` (${r.cupos} personas)` : ''}
+                  </p>
+                )}
+                {(r.participantes || []).length > 0 && (
+                  <p className="text-xs text-gray-500">🧑‍🤝‍🧑 Van: {r.participantes.join(', ')}</p>
+                )}
                 <p className="text-xs text-gray-600 flex items-center gap-1.5">
                   <span className="text-gray-400">👤</span> {profesional?.name || 'Sin Asignar'}
                 </p>
@@ -1581,6 +1695,126 @@ function AdminPanel() {
               </form>
             </div>
 
+            {/* ESPACIOS RESERVABLES (canchas, boxes...) */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, boxes y espacios</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Si tu negocio reserva espacios (no solo personas), créalos aquí y los clientes los elegirán al agendar.</p>
+              <ul className="space-y-3 mb-4">
+                {recursos.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Sin espacios</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Si solo atienden personas, no necesitas nada aquí.</p>
+                  </div>
+                )}
+                {recursos.map((r) => (
+                  <li key={r.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
+                        <p className="text-xs font-medium text-gray-500 capitalize">
+                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos${r.overbooking_pct > 0 ? ` (+${r.overbooking_pct}%)` : ''}` : 'uso exclusivo'}{r.buffer_minutos > 0 ? ` · ${r.buffer_minutos} min aseo` : ''}{r.horario ? ' · horario propio' : ''}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
+                        <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
+                          {eliminando === r.id ? 'Borrando…' : 'Borrar'}
+                        </button>
+                      </div>
+                    </div>
+                    {(r.capacidad || 1) > 1 || editandoRecurso === r.id ? (
+                      <div className="pt-2 border-t border-gray-100 flex items-end gap-2">
+                        <label className="flex-1 min-w-0">
+                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos</span>
+                          <input
+                            type="number" min={1} max={100} inputMode="numeric"
+                            value={editandoRecurso === r.id ? editRecursoVals.capacidad : (r.capacidad || 1)}
+                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: e.target.value, overbooking: editRecursoVals.overbooking ?? r.overbooking_pct ?? 0, buffer: editRecursoVals.buffer ?? r.buffer_minutos ?? 0 }); }}
+                            aria-label={`Cupos de ${r.name}`}
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex-1 min-w-0">
+                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Extra %</span>
+                          <input
+                            type="number" min={0} max={100} inputMode="numeric"
+                            value={editandoRecurso === r.id ? editRecursoVals.overbooking : (r.overbooking_pct || 0)}
+                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: editRecursoVals.capacidad ?? r.capacidad ?? 1, overbooking: e.target.value, buffer: editRecursoVals.buffer ?? r.buffer_minutos ?? 0 }); }}
+                            aria-label={`Overbooking de ${r.name}`}
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
+                          />
+                        </label>
+                        <label className="flex-1 min-w-0">
+                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Aseo (min)</span>
+                          <input
+                            type="number" min={0} max={120} inputMode="numeric"
+                            value={editandoRecurso === r.id ? editRecursoVals.buffer : (r.buffer_minutos || 0)}
+                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: editRecursoVals.capacidad ?? r.capacidad ?? 1, overbooking: editRecursoVals.overbooking ?? r.overbooking_pct ?? 0, buffer: e.target.value }); }}
+                            aria-label={`Minutos de aseo de ${r.name}`}
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
+                          />
+                        </label>
+                        {editandoRecurso === r.id && (
+                          <>
+                            <button onClick={() => guardarRecurso(r)} disabled={guardandoRecurso} className="min-h-[44px] px-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 disabled:opacity-50">
+                              {guardandoRecurso ? '…' : 'Guardar'}
+                            </button>
+                            <button onClick={() => setEditandoRecurso(null)} className="min-h-[44px] px-3 bg-gray-100 text-gray-600 font-bold rounded-xl text-xs active:scale-95">
+                              X
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: r.capacidad || 1, overbooking: r.overbooking_pct || 0, buffer: r.buffer_minutos || 0 }); }} className="text-[11px] font-bold text-gray-500 underline">
+                        Pasar a grupal (cupos + extra + aseo)
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={handleAddRecurso} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar un espacio</h3>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del espacio</span>
+                  <input
+                    type="text" required placeholder="Ej. Cancha 1, Box 2…" value={nuevoRecurso.name}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, name: e.target.value })}
+                    aria-label="Nombre del espacio nuevo"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo</span>
+                  <select
+                    value={nuevoRecurso.tipo}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, tipo: e.target.value })}
+                    aria-label="Tipo de espacio"
+                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  >
+                    <option value="cancha">⚽ Cancha</option>
+                    <option value="box">🔧 Box / elevador</option>
+                    <option value="consultorio">🩺 Consultorio</option>
+                    <option value="sala">🎶 Sala</option>
+                    <option value="camilla">💆 Camilla</option>
+                    <option value="clase">🧘 Clase grupal</option>
+                    <option value="otro">📍 Otro</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos por horario (1 = exclusivo)</span>
+                  <input
+                    type="number" min={1} max={100} inputMode="numeric"
+                    value={nuevoRecurso.capacidad}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
+                    aria-label="Cupos por horario del espacio nuevo"
+                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  />
+                </label>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio</button>
+              </form>
+            </div>
+
             {/* DATOS DEL LOCAL */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-1">Datos de tu página pública</h2>
@@ -1670,6 +1904,7 @@ function AdminPanel() {
       </nav>
 
       {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => { setHorarioModal(null); invalidarCache(); }} />}
+      {horarioRecursoModal && <HorarioRecursoModal negocioId={negocio.id} recurso={horarioRecursoModal} onClose={() => { setHorarioRecursoModal(null); invalidarCache(); }} />}
       {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
       {pinModal && <PinEmpleadoModal negocioId={negocio.id} empleado={pinModal} onClose={() => setPinModal(null)} />}
     </div>

@@ -1,5 +1,41 @@
 # Changelog — Turnobot
 
+## 2026-09-18 (flujo Espacio separado del servicio)
+
+- El cliente elige primero el camino: "Reservar un servicio" o "Reservar un espacio" (solo si el negocio tiene espacios).
+- Modo espacio: Espacio → Día → Hora → Confirmar, sin servicio ni profesional; `POST /book` acepta `servicioId` vacío con recurso (`Reserva de {espacio}`, 60 min, precio 0).
+- Progreso, títulos y resúmenes con lenguaje por modo; "Cambiar entre servicio y espacio" visible.
+- Test emulator: espacio sin servicio 201 + 400 sin ambos.
+
+## 2026-09-18 (Fase 3: horario propio, aseo y lista nominal)
+
+- `Recurso` suma `horario` (semanal, como empleados; vacío = jornada del negocio) y `buffer_minutos` (0-120, colchón solo al final: no exige doble hueco).
+- `Booking.participantes[]` + `POST /book` acepta `participantes` (máx = cupos, 100 c/u); van al evento de Calendar, a `GET /citas` (`van`), al portal del empleado y a la agenda.
+- Disponibilidad y transacción aplican horario propio + buffer; `reschedule` hereda.
+- Admin: botón 🕒 Horario por espacio (mismo modal validado), campo aseo, "horario propio" visible; Booking muestra "¿Quiénes van?" (hasta 10 nombres) y resúmenes.
+- Rules: `horario` válido + `buffer_minutos` 0-120. Tests emulator: día inactivo vacío, buffer bloquea 11:00, participantes guardados, suite verde.
+
+## 2026-09-18 (Fase 2: cupos grupales + overbooking)
+
+- `Recurso` suma `overbooking_pct` (0-100); capacidad efectiva = `cap × (100+%) / 100`.
+- `Booking.cupos` (default 1) + `POST /book` acepta `cupos` (tope: la capacidad; la suma con overbooking la valida el servidor).
+- Disponibilidad por cupos: `slots?recurso_id=&cupos=` responde `{slots, libres_por_hora}`; la transacción suma ocupados+pedidos vs efectiva (cierra la carrera de dos reservas al mismo cupo; `sin_cupo` 409).
+- `primer-hueco?recurso_id=&cupos=`; `reschedule` mueve con los cupos de la cita.
+- Frontend: "¿Cuántos van?" (1..cap, máx 20 botones) solo en espacios grupales; "¡Quedan N!" en horarios con ≤5 libres; resúmenes/MisCitas/Admin muestran personas; Admin edita cupos + extra % por espacio.
+- Rules: `overbooking_pct` 0-100. Tests emulator: llenado, sin cupo, tope por reserva, overbooking 25%, suite completa verde.
+- Pendiente: horarios propios por recurso, lista de participantes, overbooking automático por ausentismo.
+
+## 2026-09-18 (Fase 1: espacios reservables — canchas, boxes)
+
+- Modelo `Recurso` (`negocios/{slug}/recursos`: nombre, tipo, capacidad) + `recurso_id/name` en la reserva (desnormalizado como el servicio).
+- `GET slots?recurso_id=` y `primer-hueco?recurso_id=`: disponibilidad exclusiva sobre la jornada del negocio (sin Calendar; Firestore resta reservas).
+- `POST /book` acepta `recursoId` con profesional opcional (sin profesional no hay evento de Calendar; el push y el calendario anotan el espacio).
+- `reschedule` consciente del recurso; `DELETE recursos/{id}` con resguardo 409; `GET /b/{slug}` incluye `recursos`.
+- Rules: `recursos` lectura pública + escritura dueño (con validación de capacidad); índice nuevo `negocio_id + recurso_id + date_time`.
+- Frontend: paso "¿Dónde? (opcional)" con iconos por tipo, "El local asigna", resúmenes/MisCitas/Admin/Empleado muestran el espacio; Admin crea y borra espacios.
+- Tests emulator en verde (reserva con espacio, solape, libre/ocupado, 400s).
+- Pendiente Fase 2: cupos grupales (capacidad N + overbooking) y horarios propios por recurso.
+
 ## 2026-09-18 (diálogos propios: adiós confirm()/alert() nativos)
 
 - Nuevo `ConfirmDialog.jsx`: `DialogoProvider` + `useDialogo()` (`confirmar`/`avisar`/`pedirTexto` por promesas, `role=alertdialog`, Escape, foco inicial, botones 48px, fallback a nativos si no hay provider).
