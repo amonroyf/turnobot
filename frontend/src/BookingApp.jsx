@@ -817,21 +817,19 @@ export default function BookingApp() {
   return (
     <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}min-h-screen bg-gray-100 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 shadow-sm border-x border-gray-200">
-      <header className="px-4 py-3 bg-white border-b border-gray-100 sticky top-0 z-40 shadow-2xs flex items-center gap-3">
+      <header className="px-4 py-2.5 bg-white border-b border-gray-100 sticky top-0 z-40 flex items-center gap-3">
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0"
           style={negocio?.marca?.color
-            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
-            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color) }
+            : { backgroundColor: '#111', color: '#fff' }}
         >
           {inicialMarca(negocio?.name)}
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio?.name || 'TurnoBot'}</h1>
-          {negocio?.marca?.eslogan ? (
+          {negocio?.marca?.eslogan && (
             <p className="text-[10px] text-gray-400 font-medium truncate">{negocio.marca.eslogan}</p>
-          ) : (
-            <p className="text-[10px] text-gray-400 font-medium">Reserva tu cita en segundos</p>
           )}
         </div>
       </header>

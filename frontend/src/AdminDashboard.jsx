@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth, provider, db } from './firebase';
 import usePushNotifications from './usePushNotifications';
+import NotificationDrawer from './NotificationDrawer';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 import {
   signInWithPopup,
@@ -1203,20 +1204,22 @@ function AdminPanel() {
 
   return (
     <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-2xl mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased flex flex-col`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
-      <header className="px-5 py-3 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex items-center gap-3">
+      <header className="px-4 py-2.5 bg-white border-b border-gray-200 sticky top-0 z-40 flex items-center gap-2">
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0"
           style={negocio?.marca?.color
-            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
-            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color) }
+            : { backgroundColor: '#111', color: '#fff' }}
         >
           {inicialMarca(negocio.name)}
         </div>
         <div className="flex-1 min-w-0">
           <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio.name}</h1>
-          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Admin</p>
         </div>
-        <p className="text-[9px] font-medium text-gray-300 shrink-0">v{import.meta.env.VITE_APP_VERSION || '0.1.1'}</p>
+        <NotificationDrawer storageKey={`admin_${negocio.id}`} onNotificationClick={() => setView('agenda')} />
+        <button onClick={logout} className="text-[11px] text-gray-400 font-semibold hover:text-gray-600 transition-colors">
+          Salir
+        </button>
       </header>
 
       {pushToast && (

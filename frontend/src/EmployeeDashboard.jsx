@@ -5,6 +5,7 @@ import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 import { textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
+import NotificationDrawer from './NotificationDrawer';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -109,18 +110,7 @@ function PortalEmpleado() {
     }
   };
 
-  useEffect(() => {
-    const savedToken = localStorage.getItem(`emp_token_${slug}`);
-    const savedEmpId = localStorage.getItem(`emp_id_${slug}`);
-    const savedName = localStorage.getItem(`emp_name_${slug}`);
-    if (savedToken && savedEmpId) {
-      setToken(savedToken);
-      setEmpId(savedEmpId);
-      setEmpSeleccionado(savedEmpId);
-      setLoading(true);
-      cargarCitas(savedToken, savedEmpId).finally(() => setLoading(false));
-    }
-  }, [slug]);
+  // Sin auto-login: cada vez que se abre el link, el empleado elige su nombre y clave.
 
   const handleLogout = () => {
     localStorage.removeItem(`emp_token_${slug}`);
@@ -298,12 +288,12 @@ function PortalEmpleado() {
   const empName = localStorage.getItem(`emp_name_${slug}`) || '';
 
   return (
-    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>      <header className="px-5 py-3 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex items-center gap-3">
+    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>      <header className="px-4 py-2.5 bg-white border-b border-gray-200 sticky top-0 z-40 flex items-center gap-2">
         <div
-          className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black border-2 shrink-0"
+          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-black shrink-0"
           style={negocio?.marca?.color
-            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color), borderColor: 'transparent' }
-            : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+            ? { backgroundColor: negocio.marca.color, color: textoSobreMarca(negocio.marca.color) }
+            : { backgroundColor: '#111', color: '#fff' }}
         >
           {inicialMarca(negocio?.name || slug)}
         </div>
@@ -311,30 +301,30 @@ function PortalEmpleado() {
           <h1 className="text-sm font-bold text-gray-900 leading-tight truncate">{negocio?.name || slug}</h1>
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest truncate">{empName}</p>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
-          {messaging && typeof Notification !== 'undefined' && (
-            pushNotifications.isSubscribed ? (
-              <button
-                onClick={() => pushNotifications.unsubscribe()}
-                className="px-1.5 text-[10px] text-gray-500 font-bold underline"
-              >
-                🔔
-              </button>
-            ) : pushNotifications.permission === 'denied' ? (
-              <span className="text-[10px] text-red-500">🔕</span>
-            ) : (
-              <button
-                onClick={pushNotifications.subscribe}
-                className="px-1.5 text-[10px] text-blue-600 font-bold underline"
-              >
-                🔔
-              </button>
-            )
-          )}
-          <button onClick={handleLogout} className="px-1.5 text-[10px] text-gray-500 font-semibold underline">
-            Salir
-          </button>
-        </div>
+        {/* Toggle push notifications (suscripción) */}
+        {messaging && typeof Notification !== 'undefined' && (
+          pushNotifications.isSubscribed ? (
+            <button
+              onClick={() => pushNotifications.unsubscribe()}
+              className="text-[10px] text-green-600 font-bold px-1.5"
+              title="Notificaciones activas"
+            >
+              🟢
+            </button>
+          ) : pushNotifications.permission !== 'denied' ? (
+            <button
+              onClick={pushNotifications.subscribe}
+              className="text-[10px] text-gray-400 font-bold px-1.5"
+              title="Activar notificaciones"
+            >
+              🔔
+            </button>
+          ) : null
+        )}
+        <NotificationDrawer storageKey={`emp_${slug}`} onNotificationClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} />
+        <button onClick={handleLogout} className="text-[11px] text-gray-400 font-semibold hover:text-gray-600 transition-colors">
+          Salir
+        </button>
       </header>
 
       {pushToast && (
