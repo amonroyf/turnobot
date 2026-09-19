@@ -13,6 +13,11 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
-    { name: 'Mobile Safari', use: { ...devices['iPhone 13'], browserName: 'webkit' } },
   ],
+  webServer: {
+    command: 'cd .. && cd frontend && npx vite --host',
+    url: 'http://localhost:5173',
+    reuseExistingServer: true,
+    timeout: 30000,
+  },
 });

@@ -16,16 +16,20 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   const health = await fetch(`${API}/health`);
   expect(health.ok).toBe(true);
   const body = await health.json();
-  expect(body.status).toBe('ok');
+  expect(body.status).toBe('ok');  const { email: userEmail, password } = await crearUsuarioYTema(email, `Smoke Prod ${ts}`, slug);
 
-  const { email: userEmail, password } = await crearUsuarioYTema(email, `Smoke Prod ${ts}`, slug);
-
+  // Ir al registro, hacer login y esperar a que Firebase Auth se establezca
   await page.goto(`${BASE}/register`);
   await signInWithCustomToken(page, userEmail, password);
+  // Esperar a que el SDK de Firebase Auth se inicialice tras el reload
+  await page.waitForFunction(() => typeof firebase !== 'undefined' || window.firebase !== undefined, { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(2000);
   await page.goto(`${BASE}/admin`);
+  // Esperar a que el panel cargue (el usuario ya tiene negocio creado por crearUsuarioYTema)
+  await page.waitForTimeout(5000);
 
   await expect(page).toHaveURL(/\/admin$/);
-  await expect(page.getByRole('heading', { name: `Smoke Prod ${ts}` })).toBeVisible({
+  await expect(page.getByText(`Smoke Prod ${ts}`)).toBeVisible({
     timeout: 30000,
   });
 

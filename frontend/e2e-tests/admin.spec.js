@@ -9,7 +9,7 @@ test.describe('Register + Admin Panel', () => {
     await expect(
       page.getByRole('button', { name: 'Iniciar Sesión con Google' }),
     ).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Turnobot Admin' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Panel del Negocio' })).toBeVisible();
   });
 
   test('Registro exitoso lleva al panel y permite crear servicio y profesional', async ({
