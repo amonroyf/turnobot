@@ -264,6 +264,9 @@ export default function RegisterShop() {
               <div className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 text-sm rounded-lg text-center font-medium">
                 ✅ Cuenta lista. Ahora crea tu página de reservas.
               </div>
+              <p className="text-[11px] text-gray-500 font-medium text-center">
+                🌍 Detectamos tu hora: <strong>{Intl.DateTimeFormat().resolvedOptions().timeZone}</strong>. Tus citas se mostrarán en esa hora.
+              </p>
               <div>
                 <label className="block text-sm font-bold text-gray-700">
                   ¿Cómo se llama tu negocio?

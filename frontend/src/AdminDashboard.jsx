@@ -31,6 +31,24 @@ const defaultHorario = {
   domingo:   { activo: false, turnos: [] },
 };
 
+// Resumen en palabras del horario semanal ("Lun–Vie 9:00–18:00, Sáb 9:00–14:00").
+// Es lo que el dueño verifica antes de guardar.
+function resumenSemana(horario) {
+  const cortos = { lunes: 'Lun', martes: 'Mar', miercoles: 'Mié', jueves: 'Jue', viernes: 'Vie', sabado: 'Sáb', domingo: 'Dom' };
+  const partes = [];
+  for (const d of DIAS_SEMANA) {
+    const data = horario?.[d];
+    if (!data?.activo || !Array.isArray(data.turnos) || data.turnos.length === 0) continue;
+    const turnos = data.turnos
+      .filter((t) => t.inicio && t.fin && t.inicio < t.fin)
+      .map((t) => `${t.inicio}–${t.fin}`)
+      .join(' y ');
+    if (turnos) partes.push(`${cortos[d]} ${turnos}`);
+  }
+  if (partes.length === 0) return 'Cerrado toda la semana (nadie podrá reservar).';
+  return 'Atiende: ' + partes.join(', ') + '.';
+}
+
 export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   return (
     <HorarioModal
@@ -171,7 +189,27 @@ function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito
       <div className="bg-white rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-xl">
         <h3 className="text-lg font-bold mb-1 text-gray-900">{titulo}</h3>
         <p className="text-sm text-gray-500 mb-1">{nombre}</p>
-        <p className="text-[11px] text-gray-400 font-medium mb-4">{bajada}</p>
+        <p className="text-[11px] text-gray-400 font-medium mb-2">{bajada}</p>
+        {/* Resumen en palabras: qué ve el cliente según esto */}
+        <p aria-live="polite" className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 mb-3">
+          📅 {resumenSemana(horario)}
+        </p>
+        <button
+          type="button"
+          onClick={() => {
+            const lun = horario.lunes?.turnos?.length > 0
+              ? horario.lunes
+              : { activo: true, turnos: [{ inicio: '09:00', fin: '18:00' }] };
+            const copia = { ...horario };
+            for (const d of ['martes', 'miercoles', 'jueves', 'viernes', 'sabado']) {
+              copia[d] = { activo: true, turnos: lun.turnos.map((t) => ({ ...t })) };
+            }
+            setHorario(copia);
+          }}
+          className="mb-4 w-full min-h-[44px] py-2.5 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+        >
+          📋 Copiar el lunes a martes–sábado
+        </button>
 
         {errorValidacion && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl font-medium">
@@ -182,15 +220,16 @@ function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito
         <div className="space-y-4">
           {DIAS_SEMANA.map((dia) => (
             <div key={dia} className="border-b border-gray-100 pb-3">
-              <div className="flex justify-between items-center mb-2">
+              <label className="flex justify-between items-center mb-2 cursor-pointer min-h-[44px]">
                 <span className="capitalize font-semibold text-gray-800">{dia}</span>
                 <input
                   type="checkbox"
                   checked={horario[dia]?.activo ?? false}
                   onChange={() => toggleDia(dia)}
-                  className="w-5 h-5 accent-black"
+                  aria-label={`¿Atiende el ${dia}?`}
+                  className="w-6 h-6 accent-black shrink-0"
                 />
-              </div>
+              </label>
               {horario[dia]?.activo && (
                 <div className="space-y-2 pl-2">
                   {(horario[dia].turnos || []).map((t, idx) => (
@@ -211,8 +250,8 @@ function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito
                       )}
                     </div>
                   ))}
-                  <button onClick={() => agregarTurno(dia)} disabled={(horario[dia].turnos || []).length >= 4} className="text-xs text-blue-600 font-bold active:scale-95 pt-1 disabled:opacity-30">
-                    + Agregar Turno Partido
+                  <button onClick={() => agregarTurno(dia)} disabled={(horario[dia].turnos || []).length >= 4} className="min-h-[44px] text-xs text-blue-600 font-bold active:scale-95 pt-1 disabled:opacity-30">
+                    + Añadir otro turno el mismo día
                   </button>
                 </div>
               )}
@@ -220,15 +259,15 @@ function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito
           ))}
         </div>
         <div className="flex gap-2 justify-end mt-6">
-          <button onClick={onClose} className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
+          <button onClick={onClose} className="min-h-[48px] px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
             Cancelar
           </button>
           <button
             onClick={guardarHorario}
             disabled={guardando || errorValidacion != null}
-            className="px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-md"
+            className="min-h-[48px] px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform shadow-md"
           >
-            {guardando ? 'Guardando...' : 'Guardar'}
+            {guardando ? 'Guardando...' : 'Guardar horario'}
           </button>
         </div>
       </div>
@@ -399,7 +438,7 @@ function AdminPanel() {
   const [guardandoInfo, setGuardandoInfo] = useState(false);
   // Políticas de reserva (reglas del negocio, como en el mercado: Fresha,
   // Booksy y Vagaro las dejan configurar por negocio).
-  const [politicas, setPoliticas] = useState({ cancel_window_hours: 24, min_notice_minutes: 0, booking_window_days: 30, max_bookings_per_phone_per_day: 3 });
+  const [politicas, setPoliticas] = useState({ cancel_window_hours: 24, min_notice_minutes: 0, booking_window_days: 30, max_bookings_per_phone_per_day: 3, open_time: '09:00', close_time: '18:00' });
   const [guardandoPoliticas, setGuardandoPoliticas] = useState(false);
 
   const [cancelando, setCancelando] = useState('');
@@ -458,6 +497,8 @@ function AdminPanel() {
         min_notice_minutes: negocio.min_notice_minutes ?? 0,
         booking_window_days: negocio.booking_window_days || 30,
         max_bookings_per_phone_per_day: negocio.max_bookings_per_phone_per_day || 3,
+        open_time: negocio.open_time || '09:00',
+        close_time: negocio.close_time || '18:00',
       });
     }
   }, [negocio]);
@@ -591,10 +632,18 @@ function AdminPanel() {
     e.preventDefault();
     const limpio = {
       cancel_window_hours: Math.min(72, Math.max(1, Number(politicas.cancel_window_hours) || 24)),
-      min_notice_minutes: Math.max(0, Number(politicas.min_notice_minutes) || 0),
+      min_notice_minutes: Math.min(10080, Math.max(0, Number(politicas.min_notice_minutes) || 0)),
       booking_window_days: Math.min(365, Math.max(1, Number(politicas.booking_window_days) || 30)),
       max_bookings_per_phone_per_day: Math.min(20, Math.max(1, Number(politicas.max_bookings_per_phone_per_day) || 3)),
     };
+    // Jornada base: valida HH:MM y que el cierre sea después de la apertura.
+    const horaValida = (h) => /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(h || '');
+    if (!horaValida(politicas.open_time) || !horaValida(politicas.close_time) || politicas.close_time <= politicas.open_time) {
+      await avisar('Revisa la jornada: usa formato 24h y el cierre después de la apertura (ej. 09:00 a 18:00).', 'error');
+      return;
+    }
+    limpio.open_time = politicas.open_time;
+    limpio.close_time = politicas.close_time;
     setGuardandoPoliticas(true);
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), limpio);
@@ -676,8 +725,8 @@ function AdminPanel() {
   const handleEliminarServicio = async (servicio) => {
     const ok = await confirmar({
       titulo: `¿Eliminar "${servicio.name}"?`,
-      detalle: 'Ya no aparecerá para reservar y se cancelarán sus citas futuras.',
-      consecuencia: 'No se puede deshacer.',
+      detalle: 'Ya no aparecerá para reservar.',
+      consecuencia: 'Si tiene citas futuras, primero reubícalas o cancélalas.',
       confirmarTexto: 'Sí, eliminar',
       variante: 'peligro',
     });
@@ -685,9 +734,13 @@ function AdminPanel() {
     setEliminando(servicio.id);
     try {
       const token = await user.getIdToken();
-      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/servicios/${servicio.id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/servicios/${servicio.id}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || 'No se pudo eliminar el servicio.', 'error');
+      }
     } catch (err) {
       await avisar('No se pudo eliminar el servicio.', 'error');
     }
@@ -743,8 +796,8 @@ function AdminPanel() {
   const handleEliminarProfesional = async (profesional) => {
     const ok = await confirmar({
       titulo: `¿Quitar a "${profesional.name}" del equipo?`,
-      detalle: 'Se cancelarán sus citas futuras.',
-      consecuencia: 'No se puede deshacer.',
+      detalle: 'Ya no aparecerá para reservar.',
+      consecuencia: 'Si tiene citas futuras, primero reubícalas o cancélalas.',
       confirmarTexto: 'Sí, quitar',
       variante: 'peligro',
     });
@@ -752,9 +805,13 @@ function AdminPanel() {
     setEliminando(profesional.id);
     try {
       const token = await user.getIdToken();
-      await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/empleados/${profesional.id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/empleados/${profesional.id}`, {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || 'No se pudo quitar a esta persona.', 'error');
+      }
     } catch (err) {
       await avisar('No se pudo quitar a esta persona.', 'error');
     }
@@ -1500,17 +1557,43 @@ function AdminPanel() {
                   </div>
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Aviso mínimo (min)</span>
-                    <input
-                      type="number" min={0} max={10080} inputMode="numeric"
-                      value={politicas.min_notice_minutes}
-                      onChange={(e) => setPoliticas({ ...politicas, min_notice_minutes: e.target.value })}
-                      aria-label="Antelación mínima en minutos"
-                      className="w-full p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                    <span className="block text-[11px] text-gray-400 font-medium mt-1">0 = aceptas citas para ya.</span>
-                  </label>
+                  <div>
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Aviso mínimo</span>
+                    <div className="flex flex-wrap gap-1.5 mb-2" role="group" aria-label="Atajos de aviso mínimo">
+                      {[
+                        { etiqueta: 'Ya', min: 0 },
+                        { etiqueta: '30 min', min: 30 },
+                        { etiqueta: '2 h', min: 120 },
+                        { etiqueta: '12 h', min: 720 },
+                        { etiqueta: '24 h', min: 1440 },
+                      ].map((p) => (
+                        <button
+                          key={p.etiqueta}
+                          type="button"
+                          onClick={() => setPoliticas({ ...politicas, min_notice_minutes: p.min })}
+                          aria-pressed={Number(politicas.min_notice_minutes) === p.min}
+                          className={`min-h-[36px] px-2.5 rounded-lg text-[11px] font-bold transition-all ${
+                            Number(politicas.min_notice_minutes) === p.min
+                              ? 'bg-black text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {p.etiqueta}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="block">
+                      <span className="sr-only">Aviso mínimo en minutos</span>
+                      <input
+                        type="number" min={0} max={10080} inputMode="numeric"
+                        value={politicas.min_notice_minutes}
+                        onChange={(e) => setPoliticas({ ...politicas, min_notice_minutes: e.target.value })}
+                        aria-label="Antelación mínima en minutos"
+                        className="w-full p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      />
+                    </label>
+                    <span className="block text-[11px] text-gray-400 font-medium mt-1">Cuánto antes debe reservar el cliente.</span>
+                  </div>
                   <label className="block">
                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Se reserva hasta (días)</span>
                     <input
@@ -1533,6 +1616,40 @@ function AdminPanel() {
                     />
                     <span className="block text-[11px] text-gray-400 font-medium mt-1">Anti-spam (usual: 3).</span>
                   </label>
+                </div>
+                {/* Jornada base + zona horaria: cuando la persona o el espacio
+                    NO tienen horario propio, la agenda usa estos horarios. */}
+                <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl space-y-3">
+                  <div>
+                    <p className="text-xs font-bold text-gray-700">🕒 Jornada base del negocio</p>
+                    <p className="text-[11px] text-gray-500 font-medium">Para quien no tenga horario propio (equipo o espacios). No cambia horarios ya definidos.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="flex-1 min-w-0">
+                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Abre</span>
+                      <input
+                        type="time"
+                        value={politicas.open_time}
+                        onChange={(e) => setPoliticas({ ...politicas, open_time: e.target.value })}
+                        aria-label="Hora de apertura"
+                        className="w-full min-h-[48px] p-2.5 border border-gray-200 rounded-xl bg-white text-sm text-center focus:border-black focus:outline-none"
+                      />
+                    </label>
+                    <span className="text-gray-400 font-bold mt-5" aria-hidden="true">–</span>
+                    <label className="flex-1 min-w-0">
+                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cierra</span>
+                      <input
+                        type="time"
+                        value={politicas.close_time}
+                        onChange={(e) => setPoliticas({ ...politicas, close_time: e.target.value })}
+                        aria-label="Hora de cierre"
+                        className="w-full min-h-[48px] p-2.5 border border-gray-200 rounded-xl bg-white text-sm text-center focus:border-black focus:outline-none"
+                      />
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-gray-500 font-medium">
+                    🌍 Hora del negocio: <strong>{negocio?.timezone || 'America/Bogota'}</strong> (las citas siempre se muestran en esta hora).
+                  </p>
                 </div>
                 <button type="submit" disabled={guardandoPoliticas} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
                   {guardandoPoliticas ? 'Guardando…' : 'Guardar reglas'}
@@ -1839,13 +1956,15 @@ function AdminPanel() {
                 />
                 </label>
                 <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Horario de atención</span>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Horario de atención (texto para clientes)</span>
                 <input
                   type="text" placeholder="Ej. Lun a Sáb, 9am a 7pm" value={infoLocal.horario}
                   onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
                   aria-label="Horario de atención"
+                  aria-describedby="ayuda-horario-texto"
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
+                <span id="ayuda-horario-texto" className="block text-[11px] text-gray-400 font-medium mt-1">Solo se muestra; la agenda real sale de la jornada y los horarios del equipo.</span>
                 </label>
                 <label className="block">
                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Teléfono de contacto</span>

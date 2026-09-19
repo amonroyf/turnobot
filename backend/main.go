@@ -1927,8 +1927,8 @@ func isClientRequest(r *http.Request, clientPhone string) bool {
 }
 
 // DELETE /api/v1/b/{slug}/servicios/{servicioID}
-// Elimina el servicio y, en cascada, todas sus reservas futuras: borra los
-// documentos con un Batch Write y libera los eventos en Google Calendar.
+// Igual que equipo y espacios: con citas futuras activas responde 409 (el
+// dueño reubica o cancela primero) en vez de borrarlas en cascada.
 func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servicioID string) {
 	if !isOwnerRequest(r, slug) {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
@@ -1944,6 +1944,33 @@ func deleteServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 	}
 	var svc Service
 	servDoc.DataTo(&svc)
+
+	futuras, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("service_name", "==", svc.Name).
+		Where("date_time", ">=", time.Now()).
+		Limit(10).
+		Documents(ctx).GetAll()
+	if err != nil {
+		http.Error(w, "Error verificando citas del servicio", http.StatusInternalServerError)
+		return
+	}
+	activas := 0
+	for _, d := range futuras {
+		if d.Data()["cancelled"] != true {
+			activas++
+		}
+	}
+	if activas > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "servicio_con_citas",
+			"message": fmt.Sprintf("Este servicio tiene %d cita(s) futuras. Reubícalas o cancélalas antes de borrarlo.", activas),
+		})
+		return
+	}
 
 	deleted, affected := cascadeDeleteCitas(ctx, slug, "", svc.Name)
 
@@ -2054,6 +2081,37 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	empRef := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID)
 	if _, err := empRef.Get(ctx); err != nil {
 		http.Error(w, "Profesional no encontrado", http.StatusNotFound)
+		return
+	}
+
+	// Igual que recursos: con citas futuras activas se rechaza (409) en vez
+	// de borrarlas en cascada. Borrar a alguien con agenda llena cancelaba
+	// citas de clientes sin avisarles bien (el push llegaba, pero el daño —
+	// dejarlos sin turno — ya estaba hecho). El dueño reubica o cancela primero.
+	futuras, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", empID).
+		Where("date_time", ">=", time.Now()).
+		Limit(10).
+		Documents(ctx).GetAll()
+	if err != nil {
+		http.Error(w, "Error verificando citas del profesional", http.StatusInternalServerError)
+		return
+	}
+	activas := 0
+	for _, d := range futuras {
+		if d.Data()["cancelled"] != true {
+			activas++
+		}
+	}
+	if activas > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "empleado_con_citas",
+			"message": fmt.Sprintf("Esta persona tiene %d cita(s) futuras. Reubícalas o cancélalas antes de quitarla del equipo.", activas),
+		})
 		return
 	}
 
