@@ -207,7 +207,7 @@ function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito
                         className={`border p-1.5 rounded-lg text-sm focus:outline-none ${t.inicio >= t.fin ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-200 focus:border-black'}`}
                       />
                       {(horario[dia].turnos || []).length > 1 && (
-                        <button onClick={() => eliminarTurno(dia, idx)} className="text-red-400 hover:text-red-600 font-bold px-2 py-1 active:scale-95">✕</button>
+                        <button onClick={() => eliminarTurno(dia, idx)} aria-label={`Quitar turno ${t.inicio} a ${t.fin} del ${dia}`} className="min-h-[44px] min-w-[44px] text-red-400 hover:text-red-600 font-bold px-2 py-1 active:scale-95">✕</button>
                       )}
                     </div>
                   ))}
@@ -981,8 +981,8 @@ function AdminPanel() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h4 className="font-bold text-gray-900 text-sm">{r.client_name}</h4>
-                {isNoShow && <span className="text-[9px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No llegó</span>}
-                {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Cancelada</span>}
+                {isNoShow && <span className="text-[10px] font-bold bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase tracking-wider">No llegó</span>}
+                {isCancelled && <span className="text-[10px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase tracking-wider">Cancelada</span>}
               </div>
               <div className="space-y-1 mt-2">
                 <p className="text-xs font-semibold text-gray-700 flex items-center gap-1.5">
@@ -1019,7 +1019,7 @@ function AdminPanel() {
               {!isPast && !isNoShow && !isCancelled && (
                 <a
                   href={`https://wa.me/${r.user_phone}`} target="_blank" rel="noreferrer"
-                  className="mt-1 text-[10px] text-green-700 bg-green-50 hover:bg-green-100 px-2 py-1.5 rounded-md font-bold transition-colors flex items-center gap-1 border border-green-200"
+                  className="mt-1 min-h-[44px] inline-flex items-center gap-1 text-[11px] text-green-700 bg-green-50 hover:bg-green-100 px-3 py-2 rounded-md font-bold transition-colors border border-green-200"
                 >
                   WhatsApp
                 </a>
@@ -1149,7 +1149,7 @@ function AdminPanel() {
                   <button
                     key={f.key}
                     onClick={() => setFiltroEstado(f.key)}
-                    className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                    className={`min-h-[44px] px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                       filtroEstado === f.key
                         ? 'bg-black text-white shadow-md'
                         : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
@@ -1567,12 +1567,12 @@ function AdminPanel() {
                         </button>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
-                        <span className="text-[11px] font-bold text-gray-500">Lo hacen:</span>
+                              <span className="text-[11px] font-bold text-gray-400 uppercase">Lo hacen:</span>
                         {encargados.length === 0 ? (
                           <span className="text-[11px] text-red-600 font-semibold">Nadie aún — asígnalo en “Qué servicios hace” del equipo</span>
                         ) : (
                           encargados.map((p) => (
-                            <span key={p.id} className="text-[10px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
+                            <span key={p.id} className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
                               👤 {p.name}
                             </span>
                           ))
@@ -1716,7 +1716,7 @@ function AdminPanel() {
                         </p>
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
+                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
                         <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
                           {eliminando === r.id ? 'Borrando…' : 'Borrar'}
                         </button>

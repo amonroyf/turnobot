@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+/* Foco visible global (teclado): anillo negro consistente en botones,
+   enlaces e inputs de toda la app. El mouse no lo muestra. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #000;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Respeta "reducir movimiento": desactiva el auto-scroll suave y spins. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

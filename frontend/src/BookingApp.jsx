@@ -852,7 +852,7 @@ export default function BookingApp() {
                 <div className="bg-white border border-gray-200 rounded-2xl p-6 space-y-4 shadow-sm">
                   <h2 className="text-base font-bold text-gray-800">{negocio.name}</h2>
                   <div className="space-y-3 text-xs text-gray-600">
-                    {negocio.direccion ? <p className="flex items-center gap-2">📍 <span>{negocio.direccion}</span></p> : null}
+                    {negocio.direccion ? <p className="flex items-center gap-2"><span aria-hidden="true">🏠</span> <span>{negocio.direccion}</span></p> : null}
                     {negocio.horario ? <p className="flex items-center gap-2">🕒 <span>{negocio.horario}</span></p> : null}
                     {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{formatearTelefono(negocio.telefono)}</span></p> : null}
                     
@@ -877,7 +877,7 @@ export default function BookingApp() {
             {view === 'agendar' && (
               <div className="space-y-4">
                 {step > 1 && step < 5 && (
-                  <button onClick={() => setStep(step - 1)} className="text-xs font-bold text-gray-500 mb-2 flex items-center gap-1 active:opacity-70">
+                  <button onClick={() => setStep(step - 1)} className="min-h-[44px] px-2 text-xs font-bold text-gray-500 mb-2 flex items-center gap-1 active:opacity-70">
                     ← Volver
                   </button>
                 )}
@@ -895,7 +895,7 @@ export default function BookingApp() {
                             title={`Paso ${p.n}: ${p.etiqueta}`}
                             className={`h-1.5 rounded-full ${alcanzado ? 'bg-black' : 'bg-gray-200'}`}
                           />
-                          <p className={`mt-1 text-[9px] font-bold text-center leading-none ${actual ? 'text-black' : alcanzado ? 'text-gray-600' : 'text-gray-400'}`}>
+                          <p className={`mt-1 text-[10px] font-bold text-center leading-none ${actual ? 'text-black' : alcanzado ? 'text-gray-600' : 'text-gray-400'}`}>
                             {p.n}. {p.etiqueta}
                           </p>
                         </li>
@@ -919,7 +919,7 @@ export default function BookingApp() {
                         onClick={() => elegirModo('servicio')}
                         className="min-h-[76px] p-4 rounded-2xl border-2 border-gray-200 bg-white text-left flex items-center gap-3 active:scale-[0.98] hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
                       >
-                        <span className="text-3xl" aria-hidden="true">💈</span>
+                        <span className="text-3xl" aria-hidden="true">📋</span>
                         <span className="flex-1">
                           <span className="font-bold text-sm block">Reservar un servicio</span>
                           <span className="text-xs text-gray-500 font-medium block">Corte, consulta, clase… con profesional</span>
@@ -943,7 +943,14 @@ export default function BookingApp() {
                 )}
                 {step >= 1 && (!hayRecursos || modo === 'servicio') && (
                   <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-60' : ''}`}>
-                    <h2 className="font-bold text-gray-800 mb-1 text-sm">1. ¿Qué te quieres hacer?</h2>
+                    <div className="flex items-center justify-between mb-1">
+                      <h2 className="font-bold text-gray-800 text-sm">1. ¿Qué te quieres hacer?</h2>
+                      {hayRecursos && modo === 'servicio' && (
+                        <button type="button" onClick={() => elegirModo(null)} className="min-h-[44px] px-2 text-[11px] font-bold text-gray-400 underline">
+                          Cambiar
+                        </button>
+                      )}
+                    </div>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
                       Elige un servicio. El precio se paga en el local, aquí solo apartas tu turno.
                     </p>
@@ -1054,7 +1061,12 @@ export default function BookingApp() {
                         para no mezclar; el espacio se reserva por su propio camino) */}
                     {modo === 'espacio' && (
                       <div className={modo === 'espacio' ? '' : 'mb-5'}>
-                        <h2 className="font-bold text-gray-800 mb-1 text-sm">{modo === 'espacio' ? '1. ¿Qué espacio?' : '¿Dónde?'}</h2>
+                        <div className="flex items-center justify-between mb-1">
+                          <h2 className="font-bold text-gray-800 text-sm">{modo === 'espacio' ? '1. ¿Qué espacio?' : '¿Dónde?'}</h2>
+                          <button type="button" onClick={() => elegirModo(null)} className="min-h-[44px] px-2 text-[11px] font-bold text-gray-400 underline">
+                            Cambiar
+                          </button>
+                        </div>
                         <p className="text-[11px] text-gray-500 font-medium mb-3">
                           Si tu plan necesita un espacio concreto (cancha, box), elige cuál. Si no, sigue abajo.
                         </p>
@@ -1083,7 +1095,7 @@ export default function BookingApp() {
                                 <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border text-base ${
                                   isActive ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'
                                 }`} aria-hidden="true">
-                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🔧' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : '📍'}
+                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🔧' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : r.tipo === 'camilla' ? '💆' : r.tipo === 'clase' ? '🧘' : '📍'}
                                 </span>
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block truncate">{r.name}</span>
@@ -1136,37 +1148,9 @@ export default function BookingApp() {
                     <>
                     <h2 className="font-bold text-gray-800 mb-1 text-sm mt-6">2. ¿Quién te atiende?</h2>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
-                      {booking.recursoId
-                        ? 'Puedes dejar que el local asigne o elegir a alguien.'
-                        : 'Elige a tu profesional o toca “Cualquiera disponible” para lo más rápido.'}
+                      Elige a tu profesional o toca “Cualquiera disponible” para lo más rápido.
                     </p>
                     <div className="grid grid-cols-2 gap-3">
-                      {/* El local asigna (solo con espacio elegido) */}
-                      {booking.recursoId && (
-                        <button
-                          key="asigna"
-                          onClick={() => {
-                            const fechaActual = booking.fecha;
-                            setBooking((prev) => ({ ...prev, empleadoId: '' }));
-                            setStep(2);
-                            if (fechaActual) {
-                              setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
-                            }
-                          }}
-                          className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs col-span-2 ${
-                            booking.empleadoId === '' ? 'border-black bg-black text-white' : 'bg-white border-dashed border-gray-300 text-gray-800 active:bg-gray-100'
-                          }`}
-                        >
-                          <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
-                            booking.empleadoId === '' ? 'bg-gray-800 text-white border-gray-700' : 'bg-gray-100 text-gray-700 border-gray-200'
-                          }`}>
-                            🏠
-                          </span>
-                          <span className="leading-tight text-left">El local asigna
-                            <span className="block text-[11px] font-semibold opacity-70">Sin preferencia de persona</span>
-                          </span>
-                        </button>
-                      )}
                       {/* Cualquiera disponible: une la disponibilidad de todos */}
                       {empleadosElegibles.length > 1 && (
                         <button
@@ -1238,13 +1222,16 @@ export default function BookingApp() {
                 {step >= 2 && listoParaCalendario && (
                   <div id="step-3" className={`scroll-mt-24 ${step > 3 ? 'opacity-70 mt-6' : 'mt-6'}`}>
                     <h2 className="font-bold text-gray-800 mb-3 text-sm">{modoEspacio ? '2. ¿Qué día quieres ir?' : '3. ¿Qué día quieres ir?'}</h2>
+                    {modoEspacio && (
+                      <p className="text-[11px] text-gray-500 font-medium mb-3 -mt-1">⏱️ Los turnos son de 1 hora. El pago se coordina con el local.</p>
+                    )}
                     <button
                       type="button"
                       onClick={buscarPrimerHueco}
                       disabled={buscandoHueco}
                       className="w-full mb-3 py-3 bg-amber-100 text-amber-900 font-bold rounded-xl text-xs border border-amber-200 active:scale-95 transition-transform disabled:opacity-50"
                     >
-                      {buscandoHueco ? '⏳ Buscando el primer hueco…' : '⚡ Buscar primer hueco disponible'}
+                      {buscandoHueco ? '⏳ Buscando el primer hueco…' : '🔎 Buscar primer hueco disponible'}
                     </button>
                     {primerHueco && (
                       <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-xl text-xs text-green-800 font-semibold text-center">
@@ -1272,7 +1259,7 @@ export default function BookingApp() {
                                 disabled={pasado}
                                 onClick={() => fetchHorarios(d.fecha)}
                                 title={pasado ? d.fecha : `${d.total} libres el ${d.fecha}`}
-                                className={`py-2 px-0.5 rounded-lg text-center transition-all active:scale-95 disabled:opacity-20 ${
+                                className={`min-h-[52px] py-2 px-0.5 rounded-lg text-center transition-all active:scale-95 disabled:opacity-20 ${
                                   esElegido ? 'bg-black text-white shadow-md' : sinCupo ? 'bg-gray-50 text-gray-300' : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
                                 }`}
                               >
@@ -1326,7 +1313,7 @@ export default function BookingApp() {
                           disabled={buscandoHueco}
                           className="w-full py-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50"
                         >
-                          {buscandoHueco ? 'Buscando…' : '⚡ Buscar primer hueco'}
+                          {buscandoHueco ? 'Buscando…' : '🔎 Buscar primer hueco'}
                         </button>
                         <p className="text-[11px] text-gray-400 font-medium">…o prueba otro día en la semana de arriba 👆</p>
                       </div>
@@ -1340,7 +1327,7 @@ export default function BookingApp() {
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
-                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                  className={`min-h-[48px] py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
@@ -1364,7 +1351,7 @@ export default function BookingApp() {
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
-                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                  className={`min-h-[48px] py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
@@ -1388,7 +1375,7 @@ export default function BookingApp() {
                                 <button
                                   key={hora}
                                   onClick={() => { setBooking((prev) => ({ ...prev, hora })); setStep(4); }}
-                                  className={`py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
+                                  className={`min-h-[48px] py-3 border rounded-xl font-bold text-xs transition-colors active:scale-95 shadow-2xs ${
                                     booking.hora === hora ? 'bg-black text-white border-black active:bg-black' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
                                   }`}
                                 >
@@ -1427,7 +1414,7 @@ export default function BookingApp() {
                         )}
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
-                          <p>📍 Dirección: <strong>{negocio.direccion}</strong></p>
+                          <p>🏠 Dirección: <strong>{negocio.direccion}</strong></p>
                         )}
                       </div>
 
@@ -1669,21 +1656,24 @@ export default function BookingApp() {
       <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md bg-white border-t border-gray-200 px-6 py-2 flex justify-around items-center z-50 shadow-lg">
         <button
           onClick={() => { setView('agendar'); setStep(1); }}
-          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
+          aria-current={view === 'agendar' ? 'page' : undefined}
+          className={`min-h-[52px] px-4 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors ${view === 'agendar' ? 'text-black' : 'text-gray-400'}`}
         >
           <IconoCalendario />
           <span>Agendar</span>
         </button>
         <button
           onClick={() => setView('citas')}
-          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'citas' ? 'text-black' : 'text-gray-400'}`}
+          aria-current={view === 'citas' ? 'page' : undefined}
+          className={`min-h-[52px] px-4 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors ${view === 'citas' ? 'text-black' : 'text-gray-400'}`}
         >
           <IconoLista />
           <span>Mis Citas</span>
         </button>
         <button
           onClick={() => setView('info')}
-          className={`flex flex-col items-center gap-0.5 text-[10px] font-bold transition-colors ${view === 'info' ? 'text-black' : 'text-gray-400'}`}
+          aria-current={view === 'info' ? 'page' : undefined}
+          className={`min-h-[52px] px-4 flex flex-col items-center justify-center gap-0.5 text-[11px] font-bold transition-colors ${view === 'info' ? 'text-black' : 'text-gray-400'}`}
         >
           <IconoPin />
           <span>Info Local</span>

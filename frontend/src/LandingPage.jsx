@@ -447,8 +447,8 @@ function TestimonialsSection() {
           {testimonials.map((t, i) => (
             <FadeIn key={i} delay={i * 150}>
               <div className="bg-white border border-gray-100 rounded-3xl p-6 hover:shadow-lg transition-shadow h-full">
-                <div className="flex gap-1 mb-4">
-                  {[...Array(5)].map((_, j) => <span key={j} className="text-yellow-400">★</span>)}
+                <div className="flex gap-1 mb-4" role="img" aria-label="Calificación: 5 de 5 estrellas">
+                  {[...Array(5)].map((_, j) => <span key={j} className="text-yellow-400" aria-hidden="true">★</span>)}
                 </div>
                 <p className="text-sm text-gray-600 leading-relaxed mb-6 italic">"{t.text}"</p>
                 <div>

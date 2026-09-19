@@ -453,11 +453,11 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
                 <div key={c.id} className="flex justify-between items-center py-2 border-b border-gray-50">
                   <div>
                     <p className="text-xs font-bold text-gray-900">{c.client_name}</p>
-                    <p className="text-[10px] text-gray-400">{formatearTelefono(c.cliente_phone)}</p>
+                    <p className="text-[11px] text-gray-500">{formatearTelefono(c.cliente_phone)}</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-black text-gray-900">{formatDinero(c.total_spent)}</p>
-                    <p className="text-[10px] text-gray-400">{c.visits || 0} visitas</p>
+                    <p className="text-[11px] text-gray-500">{c.visits || 0} visitas</p>
                   </div>
                 </div>
               ))}

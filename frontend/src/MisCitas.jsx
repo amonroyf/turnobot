@@ -177,7 +177,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
               <button
                 key={f.key}
                 onClick={() => setFiltroEstado(f.key)}
-                className={`px-3 py-1.5 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                className={`min-h-[44px] px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                   filtroEstado === f.key
                     ? 'bg-black text-white shadow-md'
                     : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
@@ -285,7 +285,7 @@ function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMov
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <p className="font-bold text-gray-900 text-sm">📋 {c.servicio}</p>
-            {isCancelled && <span className="text-[9px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
+            {isCancelled && <span className="text-[10px] font-bold bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
           </div>
           <p className="text-xs text-gray-600 font-medium">👤 {c.emp_name || (c.recurso ? 'El local asigna' : c.emp_id)}</p>
           {c.recurso && <p className="text-xs text-gray-600 font-medium">📍 {c.recurso}{c.cupos > 1 ? ` (${c.cupos} personas)` : ''}</p>}
