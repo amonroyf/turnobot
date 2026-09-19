@@ -5,6 +5,7 @@ import { messaging } from './firebase.js';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS, generarEnlaceGoogleCalendar } from './fecha.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
+import { temaMarcaProps, textoSobreMarca, inicialMarca, fondoMarca, enlaceRed } from './marca.js';
 
 const API_URL = import.meta.env.VITE_API_URL || import.meta.env.REACT_APP_API_URL || '';
 
@@ -806,11 +807,32 @@ export default function BookingApp() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-100 font-sans antialiased">
+    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}min-h-screen bg-gray-100 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
     <div className="max-w-md mx-auto bg-gray-50 min-h-screen pb-24 shadow-sm border-x border-gray-200">
-      <header className="p-4 bg-white border-b border-gray-100 text-center sticky top-0 z-40 shadow-2xs">
-        <h1 className="text-lg font-bold text-gray-900">{negocio?.name || 'TurnoBot'}</h1>
-        <p className="text-xs text-gray-400">Reserva tu cita en segundos</p>
+      <header className="text-center sticky top-0 z-40 shadow-2xs">
+        {/* Portada con color de marca o fallback blanco */}
+        <div
+          className="p-5"
+          style={negocio?.marca?.color
+            ? { background: fondoMarca(negocio.marca.color), color: textoSobreMarca(negocio.marca.color) }
+            : { backgroundColor: '#fff', color: '#111' }}
+        >
+          <div
+            className="w-12 h-12 rounded-full mx-auto flex items-center justify-center text-xl font-black border-2"
+            style={negocio?.marca?.color
+              ? { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.5)' }
+              : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+          >
+            {inicialMarca(negocio?.name)}
+          </div>
+          <h1 className="text-lg font-bold mt-2">{negocio?.name || 'TurnoBot'}</h1>
+          {negocio?.marca?.eslogan && (
+            <p className="text-[11px] opacity-90 font-medium mt-0.5">{negocio.marca.eslogan}</p>
+          )}
+        </div>
+        <div className="bg-white border-b border-gray-100 px-4 py-2">
+          <p className="text-[10px] text-gray-400 font-medium">Reserva tu cita en segundos</p>
+        </div>
       </header>
 
       <main className="p-4">
@@ -860,6 +882,54 @@ export default function BookingApp() {
                       <p className="text-gray-400 italic">Información del local no configurada.</p>
                     )}
                   </div>
+
+                  {/* Descripción / propósito */}
+                  {negocio.marca?.descripcion && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Nuestra historia</p>
+                      <p className="text-xs text-gray-600 leading-relaxed">{negocio.marca.descripcion}</p>
+                    </div>
+                  )}
+
+                  {/* Redes sociales */}
+                  {(negocio.marca?.instagram || negocio.marca?.facebook || negocio.marca?.tiktok) && (
+                    <div className="pt-3 border-t border-gray-100">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Síguenos</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {negocio.marca.instagram && (
+                          <a
+                            href={enlaceRed('instagram', negocio.marca.instagram)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-pink-600 bg-pink-50 hover:bg-pink-100 px-3 py-1.5 rounded-lg transition-colors border border-pink-200"
+                          >
+                            📷 Instagram
+                          </a>
+                        )}
+                        {negocio.marca.facebook && (
+                          <a
+                            href={enlaceRed('facebook', negocio.marca.facebook)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors border border-blue-200"
+                          >
+                            👍 Facebook
+                          </a>
+                        )}
+                        {negocio.marca.tiktok && (
+                          <a
+                            href={enlaceRed('tiktok', negocio.marca.tiktok)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-800 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors border border-gray-200"
+                          >
+                            🎵 TikTok
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {negocio.whatsapp && (
                     <a
                       href={`https://wa.me/${negocio.whatsapp}`}

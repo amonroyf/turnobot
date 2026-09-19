@@ -4,6 +4,7 @@ import { formatearFechaLarga, horaEnZona, sumarDias } from './fecha.js';
 import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
+import { textoSobreMarca } from './marca.js';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -297,7 +298,7 @@ function PortalEmpleado() {
   const empName = localStorage.getItem(`emp_name_${slug}`) || '';
 
   return (
-    <div className="max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased">
+    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-lg mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
       <header className="px-5 py-4 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm">
         <div className="flex justify-between items-center">
           <div>

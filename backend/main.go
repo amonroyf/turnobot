@@ -138,9 +138,73 @@ type Negocio struct {
 	StatsTotalClientes   int           `firestore:"stats_total_clientes" json:"stats_total_clientes,omitempty"`
 	StatsIngresosTotales int64         `firestore:"stats_ingresos_totales" json:"stats_ingresos_totales,omitempty"`
 	CreatedAt            time.Time     `firestore:"created_at" json:"created_at,omitempty"`
+	// Marca del negocio (vacía = estilo clásico). Se edita en Admin y se
+	// muestra en la reserva y los paneles.
+	Marca                Marca          `firestore:"marca" json:"marca"`
 	Servicios            []Service     `json:"servicios"`
 	Empleados            []Employee    `json:"empleados"`
 	Recursos             []Recurso     `json:"recursos"`
+}
+
+// Marca del negocio (identidad visual + propósito, gratis, sin imágenes).
+// Como Booksy/Vagaro: portada, descripción y redes; como FreshBooks: color
+// preset o propio. Sin marca = estilo TurnoBot clásico (blanco y negro).
+// El logo es la inicial del nombre con el color (como el fallback de Vagaro);
+// la portada es un degradado CSS del color (sin subir fotos pesadas).
+type Marca struct {
+	// Color principal en hex (#RRGGBB). Vacío = negro clásico.
+	Color string `firestore:"color" json:"color"`
+	// Eslogan corto del negocio (máx 80).
+	Eslogan string `firestore:"eslogan" json:"eslogan"`
+	// Descripcion cuenta el propósito/historia (máx 500).
+	Descripcion string `firestore:"descripcion" json:"descripcion"`
+	// Redes: usuarios o URLs (máx 120 c/u, se muestran con enlace).
+	Instagram string `firestore:"instagram" json:"instagram"`
+	Facebook  string `firestore:"facebook" json:"facebook"`
+	Tiktok    string `firestore:"tiktok" json:"tiktok"`
+}
+
+// esColorMarcaValido acepta "" (clásico) o #RRGGBB.
+func esColorMarcaValido(c string) bool {
+	if c == "" {
+		return true
+	}
+	if len(c) != 7 || c[0] != '#' {
+		return false
+	}
+	for _, r := range c[1:] {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// sanearMarca recorta y valida la marca antes de guardar (usado en handlers
+// que la escriben; el SDK del dueño se valida en firestore.rules).
+func sanearMarca(m Marca) Marca {
+	recorta := func(s string, n int) string {
+		s = strings.TrimSpace(s)
+		if len(s) > n {
+			// Recorte por runas para no partir UTF-8.
+			r := []rune(s)
+			if len(r) > n {
+				r = r[:n]
+			}
+			s = string(r)
+		}
+		return s
+	}
+	m.Color = strings.TrimSpace(m.Color)
+	if !esColorMarcaValido(m.Color) {
+		m.Color = ""
+	}
+	m.Eslogan = recorta(m.Eslogan, 80)
+	m.Descripcion = recorta(m.Descripcion, 500)
+	m.Instagram = recorta(m.Instagram, 120)
+	m.Facebook = recorta(m.Facebook, 120)
+	m.Tiktok = recorta(m.Tiktok, 120)
+	return m
 }
 
 // Turno represents a single work shift within a day.

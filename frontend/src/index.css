@@ -8,6 +8,25 @@
   border-radius: 6px;
 }
 
+/* Marca del negocio (tokens --marca/--sobre-marca en el contenedor .tema-marca):
+   los rellenos negros pasan a ser el color de la marca con texto legible.
+   Sin marca no hay clase y todo queda en el clásico blanco y negro. */
+.tema-marca .bg-black {
+  background-color: var(--marca) !important;
+  color: var(--sobre-marca) !important;
+}
+.tema-marca .bg-black .text-white,
+.tema-marca .bg-black .text-gray-200,
+.tema-marca .bg-black .text-gray-300 {
+  color: var(--sobre-marca) !important;
+}
+.tema-marca .bg-black .border-white {
+  border-color: var(--sobre-marca) !important;
+}
+.tema-marca .border-black {
+  border-color: var(--marca) !important;
+}
+
 /* Respeta "reducir movimiento": desactiva el auto-scroll suave y spins. */
 @media (prefers-reduced-motion: reduce) {
   *,

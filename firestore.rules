@@ -65,6 +65,32 @@ service cloud.firestore {
               isValidHorarioSemanal(request.resource.data.horario));
     }
 
+    // La marca del negocio (identidad visual + propósito): color hex o vacío,
+    // textos acotados. El backend también sanea al escribir por API.
+    function marcaValida() {
+      return !('marca' in request.resource.data) ||
+        (request.resource.data.marca is map &&
+         (!('color' in request.resource.data.marca) ||
+          request.resource.data.marca.color == '' ||
+          (request.resource.data.marca.color is string &&
+           request.resource.data.marca.color.matches('^#[0-9a-fA-F]{6}$'))) &&
+         (!('eslogan' in request.resource.data.marca) ||
+          (request.resource.data.marca.eslogan is string &&
+           request.resource.data.marca.eslogan.size() <= 80)) &&
+         (!('descripcion' in request.resource.data.marca) ||
+          (request.resource.data.marca.descripcion is string &&
+           request.resource.data.marca.descripcion.size() <= 500)) &&
+         (!('instagram' in request.resource.data.marca) ||
+          (request.resource.data.marca.instagram is string &&
+           request.resource.data.marca.instagram.size() <= 120)) &&
+         (!('facebook' in request.resource.data.marca) ||
+          (request.resource.data.marca.facebook is string &&
+           request.resource.data.marca.facebook.size() <= 120)) &&
+         (!('tiktok' in request.resource.data.marca) ||
+          (request.resource.data.marca.tiktok is string &&
+           request.resource.data.marca.tiktok.size() <= 120)));
+    }
+
     // Las políticas de reserva solo aceptan rangos sanos (el backend también
     // los acota; esto frena escrituras absurdas desde el SDK del dueño).
     function politicasValidas() {      return (!('cancel_window_hours' in request.resource.data) ||
@@ -111,7 +137,7 @@ service cloud.firestore {
       allow update: if request.auth != null && (
         (resource.data.owner_uid == request.auth.uid &&
          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['suspended', 'suspended_at']) &&
-         politicasValidas())
+         politicasValidas() && marcaValida())
         || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2'
       );
 

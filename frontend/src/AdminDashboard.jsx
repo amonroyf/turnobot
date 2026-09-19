@@ -19,6 +19,7 @@ import {
 } from 'firebase/firestore';
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
+import { COLORES_MARCA, colorMarca, textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 
 const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 const defaultHorario = {
@@ -436,6 +437,9 @@ function AdminPanel() {
 
   const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
   const [guardandoInfo, setGuardandoInfo] = useState(false);
+  // Marca y propósito (identidad del negocio, gratis, sin imágenes).
+  const [marca, setMarca] = useState({ color: '', eslogan: '', descripcion: '', instagram: '', facebook: '', tiktok: '' });
+  const [guardandoMarca, setGuardandoMarca] = useState(false);
   // Políticas de reserva (reglas del negocio, como en el mercado: Fresha,
   // Booksy y Vagaro las dejan configurar por negocio).
   const [politicas, setPoliticas] = useState({ cancel_window_hours: 24, min_notice_minutes: 0, booking_window_days: 30, max_bookings_per_phone_per_day: 3, open_time: '09:00', close_time: '18:00' });
@@ -491,6 +495,14 @@ function AdminPanel() {
         direccion: negocio.direccion || '',
         horario: negocio.horario || '',
         telefono: negocio.telefono || ''
+      });
+      setMarca({
+        color: negocio.marca?.color || '',
+        eslogan: negocio.marca?.eslogan || '',
+        descripcion: negocio.marca?.descripcion || '',
+        instagram: negocio.marca?.instagram || '',
+        facebook: negocio.marca?.facebook || '',
+        tiktok: negocio.marca?.tiktok || '',
       });
       setPoliticas({
         cancel_window_hours: negocio.cancel_window_hours || 24,
@@ -655,6 +667,35 @@ function AdminPanel() {
       await avisar('No se pudieron guardar las reglas. Intenta de nuevo.', 'error');
     }
     setGuardandoPoliticas(false);
+  };
+
+  // Marca y propósito: colores curados + textos. Sin subir fotos: el logo es
+  // la inicial y la portada un degradado. Vista previa en vivo abajo.
+  const handleGuardarMarca = async (e) => {
+    e.preventDefault();
+    const limpio = {
+      color: (marca.color || '').trim(),
+      eslogan: (marca.eslogan || '').trim().slice(0, 80),
+      descripcion: (marca.descripcion || '').trim().slice(0, 500),
+      instagram: (marca.instagram || '').trim().slice(0, 120),
+      facebook: (marca.facebook || '').trim().slice(0, 120),
+      tiktok: (marca.tiktok || '').trim().slice(0, 120),
+    };
+    if (limpio.color && !/^#[0-9a-fA-F]{6}$/.test(limpio.color)) {
+      await avisar('Ese color no es válido. Elige un preset o un hex como #16A34A.', 'error');
+      return;
+    }
+    setGuardandoMarca(true);
+    try {
+      await updateDoc(doc(db, 'negocios', negocio.id), { marca: limpio });
+      setNegocio({ ...negocio, marca: limpio });
+      setMarca(limpio);
+      await invalidarCache();
+      await avisar('Marca actualizada. Así te verán tus clientes.', 'exito');
+    } catch (err) {
+      await avisar('No se pudo guardar la marca. Intenta de nuevo.', 'error');
+    }
+    setGuardandoMarca(false);
   };
 
   const handleGuardarInfoLocal = async (e) => {    e.preventDefault();
@@ -1161,7 +1202,7 @@ function AdminPanel() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased flex flex-col">
+    <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}max-w-2xl mx-auto bg-gray-50 min-h-screen pb-24 font-sans antialiased flex flex-col`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
       <header className="px-5 py-4 bg-white border-b border-gray-200 sticky top-0 z-40 shadow-sm flex flex-col justify-center items-center">
         <h1 className="text-xl font-black text-gray-900 leading-none">{negocio.name}</h1>
         <p className="text-[11px] font-bold text-gray-400 mt-1 uppercase tracking-widest">Modo Administrador</p>
@@ -1929,6 +1970,122 @@ function AdminPanel() {
                   />
                 </label>
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio</button>
+              </form>
+            </div>
+
+            {/* MARCA Y PROPÓSITO */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Marca y propósito ✨</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Tu color, tu mensaje y tus redes. Gratis, sin subir fotos: el logo es tu inicial y la portada un degradado. Así te ven al reservar y en los paneles.</p>
+              <form onSubmit={handleGuardarMarca} className="space-y-4">
+                <div>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Color de tu marca</span>
+                  <div className="flex gap-2 flex-wrap" role="radiogroup" aria-label="Color de la marca">
+                    {COLORES_MARCA.map((c) => {
+                      const activo = (marca.color || '') === c.color;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={activo}
+                          title={c.nombre}
+                          onClick={() => setMarca({ ...marca, color: c.color })}
+                          className={`w-11 h-11 rounded-full border-2 flex items-center justify-center font-black text-sm active:scale-95 transition-all ${
+                            activo ? 'border-black ring-2 ring-black ring-offset-2' : 'border-gray-200'
+                          }`}
+                          style={c.color ? { backgroundColor: c.color, color: textoSobreMarca(c.color) } : { backgroundColor: '#fff', color: '#111' }}
+                        >
+                          {activo ? '✓' : inicialMarca(infoLocal.name || negocio?.name)}
+                        </button>
+                      );
+                    })}
+                    <label
+                      title="Color propio"
+                      className={`relative w-11 h-11 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all ${
+                        marca.color && !COLORES_MARCA.some((c) => c.color === marca.color) ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                      style={marca.color ? { backgroundColor: marca.color } : undefined}
+                    >
+                      <span className="sr-only">Elegir color propio</span>
+                      <span aria-hidden="true" className="text-lg font-black" style={{ color: marca.color ? textoSobreMarca(marca.color) : '#9ca3af' }}>+</span>
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(marca.color || '') ? marca.color : '#16a34a'}
+                        onChange={(e) => setMarca({ ...marca, color: e.target.value })}
+                        className="absolute opacity-0 w-11 h-11 cursor-pointer"
+                        aria-label="Elegir color propio"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Eslogan (máx 80)</span>
+                  <input
+                    type="text" maxLength={80} placeholder="Ej. Tu estilo, nuestra pasión"
+                    value={marca.eslogan}
+                    onChange={(e) => setMarca({ ...marca, eslogan: e.target.value })}
+                    aria-label="Eslogan del negocio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tu propósito (máx 500)</span>
+                  <textarea
+                    rows={3} maxLength={500} placeholder="Ej. Hace 10 años embellecemos el barrio con precios justos…"
+                    value={marca.descripcion}
+                    onChange={(e) => setMarca({ ...marca, descripcion: e.target.value })}
+                    aria-label="Descripción o propósito del negocio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { key: 'instagram', etiqueta: 'Instagram (@usuario)' },
+                    { key: 'facebook', etiqueta: 'Facebook' },
+                    { key: 'tiktok', etiqueta: 'TikTok (@usuario)' },
+                  ].map((r) => (
+                    <label key={r.key} className="block">
+                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">{r.etiqueta}</span>
+                      <input
+                        type="text" maxLength={120} placeholder="@tu_cuenta"
+                        value={marca[r.key]}
+                        onChange={(e) => setMarca({ ...marca, [r.key]: e.target.value })}
+                        aria-label={r.etiqueta}
+                        className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      />
+                    </label>
+                  ))}
+                </div>
+                {/* Vista previa en vivo: mini página de reserva */}
+                <div>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Así te verán</span>
+                  <div className="rounded-2xl overflow-hidden border border-gray-200" aria-hidden="true">
+                    <div className="px-4 py-4 text-center" style={marca.color ? { background: fondoMarca(marca.color), color: textoSobreMarca(marca.color) } : { backgroundColor: '#fff', color: '#111' }}>
+                      <div
+                        className="w-11 h-11 rounded-full mx-auto flex items-center justify-center text-xl font-black border"
+                        style={marca.color
+                          ? { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.5)' }
+                          : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+                      >
+                        {inicialMarca(infoLocal.name || negocio?.name)}
+                      </div>
+                      <p className="font-bold text-sm mt-2">{infoLocal.name || negocio?.name || 'Tu negocio'}</p>
+                      {marca.eslogan ? <p className="text-[11px] opacity-90 font-medium">{marca.eslogan}</p> : null}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <div
+                        className="w-full py-3 rounded-xl text-center text-xs font-bold"
+                        style={marca.color ? { backgroundColor: marca.color, color: textoSobreMarca(marca.color) } : { backgroundColor: '#111', color: '#fff' }}
+                      >
+                        Confirmar Reserva
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button type="submit" disabled={guardandoMarca} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                  {guardandoMarca ? 'Guardando…' : 'Guardar marca'}
+                </button>
               </form>
             </div>
 
