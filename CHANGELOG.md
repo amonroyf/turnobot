@@ -1,5 +1,11 @@
 # Changelog — Turnobot
 
+## 2026-09-18 (diálogos propios: adiós confirm()/alert() nativos)
+
+- Nuevo `ConfirmDialog.jsx`: `DialogoProvider` + `useDialogo()` (`confirmar`/`avisar`/`pedirTexto` por promesas, `role=alertdialog`, Escape, foco inicial, botones 48px, fallback a nativos si no hay provider).
+- Reemplazados los ~24 usos en Admin (cancelar, no llegó, devolver, eliminar servicio/equipo, guardar avisos, copiar), Empleado (cancelar, no llegó, devolver), Mis Citas (cancelar con detalle de la cita) y SuperAdmin (pausar/reanudar, borrado con doble confirmación + tipeo del ID, copiar enlace).
+- Conceptos: sin bloqueo de pestaña, textos en palabras con consecuencia explícita, misma identidad visual, accesibilidad.
+
 ## 2026-09-18 (push: el checkbox ahora sí cumple + iOS honesto)
 
 - `BookingApp.jsx` — el "🔔 Avísame" era decorativo (el backend ignoraba el campo y había que tocar otro botón después). Ahora al confirmar se auto-activa si quedó marcado; si el permiso falla queda el reintento manual. Microcopy honesto ("te pediremos permiso una sola vez").

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { auth, provider, db } from './firebase';
 import usePushNotifications from './usePushNotifications';
+import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 import {
   signInWithPopup,
   signOut,
@@ -31,6 +32,7 @@ const defaultHorario = {
 };
 
 export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
+  const { avisar } = useDialogo();
   const [horario, setHorario] = useState(() => {
     const base = empleado.horario || {};
     const completo = {};
@@ -97,10 +99,10 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
     try {
       const empRef = doc(db, `negocios/${negocioId}/empleados`, empleado.id);
       await updateDoc(empRef, { horario });
-      alert(`Horario de ${empleado.name} actualizado`);
+      await avisar(`Horario de ${empleado.name} actualizado.`, 'exito');
       onClose();
     } catch (err) {
-      alert(`Error al guardar el horario.`);
+      await avisar('No se pudo guardar el horario. Intenta de nuevo.', 'error');
     }
     setGuardando(false);
   };
@@ -202,6 +204,7 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
 }
 
 export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose }) {
+  const { avisar } = useDialogo();
   // Sin el array (empleado antiguo), se asume que hace todos por defecto.
   const [seleccionados, setSeleccionados] = useState(
     empleado.servicios_ids || servicios.map((s) => s.id)
@@ -224,7 +227,7 @@ export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose
       });
       onClose();
     } catch (err) {
-      alert('Error al guardar las especialidades.');
+      await avisar('No se pudo guardar. Intenta de nuevo.', 'error');
     }
     setGuardando(false);
   };
@@ -265,6 +268,7 @@ export function ServiciosEmpleadoModal({ negocioId, empleado, servicios, onClose
 }
 
 function PinEmpleadoModal({ negocioId, empleado, onClose }) {
+  const { avisar } = useDialogo();
   const [pin, setPin] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [exito, setExito] = useState(false);
@@ -285,10 +289,10 @@ function PinEmpleadoModal({ negocioId, empleado, onClose }) {
         setExito(true);
         setTimeout(onClose, 1500);
       } else {
-        alert('Error al guardar el PIN.');
+        await avisar('No se pudo guardar la clave. Intenta de nuevo.', 'error');
       }
     } catch {
-      alert('Error de conexión.');
+      await avisar('Error de conexión. Intenta de nuevo.', 'error');
     }
     setGuardando(false);
   };
@@ -327,7 +331,8 @@ function PinEmpleadoModal({ negocioId, empleado, onClose }) {
   );
 }
 
-export default function AdminDashboard() {
+function AdminPanel() {
+  const { confirmar, avisar } = useDialogo();
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
   const [view, setView] = useState('agenda');
@@ -500,9 +505,9 @@ export default function AdminDashboard() {
       setContenidoCopiado(tipo);
       setTimeout(() => setContenidoCopiado(''), 2500);
     } catch {
-      prompt(
-        tipo === 'enlace' ? 'Copia este enlace para tus clientes:' : 'Copia este mensaje para tus clientes:',
-        contenido,
+      await avisar(
+        tipo === 'enlace' ? `Copia este enlace para tus clientes:\n\n${contenido}` : `Copia este mensaje para tus clientes:\n\n${contenido}`,
+        'info',
       );
     }
   };
@@ -536,9 +541,9 @@ export default function AdminDashboard() {
       setNegocio({ ...negocio, ...limpio });
       setPoliticas(limpio);
       await invalidarCache();
-      alert('Políticas actualizadas. Aplican desde ya.');
+      await avisar('Reglas actualizadas. Aplican desde ya.', 'exito');
     } catch (err) {
-      alert('No se pudieron guardar las políticas. Intenta nuevamente.');
+      await avisar('No se pudieron guardar las reglas. Intenta de nuevo.', 'error');
     }
     setGuardandoPoliticas(false);
   };
@@ -549,9 +554,9 @@ export default function AdminDashboard() {
       await updateDoc(doc(db, 'negocios', negocio.id), infoLocal);
       setNegocio({ ...negocio, ...infoLocal });
       await invalidarCache();
-      alert('Información actualizada');
+      await avisar('Datos actualizados.', 'exito');
     } catch (err) {
-      alert('No se pudo actualizar la información. Intenta nuevamente.');
+      await avisar('No se pudo actualizar. Intenta de nuevo.', 'error');
     }
     setGuardandoInfo(false);
   };
@@ -560,15 +565,18 @@ export default function AdminDashboard() {
     e.preventDefault();
     const digitos = whatsApp.replace(/\D/g, '');
     const limpio = digitos.startsWith(codigoPais) ? digitos : codigoPais + digitos;
-    if (limpio.length < 10) return alert('Ingresa el número local (ej. 3001234567)');
+    if (limpio.length < 10) {
+      await avisar('Revisa el número: escribe solo los dígitos locales (ej. 3001234567).', 'error');
+      return;
+    }
     setGuardandoWhatsApp(true);
     try {
       await updateDoc(doc(db, 'negocios', negocio.id), { whatsapp: limpio });
       setNegocio({ ...negocio, whatsapp: limpio });
       await invalidarCache();
-      alert('WhatsApp actualizado');
+      await avisar('WhatsApp actualizado.', 'exito');
     } catch (err) {
-      alert('No se pudo actualizar el WhatsApp. Intenta nuevamente.');
+      await avisar('No se pudo actualizar el WhatsApp. Intenta de nuevo.', 'error');
     }
     setGuardandoWhatsApp(false);
   };
@@ -584,7 +592,7 @@ export default function AdminDashboard() {
       setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
       invalidarCache();
     } catch (err) {
-      alert('Error al guardar el servicio');
+      await avisar('No se pudo guardar el servicio. Intenta de nuevo.', 'error');
     }
   };
 
@@ -601,12 +609,19 @@ export default function AdminDashboard() {
       setNuevoProfesional({ name: '' });
       invalidarCache();
     } catch (err) {
-      alert('Error al guardar el profesional');
+      await avisar('No se pudo añadir. Intenta de nuevo.', 'error');
     }
   };
 
   const handleEliminarServicio = async (servicio) => {
-    if (!confirm(`¿Eliminar "${servicio.name}"? Ya no aparecerá para reservar y se cancelarán sus citas futuras. No se puede deshacer.`)) return;
+    const ok = await confirmar({
+      titulo: `¿Eliminar "${servicio.name}"?`,
+      detalle: 'Ya no aparecerá para reservar y se cancelarán sus citas futuras.',
+      consecuencia: 'No se puede deshacer.',
+      confirmarTexto: 'Sí, eliminar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setEliminando(servicio.id);
     try {
       const token = await user.getIdToken();
@@ -614,13 +629,20 @@ export default function AdminDashboard() {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
-      alert('No se pudo eliminar el servicio.');
+      await avisar('No se pudo eliminar el servicio.', 'error');
     }
     setEliminando('');
   };
 
   const handleEliminarProfesional = async (profesional) => {
-    if (!confirm(`¿Quitar a "${profesional.name}" del equipo? Se cancelarán sus citas futuras. No se puede deshacer.`)) return;
+    const ok = await confirmar({
+      titulo: `¿Quitar a "${profesional.name}" del equipo?`,
+      detalle: 'Se cancelarán sus citas futuras.',
+      consecuencia: 'No se puede deshacer.',
+      confirmarTexto: 'Sí, quitar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setEliminando(profesional.id);
     try {
       const token = await user.getIdToken();
@@ -628,7 +650,7 @@ export default function AdminDashboard() {
         method: 'DELETE', headers: { Authorization: `Bearer ${token}` }
       });
     } catch (err) {
-      alert('No se pudo eliminar el profesional.');
+      await avisar('No se pudo quitar a esta persona.', 'error');
     }
     setEliminando('');
   };
@@ -637,7 +659,14 @@ export default function AdminDashboard() {
     const r = reservas.find((item) => item.id === citaId);
     if (!r) return;
 
-    if (!confirm(`¿Cancelar la cita de ${r.client_name}? El horario quedará libre para otros clientes.`)) return;
+    const ok = await confirmar({
+      titulo: `¿Cancelar la cita de ${r.client_name}?`,
+      detalle: r.service_name,
+      consecuencia: 'El horario quedará libre para otros clientes.',
+      confirmarTexto: 'Sí, cancelar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
 
     setCancelando(citaId);
     try {
@@ -654,10 +683,10 @@ export default function AdminDashboard() {
         setReservas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: true } : item));
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.message || 'No se pudo cancelar la cita. Intenta nuevamente.');
+        await avisar(data?.message || 'No se pudo cancelar la cita. Intenta de nuevo.', 'error');
       }
     } catch (err) {
-      alert('No se pudo cancelar la cita. Intenta nuevamente.');
+      await avisar('No se pudo cancelar la cita. Intenta de nuevo.', 'error');
     } finally {
       setCancelando('');
     }
@@ -667,7 +696,14 @@ export default function AdminDashboard() {
   const [undoingId, setUndoingId] = useState('');
 
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿El cliente no vino? Se marcará como "No llegó" y se restará de sus visitas.')) return;
+    const r = reservas.find((item) => item.id === citaId);
+    const ok = await confirmar({
+      titulo: `¿${r?.client_name || 'El cliente'} no vino?`,
+      detalle: 'Se marcará como "No llegó" y se restará de sus visitas.',
+      confirmarTexto: 'Marcar no llegó',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setNoShowMarking(citaId);
     try {
       const token = await user.getIdToken();
@@ -678,16 +714,23 @@ export default function AdminDashboard() {
       if (res.ok) {
         setReservas(prev => prev.map(item => item.id === citaId ? { ...item, no_show: true } : item));
       } else {
-        alert('No se pudo marcar como no-show. Intenta nuevamente.');
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || 'No se pudo marcar. Intenta de nuevo.', 'error');
       }
     } catch (err) {
-      alert('No se pudo marcar como no-show. Intenta nuevamente.');
+      await avisar('No se pudo marcar. Intenta de nuevo.', 'error');
     }
     setNoShowMarking('');
   };
 
   const handleUndo = async (citaId) => {
-    if (!confirm('¿Devolver esta cita a activa? Volverá a aparecer en la agenda de hoy.')) return;
+    const ok = await confirmar({
+      titulo: '¿Devolver esta cita a activa?',
+      detalle: 'Volverá a aparecer en la agenda.',
+      confirmarTexto: 'Devolver a activa',
+      variante: 'info',
+    });
+    if (!ok) return;
     setUndoingId(citaId);
     try {
       const token = await user.getIdToken();
@@ -699,10 +742,10 @@ export default function AdminDashboard() {
         setReservas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: false, no_show: false } : item));
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.message || 'No se pudo deshacer. Intenta nuevamente.');
+        await avisar(data?.message || 'No se pudo devolver. Intenta de nuevo.', 'error');
       }
     } catch (err) {
-      alert('No se pudo deshacer. Intenta nuevamente.');
+      await avisar('No se pudo devolver. Intenta de nuevo.', 'error');
     }
     setUndoingId('');
   };
@@ -1630,5 +1673,13 @@ export default function AdminDashboard() {
       {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
       {pinModal && <PinEmpleadoModal negocioId={negocio.id} empleado={pinModal} onClose={() => setPinModal(null)} />}
     </div>
+  );
+}
+
+export default function AdminDashboard() {
+  return (
+    <DialogoProvider>
+      <AdminPanel />
+    </DialogoProvider>
   );
 }

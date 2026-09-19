@@ -5,6 +5,7 @@ import {
   collection, doc, updateDoc, onSnapshot, query, where,
 } from 'firebase/firestore';
 import { formatearTelefono } from './fecha.js';
+import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
@@ -127,6 +128,7 @@ function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
 // ──────────────────────────────────────────────────────────────
 
 function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
+  const { confirmar, avisar, pedirTexto } = useDialogo();
   const [reservas, setReservas] = useState([]);
   const [clientes, setClientes] = useState([]);
   const [servicios, setServicios] = useState([]);
@@ -181,26 +183,29 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
   const suspended = negocio?.suspended === true;
 
   const handleEliminarNegocio = async () => {
-    // Primera confirmación: window.confirm
-    const confirmacion = window.confirm(
-      `⚠️ ELIMINAR NEGOCIO "${negocioId}"\n\n` +
-      `Esto eliminará:\n` +
-      `• El documento del negocio\n` +
-      `• Todos sus servicios\n` +
-      `• Todos sus profesionales\n` +
-      `• Todas sus citas y clientes\n\n` +
-      `Esta acción NO se puede deshacer.\n¿Continuar?`
-    );
-    if (!confirmacion) return;
+    // Primera confirmación: diálogo propio con la lista de lo que se borra.
+    const ok = await confirmar({
+      titulo: `¿Borrar "${negocioId}" del todo?`,
+      detalle: 'Se eliminará el negocio, sus servicios, su equipo, sus citas y sus clientes.',
+      consecuencia: 'No se puede deshacer.',
+      confirmarTexto: 'Sí, borrar todo',
+      variante: 'peligro',
+      icono: '🗑️',
+    });
+    if (!ok) return;
 
-    // Segunda confirmación: escribir el ID exacto
-    const idIngresado = window.prompt(
-      `🔴 CONFIRMACIÓN FINAL\n\n` +
-      `Para eliminar "${negocioId}" y TODA su data, escribe el ID exacto abajo:`
-    );
+    // Segunda confirmación: escribir el ID exacto (freno a clics accidentales).
+    const idIngresado = await pedirTexto({
+      titulo: 'Confirmación final',
+      detalle: `Para borrar "${negocioId}" y TODA su data, escribe el ID exacto:`,
+      etiqueta: `Escribe: ${negocioId}`,
+      placeholder: negocioId,
+      verificacion: negocioId,
+      confirmarTexto: 'Borrar definitivamente',
+    });
     if (idIngresado === null) return; // Canceló
     if (idIngresado !== negocioId) {
-      alert('El ID no coincide. Operación cancelada.');
+      await avisar('El ID no coincide. Operación cancelada.', 'error');
       return;
     }
 
@@ -218,11 +223,11 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
         throw new Error('No autorizado o error del servidor');
       }
 
-      alert(`✅ Negocio "${negocioId}" eliminado correctamente.`);
+      await avisar(`Negocio "${negocioId}" borrado correctamente.`, 'exito');
       onDeleted(); // Dispara la actualización de la lista de negocios en SuperAdmin
     } catch (err) {
       console.error('Error eliminando negocio:', err);
-      alert('Error al eliminar el negocio. Intenta de nuevo.');
+      await avisar('No se pudo borrar el negocio. Intenta de nuevo.', 'error');
     }
     setEliminando(false);
   };
@@ -285,9 +290,13 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
             🔗 Ver su página de reservas
           </a>
           <button
-            onClick={() => {
-              navigator.clipboard.writeText(`${window.location.origin}/shop/${negocioId}`);
-              alert('Enlace copiado.');
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(`${window.location.origin}/shop/${negocioId}`);
+                await avisar('Enlace copiado.', 'exito');
+              } catch {
+                await avisar(`Copia este enlace:\n\n${window.location.origin}/shop/${negocioId}`, 'info');
+              }
             }}
             className="flex-1 min-h-[48px] py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs text-center active:scale-95 transition-transform"
           >
@@ -464,6 +473,15 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
 // ──────────────────────────────────────────────────────────────
 
 export default function SuperAdmin() {
+  return (
+    <DialogoProvider>
+      <SuperAdminPanel />
+    </DialogoProvider>
+  );
+}
+
+function SuperAdminPanel() {
+  const { confirmar, avisar } = useDialogo();
   const [user, setUser] = useState(null);
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [negocios, setNegocios] = useState([]);
@@ -494,12 +512,22 @@ export default function SuperAdmin() {
   // Suspender / reactivar negocio
   const handleToggleSuspend = useCallback(async (negocioId, currentlySuspended) => {
     const action = currentlySuspended ? 'reanudar' : 'pausar';
-    const confirmacion = window.confirm(
+    const ok = await confirmar(
       currentlySuspended
-        ? `¿Reanudar las reservas de "${negocioId}"?\n\nLos clientes podrán volver a agendar citas.`
-        : `¿Pausar las reservas de "${negocioId}"?\n\nLos clientes verán “No disponible” y NO podrán agendar. Las citas ya agendadas se conservan.`,
+        ? {
+            titulo: `¿Reanudar las reservas de "${negocioId}"?`,
+            detalle: 'Los clientes podrán volver a agendar citas.',
+            confirmarTexto: 'Sí, reanudar',
+            variante: 'info',
+          }
+        : {
+            titulo: `¿Pausar las reservas de "${negocioId}"?`,
+            detalle: 'Los clientes verán “No disponible” y no podrán agendar. Las citas ya agendadas se conservan.',
+            confirmarTexto: 'Sí, pausar',
+            variante: 'peligro',
+          },
     );
-    if (!confirmacion) return;
+    if (!ok) return;
 
     try {
       await updateDoc(doc(db, 'negocios', negocioId), {
@@ -515,10 +543,10 @@ export default function SuperAdmin() {
       } catch (err) {
         console.error('No se pudo invalidar caché:', err);
       }
-      alert(`✅ Reservas ${currentlySuspended ? 'reanudadas' : 'pausadas'} correctamente.`);
+      await avisar(`Reservas ${currentlySuspended ? 'reanudadas' : 'pausadas'} correctamente.`, 'exito');
     } catch (err) {
       console.error(`Error al ${action} negocio:`, err);
-      alert(`Error al ${action} el negocio. Intenta de nuevo.`);
+      await avisar(`No se pudo ${action} el negocio. Intenta de nuevo.`, 'error');
     }
   }, []);
 

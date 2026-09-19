@@ -3,10 +3,20 @@ import { useParams } from 'react-router-dom';
 import { formatearFechaLarga, horaEnZona, sumarDias } from './fecha.js';
 import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
+import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
 export default function EmployeeDashboard() {
+  return (
+    <DialogoProvider>
+      <PortalEmpleado />
+    </DialogoProvider>
+  );
+}
+
+function PortalEmpleado() {
+  const { confirmar, avisar } = useDialogo();
   const { slug } = useParams();
   const [empleados, setEmpleados] = useState([]);
   const [empSeleccionado, setEmpSeleccionado] = useState(null);
@@ -124,7 +134,13 @@ export default function EmployeeDashboard() {
   const handleCancelar = async (citaId) => {
     const c = citas.find(item => item.id === citaId);
     if (!c) return;
-    if (!confirm(`¿Cancelar la cita de ${c.cliente}? El horario quedará libre. No se puede deshacer después de hoy.`)) return;
+    const ok = await confirmar({
+      titulo: `¿Cancelar la cita de ${c.cliente}?`,
+      consecuencia: 'El horario quedará libre.',
+      confirmarTexto: 'Sí, cancelar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setCancelando(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}`, {
@@ -135,16 +151,23 @@ export default function EmployeeDashboard() {
         setCitas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: true } : item));
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.message || 'No se pudo cancelar la cita.');
+        await avisar(data?.message || 'No se pudo cancelar la cita.', 'error');
       }
     } catch {
-      alert('No se pudo cancelar la cita.');
+      await avisar('No se pudo cancelar la cita.', 'error');
     }
     setCancelando('');
   };
 
   const handleMarcarNoShow = async (citaId) => {
-    if (!confirm('¿El cliente no vino? Se marcará como "No llegó".')) return;
+    const c = citas.find(item => item.id === citaId);
+    const ok = await confirmar({
+      titulo: `¿${c?.cliente || 'El cliente'} no vino?`,
+      detalle: 'Se marcará como "No llegó".',
+      confirmarTexto: 'Marcar no llegó',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setNoShowMarking(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/no-show/${citaId}`, {
@@ -154,16 +177,23 @@ export default function EmployeeDashboard() {
       if (res.ok) {
         setCitas(prev => prev.map(item => item.id === citaId ? { ...item, no_show: true } : item));
       } else {
-        alert('No se pudo marcar como no-show.');
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || 'No se pudo marcar.', 'error');
       }
     } catch {
-      alert('No se pudo marcar como no-show.');
+      await avisar('No se pudo marcar.', 'error');
     }
     setNoShowMarking('');
   };
 
   const handleUndo = async (citaId) => {
-    if (!confirm('¿Devolver esta cita a activa? Volverá a aparecer en tu agenda de hoy.')) return;
+    const ok = await confirmar({
+      titulo: '¿Devolver esta cita a activa?',
+      detalle: 'Volverá a aparecer en tu agenda.',
+      confirmarTexto: 'Devolver a activa',
+      variante: 'info',
+    });
+    if (!ok) return;
     setUndoingId(citaId);
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${citaId}/undo`, {
@@ -174,10 +204,10 @@ export default function EmployeeDashboard() {
         setCitas(prev => prev.map(item => item.id === citaId ? { ...item, cancelled: false, no_show: false } : item));
       } else {
         const data = await res.json().catch(() => null);
-        alert(data?.message || 'No se pudo deshacer.');
+        await avisar(data?.message || 'No se pudo devolver.', 'error');
       }
     } catch {
-      alert('No se pudo deshacer.');
+      await avisar('No se pudo devolver.', 'error');
     }
     setUndoingId('');
   };

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatearFechaLarga, sumarDias } from './fecha.js';
+import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 
 // Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
 const formatPhoneNumber = (value) => {
@@ -19,7 +20,16 @@ const formatPhoneNumber = (value) => {
 // Obtener fecha "YYYY-MM-DD" en la zona horaria del negocio
 const fmtFecha = (d, tz) => d.toLocaleDateString('sv-SE', { timeZone: tz || 'America/Bogota' });
 
-export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
+export default function MisCitas(props) {
+  return (
+    <DialogoProvider>
+      <MisCitasContenido {...props} />
+    </DialogoProvider>
+  );
+}
+
+function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
+  const { confirmar } = useDialogo();
   const tz = timezone || 'America/Bogota';
   const [telefono, setTelefono] = useState('');
   const [citas, setCitas] = useState(null); // null = aún no buscado
@@ -50,7 +60,14 @@ export default function MisCitas({ slug, API_URL, whatsapp, timezone }) {
   };
 
   const cancelarCita = async (cita) => {
-    if (!window.confirm('¿Cancelar esta cita? El horario quedará libre y no se puede deshacer. Si quieres otra hora, cancela aquí y vuelve a reservar en Agendar.')) return;
+    const ok = await confirmar({
+      titulo: '¿Cancelar esta cita?',
+      detalle: `${cita.servicio} · ${formatearFechaLarga(cita.fecha)} a las ${cita.hora}. Si quieres otra hora, cancela aquí y vuelve a reservar en Agendar.`,
+      consecuencia: 'El horario quedará libre.',
+      confirmarTexto: 'Sí, cancelar',
+      variante: 'peligro',
+    });
+    if (!ok) return;
     setCancelando(cita.id);
     setError('');
     try {
