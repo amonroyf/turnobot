@@ -848,6 +848,7 @@ func TestBookRecursoSinServicio(t *testing.T) {
 }
 
 func TestRecursoClasePredefinidaHereda(t *testing.T) {
+
 	testFirestoreClient(t)
 	ctx := context.Background()
 	slug := slugUnico("test-rec5")
@@ -889,5 +890,58 @@ func TestRecursoClasePredefinidaHereda(t *testing.T) {
 	}
 	if b.EmpID != "emp1" {
 		t.Fatalf("emp=%q, esperaba emp1 (Ana atada)", b.EmpID)
+	}
+}
+
+func TestEmpleadoAutonomoHorarioYPin(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-empaut")
+	seedTienda(t, ctx, slug)
+	tok := signEmployeeToken(slug, "emp1")
+	conToken := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec
+	}
+
+	// Mi horario: válido 200, inválido 400, otro empleado 401.
+	ok := conToken(http.MethodPut, "/api/v1/b/"+slug+"/employee/emp1/horario",
+		`{"lunes":{"activo":true,"turnos":[{"inicio":"09:00","fin":"13:00"}]}}`)
+	if ok.Code != http.StatusOK {
+		t.Fatalf("horario válido code=%d body=%s, esperaba 200", ok.Code, ok.Body.String())
+	}
+	bad := conToken(http.MethodPut, "/api/v1/b/"+slug+"/employee/emp1/horario",
+		`{"lunes":{"activo":true,"turnos":[{"inicio":"13:00","fin":"09:00"}]}}`)
+	if bad.Code != http.StatusBadRequest {
+		t.Fatalf("horario inválido code=%d, esperaba 400", bad.Code)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/b/"+slug+"/employee/emp1/horario", bytes.NewReader([]byte(`{}`)))
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("sin token code=%d, esperaba 401", rec.Code)
+	}
+
+	// Mi clave: la cambia y entra con la nueva.
+	ch := conToken(http.MethodPost, "/api/v1/b/"+slug+"/employee/emp1/pin", `{"pin":"5678"}`)
+	if ch.Code != http.StatusOK {
+		t.Fatalf("cambio pin code=%d body=%s, esperaba 200", ch.Code, ch.Body.String())
+	}
+	loginBody, _ := json.Marshal(map[string]string{"emp_id": "emp1", "pin": "5678"})
+	lreq := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/employee-login", bytes.NewReader(loginBody))
+	lreq.Header.Set("Content-Type", "application/json")
+	lrec := httptest.NewRecorder()
+	employeeLoginHandler(lrec, lreq, slug)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("login con pin nuevo code=%d body=%s, esperaba 200", lrec.Code, lrec.Body.String())
+	}
+	// PIN corto se rechaza.
+	corto := conToken(http.MethodPost, "/api/v1/b/"+slug+"/employee/emp1/pin", `{"pin":"12"}`)
+	if corto.Code != http.StatusBadRequest {
+		t.Fatalf("pin corto code=%d, esperaba 400", corto.Code)
 	}
 }

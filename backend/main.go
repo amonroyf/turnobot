@@ -559,6 +559,21 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Mi horario (autonomía del empleado): PUT /api/v1/b/{slug}/employee/{empId}/horario.
+	// El profesional edita sus días/turnos sin depender del dueño; el backend
+	// valida y la disponibilidad lo aplica de inmediato (con caché invalidada).
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "horario" && r.Method == http.MethodPut {
+		employeeHorarioHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Mi clave (autonomía del empleado): POST /api/v1/b/{slug}/employee/{empId}/pin.
+	// Cambia su PIN con su sesión (token de empleado); mismo hash que el dueño.
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "pin" && r.Method == http.MethodPost {
+		employeePinHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Baja de push del empleado: DELETE /api/v1/b/{slug}/employee/{empId}/push-token
 	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "push-token" && r.Method == http.MethodDelete {
 		employeeUnregisterPushTokenHandler(w, r, slug, parts[2])
@@ -672,7 +687,17 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
 	// Clase predefinida: si el recurso ata un servicio y no se pidió otro, la
 	// rejilla usa la duración de ese servicio.
+	// Mover cita del empleado: sin servicio se acepta `duracion` explícita
+	// (15-480) para armar la rejilla con la duración real de la cita.
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
+	if servicioID == "" {
+		if q := r.URL.Query().Get("duracion"); q != "" {
+			var n int
+			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 15 && n <= 480 {
+				duration = n
+			}
+		}
+	}
 	if servicioID == "" && recursoID != "" {
 		if rec, ok := resolveRecurso(r.Context(), slug, recursoID); ok && rec.ServicioID != "" {
 			_, duration, _, _ = resolveService(r.Context(), slug, rec.ServicioID)
@@ -797,6 +822,14 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 	}
 
 	_, duration, _, _ := resolveService(ctx, slug, servicioID)
+	if servicioID == "" {
+		if q := r.URL.Query().Get("duracion"); q != "" {
+			var n int
+			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 15 && n <= 480 {
+				duration = n
+			}
+		}
+	}
 	if servicioID == "" && recursoID != "" {
 		if rec, ok := resolveRecurso(ctx, slug, recursoID); ok && rec.ServicioID != "" {
 			_, duration, _, _ = resolveService(ctx, slug, rec.ServicioID)
@@ -3660,6 +3693,7 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 		Cliente   string `json:"cliente"`
 		Telefono  string `json:"telefono"`
 		Precio    int    `json:"precio"`
+		Duracion  int    `json:"duracion"`
 		Fecha     string `json:"fecha"`
 		Hora      string `json:"hora"`
 		Recurso   string `json:"recurso,omitempty"`
@@ -3684,6 +3718,7 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 			Cliente:   b.ClientName,
 			Telefono:  b.UserPhone,
 			Precio:    b.Price,
+			Duracion:  b.DurationMinute,
 			Fecha:     b.DateTime.In(loc).Format("2006-01-02"),
 			Hora:      b.DateTime.In(loc).Format("15:04"),
 			Recurso:   b.RecursoName,
@@ -3699,9 +3734,139 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 	json.NewEncoder(w).Encode(citas)
 }
 
+// esHHMM valida formato "HH:MM" con rangos sanos.
+func esHHMM(s string) bool {
+	if len(s) != 5 || s[2] != ':' {
+		return false
+	}
+	for i, c := range s {
+		if i == 2 {
+			continue
+		}
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	hh := int(s[0]-'0')*10 + int(s[1]-'0')
+	mm := int(s[3]-'0')*10 + int(s[4]-'0')
+	return hh < 24 && mm < 60
+}
+
+// validarHorarioSemanal aplica en el servidor las mismas reglas del modal:
+// turnos con inicio<fin, sin solapes, máx 4 por día.
+func validarHorarioSemanal(h HorarioSemanal) error {
+	dias := []DiaHorario{h.Lunes, h.Martes, h.Miercoles, h.Jueves, h.Viernes, h.Sabado, h.Domingo}
+	for _, d := range dias {
+		if len(d.Turnos) > 4 {
+			return fmt.Errorf("máximo 4 turnos por día")
+		}
+		for _, t := range d.Turnos {
+			if !esHHMM(t.Inicio) || !esHHMM(t.Fin) || t.Inicio >= t.Fin {
+				return fmt.Errorf("turno inválido %s-%s", t.Inicio, t.Fin)
+			}
+		}
+		for i := 0; i < len(d.Turnos); i++ {
+			for j := i + 1; j < len(d.Turnos); j++ {
+				a, b := d.Turnos[i], d.Turnos[j]
+				if a.Inicio < b.Fin && b.Inicio < a.Fin {
+					return fmt.Errorf("turnos solapados %s-%s", a.Inicio, a.Fin)
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// verificaTokenEmpleado valida que el Bearer sea el token del empleado empID
+// en este negocio (autonomía: el profesional opera sin la sesión del dueño).
+func verificaTokenEmpleado(r *http.Request, slug, empID string) bool {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	return err == nil && tokenSlug == slug && tokenEmpID == empID
+}
+
+// PUT /api/v1/b/{slug}/employee/{empId}/horario -> el profesional edita sus
+// días/turnos (autonomía; antes solo el dueño). Valida en el servidor.
+func employeeHorarioHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	if !verificaTokenEmpleado(r, slug, empID) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	var h HorarioSemanal
+	if err := json.NewDecoder(r.Body).Decode(&h); err != nil {
+		http.Error(w, "Horario inválido", http.StatusBadRequest)
+		return
+	}
+	if err := validarHorarioSemanal(h); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Get(ctx); err != nil {
+		http.Error(w, "Profesional no encontrado", http.StatusNotFound)
+		return
+	}
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+		{Path: "horario", Value: h},
+	}); err != nil {
+		log.Printf("Error guardando horario de %s en %s: %v", empID, slug, err)
+		http.Error(w, "Error guardando horario", http.StatusInternalServerError)
+		return
+	}
+	negocioCache.Invalidate(slug)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Horario actualizado",
+	})
+}
+
+// POST /api/v1/b/{slug}/employee/{empId}/pin -> el profesional cambia su
+// propia clave (autonomía; antes solo el dueño). 4-6 dígitos, mismo hash.
+func employeePinHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	if !verificaTokenEmpleado(r, slug, empID) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Pin string `json:"pin"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "PIN inválido", http.StatusBadRequest)
+		return
+	}
+	pin := strings.TrimSpace(req.Pin)
+	if len(pin) < 4 || len(pin) > 6 {
+		http.Error(w, "La clave debe tener 4 a 6 números", http.StatusBadRequest)
+		return
+	}
+	for _, c := range pin {
+		if c < '0' || c > '9' {
+			http.Error(w, "La clave solo admite números", http.StatusBadRequest)
+			return
+		}
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(pin), bcrypt.DefaultCost)
+	if err != nil {
+		http.Error(w, "Error procesando clave", http.StatusInternalServerError)
+		return
+	}
+	ctx := r.Context()
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Update(ctx, []firestore.Update{
+		{Path: "login_pin", Value: string(hash)},
+	}); err != nil {
+		http.Error(w, "Error guardando clave", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Clave actualizada",
+	})
+}
+
 // POST /api/v1/b/{slug}/empleados/{empleadoID}/pin
-func setEmployeePinHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
-	if !isOwnerRequest(r, slug) {
+func setEmployeePinHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {	if !isOwnerRequest(r, slug) {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
 		return
 	}

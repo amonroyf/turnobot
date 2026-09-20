@@ -5,6 +5,7 @@ import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 import { textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
+import { HorarioModal } from './HorarioModal.jsx';
 import NotificationDrawer from './NotificationDrawer';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -32,6 +33,16 @@ function PortalEmpleado() {
   const [cancelando, setCancelando] = useState('');
   const [noShowMarking, setNoShowMarking] = useState('');
   const [undoingId, setUndoingId] = useState('');
+  // Autonomía: mover citas, mi horario, mi clave.
+  const [moviendo, setMoviendo] = useState(null);
+  const [moverFecha, setMoverFecha] = useState('');
+  const [moverSlots, setMoverSlots] = useState([]);
+  const [moverHora, setMoverHora] = useState('');
+  const [moverLoading, setMoverLoading] = useState(false);
+  const [showHorario, setShowHorario] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [pinNuevo, setPinNuevo] = useState('');
+  const [guardandoPin, setGuardandoPin] = useState(false);
 
   const pushNotifications = useEmployeePushNotifications(slug, token, empId);
 
@@ -203,6 +214,87 @@ function PortalEmpleado() {
     setUndoingId('');
   };
 
+  // Mover cita (autonomía): el backend ya autoriza al empleado asignado.
+  // Rejilla con la duración real de la cita (viene en `duracion`).
+  const fetchMoverSlots = async (fecha, cita) => {
+    setMoverSlots([]);
+    setMoverHora('');
+    if (!fecha) return;
+    setMoverLoading(true);
+    try {
+      const dur = cita?.duracion || 60;
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/slots?emp_id=${empId}&fecha=${fecha}&duracion=${dur}`);
+      const data = await res.json().catch(() => null);
+      setMoverSlots(Array.isArray(data) ? data : (data?.slots || []));
+    } catch {
+      setMoverSlots([]);
+    }
+    setMoverLoading(false);
+  };
+
+  const abrirMover = (cita) => {
+    setMoviendo(cita);
+    setMoverFecha(cita.fecha);
+    fetchMoverSlots(cita.fecha, cita);
+  };
+
+  const confirmarMover = async () => {
+    if (!moviendo || !moverFecha || !moverHora) {
+      await avisar('Elige el día y la hora nueva.', 'error');
+      return;
+    }
+    setMoverLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${moviendo.id}/reschedule`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha: moverFecha, hora: moverHora }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        await avisar(data?.message || 'No se pudo mover la cita.', 'error');
+        return;
+      }
+      setCitas(prev => prev.map(item => item.id === moviendo.id
+        ? { ...item, fecha: moverFecha, hora: moverHora, iso: `${moverFecha}T${moverHora}:00` }
+        : item));
+      setMoviendo(null);
+      await avisar(`Cita movida al ${moverFecha} a las ${moverHora}.`, 'exito');
+    } catch {
+      await avisar('No se pudo mover la cita.', 'error');
+    }
+    setMoverLoading(false);
+  };
+
+  // Mi clave (autonomía): cambia su PIN con su sesión.
+  const guardarPin = async (e) => {
+    e.preventDefault();
+    const pin = (pinNuevo || '').replace(/\D/g, '');
+    if (pin.length < 4 || pin.length > 6) {
+      await avisar('La clave debe tener 4 a 6 números.', 'error');
+      return;
+    }
+    setGuardandoPin(true);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/pin`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo cambiar la clave.', 'error');
+        return;
+      }
+      setPinNuevo('');
+      setShowPin(false);
+      await avisar('Clave actualizada. Úsala la próxima vez que entres.', 'exito');
+    } catch {
+      await avisar('No se pudo cambiar la clave.', 'error');
+    }
+    setGuardandoPin(false);
+  };
+
   const ahora = Date.now();
   const zonaNegocio = negocio?.timezone || 'America/Bogota';
 
@@ -224,6 +316,12 @@ function PortalEmpleado() {
     if (filtroEstado === 'noshow') return lista.filter(c => c.no_show);
     return lista;
   };
+
+  // Mis números (autonomía): lo que lleva y lo que suma, sin preguntar al dueño.
+  const citasActivas = citas.filter(c => !c.cancelled && !c.no_show);
+  const misIngresos = citasActivas.reduce((s, c) => s + (Number(c.precio) || 0), 0);
+  const misNoShow = citas.filter(c => c.no_show).length;
+  const miPerfil = negocio?.empleados?.find(e => e.id === empId);
 
   if (!token) {
     return (
@@ -338,6 +436,44 @@ function PortalEmpleado() {
       )}
 
       <main className="p-4 space-y-6">
+        {/* Mis números */}
+        {!loading && citas.length > 0 && (
+          <div className="grid grid-cols-3 gap-2" aria-label="Mis números">
+            <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
+              <p className="text-xl font-black text-gray-900">{citasActivas.length}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Activas</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
+              <p className="text-xl font-black text-gray-900">${misIngresos.toLocaleString('es-CO')}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Suman</p>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
+              <p className="text-xl font-black text-gray-900">{misNoShow}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">No llegó</p>
+            </div>
+          </div>
+        )}
+
+        {/* Mi turno: horario y clave sin depender del dueño */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-4">
+          <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mi turno</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowHorario(true)}
+              className="flex-1 min-h-[48px] py-2.5 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+            >
+              🕒 Mi horario
+            </button>
+            <button
+              onClick={() => setShowPin(true)}
+              className="flex-1 min-h-[48px] py-2.5 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+            >
+              🔑 Mi clave
+            </button>
+          </div>
+          <p className="text-[11px] text-gray-400 font-medium mt-2">Cierra días cuando descanses: dejan de ofrecerse para reservar.</p>
+        </div>
+
         {loading && (
           <div className="text-center py-8 text-gray-400 text-sm">Cargando tus citas...</div>
         )}
@@ -379,7 +515,7 @@ function PortalEmpleado() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
             <div className="space-y-2">
               {filtrarPorEstado(citasHoy).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
@@ -390,7 +526,7 @@ function PortalEmpleado() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
             <div className="space-y-2">
               {filtrarPorEstado(citasManana).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
@@ -401,17 +537,127 @@ function PortalEmpleado() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
             <div className="space-y-2">
               {filtrarPorEstado(citasProximas).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
               ))}
             </div>
           </section>
         )}
       </main>
+
+      {/* Mover cita */}
+      {moviendo && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900">Mover cita</h3>
+            <p className="text-sm text-gray-500 mb-4">{moviendo.cliente} · {moviendo.servicio}</p>
+            <label className="block mb-3">
+              <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nuevo día</span>
+              <input
+                type="date"
+                value={moverFecha}
+                min={hoy}
+                onChange={(e) => { setMoverFecha(e.target.value); fetchMoverSlots(e.target.value, moviendo); }}
+                aria-label="Nuevo día de la cita"
+                className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+              />
+            </label>
+            <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nueva hora</span>
+            {moverLoading && moverSlots.length === 0 ? (
+              <p className="text-xs text-gray-400 font-medium py-3 text-center">Buscando huecos…</p>
+            ) : moverSlots.length === 0 ? (
+              <p className="text-xs text-gray-500 font-medium py-3 text-center bg-gray-50 rounded-xl">Sin huecos ese día. Prueba otro.</p>
+            ) : (
+              <div className="flex gap-2 flex-wrap max-h-48 overflow-y-auto" role="radiogroup" aria-label="Horas libres">
+                {moverSlots.map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    role="radio"
+                    aria-checked={moverHora === h}
+                    onClick={() => setMoverHora(h)}
+                    className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all ${
+                      moverHora === h ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    {h}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2 justify-end mt-5">
+              <button onClick={() => setMoviendo(null)} className="min-h-[48px] px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
+                Cerrar
+              </button>
+              <button
+                onClick={confirmarMover}
+                disabled={moverLoading || !moverHora}
+                className="min-h-[48px] px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform"
+              >
+                {moverLoading ? 'Moviendo…' : 'Mover aquí'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mi horario */}
+      {showHorario && (
+        <HorarioModal
+          titulo="Mi horario de trabajo"
+          nombre={empName}
+          bajada="Días y turnos en que recibes reservas. Lo que cierres deja de ofrecerse."
+          horarioInicial={miPerfil?.horario}
+          onGuardar={async (horario) => {
+            const res = await fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/horario`, {
+              method: 'PUT',
+              headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify(horario),
+            });
+            if (!res.ok) throw new Error(await res.text().catch(() => 'error'));
+            setNegocio((prev) => prev ? {
+              ...prev,
+              empleados: (prev.empleados || []).map((e) => e.id === empId ? { ...e, horario } : e),
+            } : prev);
+          }}
+          exito="Horario actualizado. Tus días cerrados ya no se ofrecen."
+          onClose={() => setShowHorario(false)}
+        />
+      )}
+
+      {/* Mi clave */}
+      {showPin && (
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-xl">
+            <h3 className="text-lg font-bold text-gray-900">Mi clave</h3>
+            <p className="text-sm text-gray-500 mb-4">Cámbiala cuando quieras, sin pedirle al dueño.</p>
+            <form onSubmit={guardarPin} className="space-y-3">
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                placeholder="Nueva clave (4 a 6 números)"
+                value={pinNuevo}
+                onChange={(e) => setPinNuevo(e.target.value.replace(/\D/g, ''))}
+                aria-label="Nueva clave de 4 a 6 números"
+                className="w-full min-h-[48px] p-3.5 border border-gray-200 rounded-xl text-sm text-center tracking-[0.5em] focus:border-black focus:outline-none"
+              />
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => { setShowPin(false); setPinNuevo(''); }} className="min-h-[48px] px-4 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-bold text-sm active:scale-95 transition-transform">
+                  Cerrar
+                </button>
+                <button type="submit" disabled={guardandoPin} className="min-h-[48px] px-5 py-2.5 bg-black text-white rounded-xl font-bold text-sm disabled:opacity-50 active:scale-95 transition-transform">
+                  {guardandoPin ? 'Guardando…' : 'Guardar clave'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noShowMarking, undoingId }) {
+function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelando, noShowMarking, undoingId }) {
   const isoMs = c.iso ? new Date(c.iso).getTime() : 0;
   const isPast = isoMs < ahora;
   const isCancelled = c.cancelled === true;
@@ -420,6 +666,8 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
   // Comparar en la zona del negocio (no UTC): toISOString() adelanta el día
   // desde las 7pm en Colombia y ocultaba el botón indebidamente.
   const isToday = c.fecha === new Date(ahora).toLocaleDateString('sv-SE', { timeZone: zona });
+  const sePuedeMover = !isCancelled && !isNoShow && isoMs >= ahora;
+  const waNumero = (c.telefono || '').replace(/\D/g, '');
 
   return (
     <div className={`bg-white border rounded-2xl p-4 shadow-sm ${isPast ? 'opacity-70' : 'border-gray-200'} ${isCancelled ? 'bg-red-50 border-red-200' : ''} ${isNoShow ? 'bg-amber-50 border-amber-200' : ''}`}>
@@ -431,6 +679,22 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
             {isCancelled && <span className="text-[10px] font-black bg-red-700 text-white px-2 py-0.5 rounded uppercase">Cancelada</span>}
             {isNoShow && <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded uppercase">No llegó</span>}
           </div>
+          {c.telefono && (
+            <p className="text-xs text-gray-600 font-medium mt-1">
+              📞 {c.telefono}
+              {waNumero && (
+                <a
+                  href={`https://wa.me/${waNumero}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Escribir por WhatsApp a ${c.cliente}`}
+                  className="ml-2 text-[11px] font-bold text-green-700 underline"
+                >
+                  WhatsApp
+                </a>
+              )}
+            </p>
+          )}
           <p className="text-xs text-gray-600 font-medium mt-1">📋 {c.servicio}</p>
           {c.recurso && <p className="text-xs text-gray-600 font-medium mt-1">📍 {c.recurso}</p>}
           {(c.van || []).length > 0 && <p className="text-xs text-gray-500 mt-1">🧑‍🤝‍🧑 Van: {c.van.join(', ')}</p>}
@@ -453,6 +717,15 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, cancelando, noSh
               className="min-h-[44px] text-xs text-gray-600 font-semibold hover:text-amber-700 active:scale-95 transition-all px-4 py-2 rounded-xl border border-transparent hover:border-amber-200 hover:bg-amber-50 disabled:opacity-50"
             >
               {noShowMarking === c.id ? 'Marcando...' : 'No vino'}
+            </button>
+          )}
+          {sePuedeMover && (
+            <button
+              onClick={() => onMove(c)}
+              title="Mover esta cita a otro día u hora"
+              className="min-h-[44px] text-xs text-blue-700 font-bold active:scale-95 transition-all px-4 py-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100"
+            >
+              Mover
             </button>
           )}
           <button

@@ -1,5 +1,13 @@
 # Changelog — Turnobot
 
+## 2026-09-20 (empleado autónomo)
+
+- El portal del empleado deja de ser solo-agenda: Mis números (activas, suman $, no-llegó), Mi turno (Mi horario 🕒 y Mi clave 🔑), teléfono del cliente con WhatsApp en cada cita y botón Mover para reprogramar (usa la duración real de la cita).
+- Backend: `PUT /employee/{id}/horario` (valida turnos en servidor, invalida caché) y `POST /employee/{id}/pin` (4-6 dígitos, bcrypt) con token de empleado; `slots`/`primer-hueco` aceptan `duracion` explícita; citas del empleado incluyen `duracion`.
+- `HorarioModal` extraído a `HorarioModal.jsx` compartido (dueño y empleado usan el mismo modal; cambia solo el `onGuardar`).
+- Test `TestEmpleadoAutonomoHorarioYPin` en verde con emulador (horario ok/400/401, cambio de PIN + login nuevo).
+- Desplegado: frontend. Backend pendiente (falta el YAML de entorno).
+
 ## 2026-09-20 (clase predefinida: herencia real)
 
 - El atado servicio/profesional del espacio deja de ser decorativo: al reservar un espacio con atados (modo espacio, sin elegir), el backend hereda `servicio_id`/`emp_id` — la cita lleva nombre, duración y precio reales del servicio y queda en la agenda del profesional (evento de Calendar, portal del empleado, "con Ana" en MisCitas).
