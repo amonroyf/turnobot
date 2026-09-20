@@ -250,32 +250,26 @@ type Employee struct {
 }
 
 // Recurso reservable de un negocio (cancha, box, camilla, consultorio,
-// silla...). Capacidad = cupos por intervalo (1 = exclusivo).
-// OverbookingPct permite vender por encima (ej. 10 = 110% para clases con
-// ausentismo típico). Horario propio opcional (si no, jornada del negocio).
-// BufferMinutos deja un colchón de limpieza entre reservas (0 = ninguno).
+// silla...). Capacidad = cupos por intervalo (1 = exclusivo). Un recurso
+// puede ser una "clase grupal predefinida": ServicioID dice qué se dicta y
+// EmpID quién la da (ej. Yoga con Ana). Horario propio opcional (si no,
+// jornada del negocio).
 type Recurso struct {
-	ID             string          `json:"id"`
-	Name           string          `firestore:"name" json:"name"`
-	Tipo           string          `firestore:"tipo" json:"tipo"`
-	Capacidad      int             `firestore:"capacidad" json:"capacidad"`
-	OverbookingPct int             `firestore:"overbooking_pct" json:"overbooking_pct"`
-	Horario        *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
-	BufferMinutos  int             `firestore:"buffer_minutos" json:"buffer_minutos"`
+	ID         string          `json:"id"`
+	Name       string          `firestore:"name" json:"name"`
+	Tipo       string          `firestore:"tipo" json:"tipo"`
+	Capacidad  int             `firestore:"capacidad" json:"capacidad"`
+	ServicioID string          `firestore:"servicio_id" json:"servicio_id,omitempty"`
+	EmpID      string          `firestore:"emp_id" json:"emp_id,omitempty"`
+	Horario    *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
 }
 
-// capacidadEfectiva redondea hacia abajo (20 cap + 10% = 22).
+// capacidadEfectiva es la capacidad exacta (sin overbooking).
 func (r Recurso) capacidadEfectiva() int {
 	if r.Capacidad < 1 {
 		return 1
 	}
-	if r.OverbookingPct < 0 {
-		r.OverbookingPct = 0
-	}
-	if r.OverbookingPct > 100 {
-		r.OverbookingPct = 100
-	}
-	return r.Capacidad * (100 + r.OverbookingPct) / 100
+	return r.Capacidad
 }
 
 // Service offered by a business.
@@ -538,6 +532,15 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Crear recurso: POST /api/v1/b/{slug}/recursos (solo dueño). La creación
+	// pasa por el backend (no addDoc directo): sanea nombre/tipo/capacidad y
+	// permite atar el espacio a un servicio (qué se dicta) y un empleado
+	// (quién lo dicta) -> "clase grupal predefinida".
+	if len(parts) == 2 && parts[1] == "recursos" && r.Method == http.MethodPost {
+		createRecursoHandler(w, r, slug)
+		return
+	}
+
 	// Login de empleado con PIN: POST /api/v1/b/{slug}/employee-login
 	if len(parts) == 2 && parts[1] == "employee-login" && r.Method == http.MethodPost {
 		employeeLoginHandler(w, r, slug)
@@ -667,7 +670,14 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Agrega la lectura del servicio para calcular la rejilla según su duración
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
+	// Clase predefinida: si el recurso ata un servicio y no se pidió otro, la
+	// rejilla usa la duración de ese servicio.
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
+	if servicioID == "" && recursoID != "" {
+		if rec, ok := resolveRecurso(r.Context(), slug, recursoID); ok && rec.ServicioID != "" {
+			_, duration, _, _ = resolveService(r.Context(), slug, rec.ServicioID)
+		}
+	}
 
 	// Modo recurso (recurso_id): disponibilidad del espacio (cancha, box...),
 	// no de una persona. Responde objeto con libres por hora para pintar
@@ -787,6 +797,11 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 	}
 
 	_, duration, _, _ := resolveService(ctx, slug, servicioID)
+	if servicioID == "" && recursoID != "" {
+		if rec, ok := resolveRecurso(ctx, slug, recursoID); ok && rec.ServicioID != "" {
+			_, duration, _, _ = resolveService(ctx, slug, rec.ServicioID)
+		}
+	}
 
 	// Con recurso se escanea el espacio (sin profesional asignado).
 	if recursoID != "" {
@@ -890,15 +905,7 @@ var errSinCupo = errors.New("recurso sin cupo suficiente")
 
 // verificarCuposTx suma los cupos ocupados que solapan el intervalo dentro de
 // la transacción (cierra la carrera de dos reservas simultáneas al mismo cupo).
-// Aplica el buffer de limpieza del recurso al final de cada reserva.
 func verificarCuposTx(tx *firestore.Transaction, slug string, rec Recurso, cuposPedidos int, eventDateTime, eventEnd time.Time) error {
-	buffer := time.Duration(rec.BufferMinutos) * time.Minute
-	if buffer < 0 {
-		buffer = 0
-	}
-	if buffer > 120*time.Minute {
-		buffer = 120 * time.Minute
-	}
 	q := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).
 		Where("recurso_id", "==", rec.ID).
@@ -921,7 +928,7 @@ func verificarCuposTx(tx *firestore.Transaction, slug string, rec Recurso, cupos
 		if dur <= 0 {
 			dur = 60 * time.Minute
 		}
-		if eventDateTime.Before(b.DateTime.Add(dur).Add(buffer)) && b.DateTime.Before(eventEnd) {
+		if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
 			c := b.Cupos
 			if c < 1 {
 				c = 1
@@ -1167,12 +1174,36 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			})
 			return
 		}
+		// Clase predefinida: el espacio ata qué se dicta y quién lo da. Si el
+		// cliente no eligió servicio/profesional (modo espacio), se heredan
+		// del espacio: la reserva lleva nombre, duración y precio reales y
+		// queda en la agenda del profesional (estándar Mindbody/Vagaro).
+		if req.ServicioID == "" && recurso.ServicioID != "" {
+			req.ServicioID = recurso.ServicioID
+		}
+		if req.EmpleadoID == "" && recurso.EmpID != "" {
+			req.EmpleadoID = recurso.EmpID
+		}
+		if req.ServicioID != "" && serviceName == "" {
+			var found bool
+			serviceName, duration, precioServicio, found = resolveService(ctx, slug, req.ServicioID)
+			if !found {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusBadRequest)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "servicio_no_encontrado",
+					"message": "El servicio de este espacio ya no existe. Por favor elige otro.",
+				})
+				return
+			}
+		}
 		// Modo "reservar espacio" sin servicio: nombre genérico del espacio.
 		if serviceName == "" {
 			serviceName = "Reserva de " + recurso.Name
 		}
 		// Cupos: 1 por defecto; tope = capacidad del recurso (una sola
-		// reserva no supera la capacidad; el overbooking aplica a la suma).
+		// reserva no supera la capacidad).
 		if req.Cupos > 1 {
 			if req.Cupos > recurso.Capacidad {
 				w.Header().Set("Content-Type", "application/json")
@@ -1219,6 +1250,8 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// El empleado (si viene) debe ofrecer este servicio (multi-especialidad).
+	// Sin servicio (espacio libre con instructor atado) no hay nada que
+	// validar: el profesional solo presta el lugar.
 	// Falla rápido aquí; la transacción lo re-verifica contra TOCTOU.
 	var empData Employee
 	if req.EmpleadoID != "" {
@@ -1228,7 +1261,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			return
 		}
 		empDoc.DataTo(&empData)
-		if !ofreceServicio(empData, req.ServicioID) {
+		if req.ServicioID != "" && !ofreceServicio(empData, req.ServicioID) {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]interface{}{
@@ -2208,6 +2241,87 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	})
 }
 
+// POST /api/v1/b/{slug}/recursos -> crea un espacio/clase (solo dueño).
+// Sanea y acota todo en el servidor: nombre 1-100, capacidad 1-100, tipo
+// válido. servicio_id/emp_id opcionales (se verifican si vienen).
+func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
+	if !isOwnerRequest(r, slug) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Name       string `json:"name"`
+		Tipo       string `json:"tipo"`
+		Capacidad  int    `json:"capacidad"`
+		ServicioID string `json:"servicio_id"`
+		EmpID      string `json:"emp_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Payload inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if name == "" {
+		http.Error(w, "El nombre del espacio no puede estar vacío", http.StatusBadRequest)
+		return
+	}
+	if r := []rune(name); len(r) > 100 {
+		name = string(r[:100])
+	}
+	capacidad := req.Capacidad
+	if capacidad < 1 {
+		capacidad = 1
+	} else if capacidad > 100 {
+		capacidad = 100
+	}
+	tipo := strings.ToLower(strings.TrimSpace(req.Tipo))
+	switch tipo {
+	case "cancha", "box", "consultorio", "sala", "camilla", "clase", "otro":
+	default:
+		tipo = "otro"
+	}
+
+	ctx := r.Context()
+	// Si atan servicio/empleado, deben existir en el negocio.
+	servicioID := strings.TrimSpace(req.ServicioID)
+	if servicioID != "" {
+		if _, _, _, found := resolveService(ctx, slug, servicioID); !found {
+			http.Error(w, "Servicio no encontrado", http.StatusBadRequest)
+			return
+		}
+	}
+	empID := strings.TrimSpace(req.EmpID)
+	if empID != "" {
+		if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Get(ctx); err != nil {
+			http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
+			return
+		}
+	}
+
+	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, map[string]interface{}{
+		"name":        name,
+		"tipo":        tipo,
+		"capacidad":   capacidad,
+		"servicio_id": servicioID,
+		"emp_id":      empID,
+		"created_at":  time.Now(),
+	})
+	if err != nil {
+		log.Printf("Error creando recurso en %s: %v", slug, err)
+		http.Error(w, "Error al guardar el espacio", http.StatusInternalServerError)
+		return
+	}
+	negocioCache.Invalidate(slug)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"id":      docRef.ID,
+		"message": "Espacio creado",
+	})
+}
+
 // DELETE /api/v1/b/{slug}/recursos/{recursoID} -> borra un recurso (solo dueño).
 // Con citas futuras activas responde 409 (el dueño reubica o cancela primero)
 // en vez de borrar en cascada: un box con agenda no desaparece por accidente.
@@ -3023,8 +3137,7 @@ func getFreeSlotsRecurso(ctx context.Context, negocioID, recursoID string, day t
 
 // disponibilidadRecurso devuelve los slots con cupo suficiente y el mapa de
 // libres por hora (capacidad efectiva menos ocupados). Usa el horario propio
-// del recurso si existe (si no, la jornada del negocio) y respeta su buffer
-// de limpieza: cada reserva ocupa [inicio, fin+buffer).
+// del recurso si existe (si no, la jornada del negocio).
 func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time.Time, durationMinutes, cuposPedidos int) (slots []string, libres map[string]int, err error) {
 	rec, ok := resolveRecurso(ctx, slug, recursoID)
 	if !ok {
@@ -3033,13 +3146,6 @@ func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time
 	if cuposPedidos < 1 {
 		cuposPedidos = 1
 	}
-	if rec.BufferMinutos < 0 {
-		rec.BufferMinutos = 0
-	}
-	if rec.BufferMinutos > 120 {
-		rec.BufferMinutos = 120
-	}
-	buffer := time.Duration(rec.BufferMinutos) * time.Minute
 	efectiva := rec.capacidadEfectiva()
 
 	// Intervalos del día: horario propio o jornada del negocio.
@@ -3097,7 +3203,7 @@ func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time
 				continue
 			}
 			candEnd := t.Add(slotDuration)
-			// El candidato choca si solapa [inicio, fin+buffer) de otra reserva.
+			// El candidato choca si solapa [inicio, fin) de otra reserva.
 			ocupados := 0
 			for _, d := range docs {
 				if d.Data()["cancelled"] == true {
@@ -3111,10 +3217,9 @@ func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time
 				if dur <= 0 {
 					dur = 60 * time.Minute
 				}
-				// Buffer solo al final: la reserva ocupa [inicio, fin+buffer).
-			// Así un turno puede empezar justo cuando termina otro + su aseo,
-			// sin exigir doble hueco.
-			if t.Before(b.DateTime.Add(dur).Add(buffer)) && b.DateTime.Before(candEnd) {
+				// La reserva ocupa [inicio, fin).
+			// Así un turno puede empezar justo cuando termina otro.
+			if t.Before(b.DateTime.Add(dur)) && b.DateTime.Before(candEnd) {
 					c := b.Cupos
 					if c < 1 {
 						c = 1

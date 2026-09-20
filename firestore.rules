@@ -45,21 +45,20 @@ service cloud.firestore {
              isValidHorarioSemanal(request.resource.data.horario);
     }
 
-    // Un recurso: capacidad sana (1-100), extra 0-100%, aseo 0-120 min y
-    // horario con la misma forma que el de empleados.
+    // Un recurso: capacidad sana (1-100), servicio/empleado atados como
+    // texto corto opcional y horario con la misma forma que el de empleados.
+    // (Sin overbooking ni buffer: la capacidad es exacta.)
     function politicasRecursoValidas() {
       return (!('capacidad' in request.resource.data) ||
               (request.resource.data.capacidad is number &&
                request.resource.data.capacidad >= 1 &&
                request.resource.data.capacidad <= 100)) &&
-             (!('overbooking_pct' in request.resource.data) ||
-              (request.resource.data.overbooking_pct is number &&
-               request.resource.data.overbooking_pct >= 0 &&
-               request.resource.data.overbooking_pct <= 100)) &&
-             (!('buffer_minutos' in request.resource.data) ||
-              (request.resource.data.buffer_minutos is number &&
-               request.resource.data.buffer_minutos >= 0 &&
-               request.resource.data.buffer_minutos <= 120)) &&
+             (!('servicio_id' in request.resource.data) ||
+              (request.resource.data.servicio_id is string &&
+               request.resource.data.servicio_id.size() <= 100)) &&
+             (!('emp_id' in request.resource.data) ||
+              (request.resource.data.emp_id is string &&
+               request.resource.data.emp_id.size() <= 100)) &&
              (!('horario' in request.resource.data) ||
               request.resource.data.horario == null ||
               isValidHorarioSemanal(request.resource.data.horario));
@@ -162,14 +161,12 @@ service cloud.firestore {
       }
 
       // Subcolección RECURSOS (canchas, boxes, espacios): catálogo público
-      // (solo nombre/tipo/capacidad, como servicios); escribe el dueño.
-      // Las reservas del recurso las crea el backend (ver reservas).
+      // (nombre/tipo/capacidad, como servicios). La CREACIÓN pasa por el
+      // backend (POST /api/v1/b/{slug}/recursos, Admin SDK sin reglas); el
+      // dueño edita capacidad/horario/atados desde el panel.
       match /recursos/{recursoId} {
         allow read: if true;
-        allow create: if (isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2') &&
-          request.resource.data.name is string &&
-          request.resource.data.name.size() >= 1 &&
-          request.resource.data.name.size() <= 100;
+        allow create: if false;
         allow update: if (isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2') &&
           politicasRecursoValidas();
         allow delete: if isOwner(slug) || request.auth.uid == '0FF1nrcBnSPIdB1rMgYocmRnYUb2';

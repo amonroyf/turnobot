@@ -449,20 +449,16 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1 });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, servicio_id: '', emp_id: '' });
   const [editandoRecurso, setEditandoRecurso] = useState(null);
-  const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1, overbooking: 0, buffer: 0 });
+  const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
 
   const guardarRecurso = async (recurso) => {
     const capacidad = Math.min(100, Math.max(1, Number(editRecursoVals.capacidad) || 1));
-    const overbooking = Math.min(100, Math.max(0, Number(editRecursoVals.overbooking) || 0));
-    const buffer = Math.min(120, Math.max(0, Number(editRecursoVals.buffer) || 0));
     setGuardandoRecurso(true);
     try {
-      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), {
-        capacidad, overbooking_pct: overbooking, buffer_minutos: buffer,
-      });
+      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), { capacidad });
       setEditandoRecurso(null);
       invalidarCache();
     } catch (err) {
@@ -789,22 +785,36 @@ function AdminPanel() {
     setEliminando('');
   };
 
+  // Crear espacio/clase por el backend (POST /recursos): el servidor sanea
+  // y acota todo; el frontend solo pide y muestra.
   const handleAddRecurso = async (e) => {
     e.preventDefault();
     const nombre = (nuevoRecurso.name || '').trim();
     if (!nombre) {
-      await avisar('Ponle un nombre al espacio (ej. Cancha 1).', 'error');
+      await avisar('Ponle un nombre al espacio (ej. Clase Funcional).', 'error');
       return;
     }
     try {
-      await addDoc(collection(db, `negocios/${negocio.id}/recursos`), {
-        name: nombre,
-        tipo: nuevoRecurso.tipo || 'otro',
-        capacidad: Math.min(100, Math.max(1, Number(nuevoRecurso.capacidad) || 1)),
-        created_at: new Date(),
+      const token = await user.getIdToken();
+      const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/recursos`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nombre,
+          tipo: nuevoRecurso.tipo,
+          capacidad: Number(nuevoRecurso.capacidad) || 1,
+          servicio_id: nuevoRecurso.servicio_id || '',
+          emp_id: nuevoRecurso.emp_id || '',
+        }),
       });
-      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1 });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
+        return;
+      }
+      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, servicio_id: '', emp_id: '' });
       invalidarCache();
+      await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
       await avisar('No se pudo guardar el espacio. Intenta de nuevo.', 'error');
     }
@@ -1869,7 +1879,7 @@ function AdminPanel() {
             {/* ESPACIOS RESERVABLES (canchas, boxes...) */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, boxes y espacios</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Si tu negocio reserva espacios (no solo personas), créalos aquí y los clientes los elegirán al agendar.</p>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Crea espacios libres (cancha, box) o clases predefinidas atando qué se dicta y quién la da; los clientes los eligen al agendar.</p>
               <ul className="space-y-3 mb-4">
                 {recursos.length === 0 && (
                   <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
@@ -1883,8 +1893,14 @@ function AdminPanel() {
                       <div className="min-w-0">
                         <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
                         <p className="text-xs font-medium text-gray-500 capitalize">
-                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos${r.overbooking_pct > 0 ? ` (+${r.overbooking_pct}%)` : ''}` : 'uso exclusivo'}{r.buffer_minutos > 0 ? ` · ${r.buffer_minutos} min aseo` : ''}{r.horario ? ' · horario propio' : ''}
+                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
                         </p>
+                        {(r.servicio_id || r.emp_id) && (
+                          <p className="text-xs font-bold text-gray-700 mt-0.5">
+                            {r.servicio_id ? (servicios.find((s) => s.id === r.servicio_id)?.name || 'Servicio') : 'Sin servicio atado'}
+                            {r.emp_id ? ` · con ${(profesionales.find((p) => p.id === r.emp_id)?.name || 'profesional')}` : ''}
+                          </p>
+                        )}
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
@@ -1900,28 +1916,8 @@ function AdminPanel() {
                           <input
                             type="number" min={1} max={100} inputMode="numeric"
                             value={editandoRecurso === r.id ? editRecursoVals.capacidad : (r.capacidad || 1)}
-                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: e.target.value, overbooking: editRecursoVals.overbooking ?? r.overbooking_pct ?? 0, buffer: editRecursoVals.buffer ?? r.buffer_minutos ?? 0 }); }}
+                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: e.target.value }); }}
                             aria-label={`Cupos de ${r.name}`}
-                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
-                          />
-                        </label>
-                        <label className="flex-1 min-w-0">
-                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Extra %</span>
-                          <input
-                            type="number" min={0} max={100} inputMode="numeric"
-                            value={editandoRecurso === r.id ? editRecursoVals.overbooking : (r.overbooking_pct || 0)}
-                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: editRecursoVals.capacidad ?? r.capacidad ?? 1, overbooking: e.target.value, buffer: editRecursoVals.buffer ?? r.buffer_minutos ?? 0 }); }}
-                            aria-label={`Overbooking de ${r.name}`}
-                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
-                          />
-                        </label>
-                        <label className="flex-1 min-w-0">
-                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Aseo (min)</span>
-                          <input
-                            type="number" min={0} max={120} inputMode="numeric"
-                            value={editandoRecurso === r.id ? editRecursoVals.buffer : (r.buffer_minutos || 0)}
-                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: editRecursoVals.capacidad ?? r.capacidad ?? 1, overbooking: editRecursoVals.overbooking ?? r.overbooking_pct ?? 0, buffer: e.target.value }); }}
-                            aria-label={`Minutos de aseo de ${r.name}`}
                             className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
                           />
                         </label>
@@ -1937,8 +1933,8 @@ function AdminPanel() {
                         )}
                       </div>
                     ) : (
-                      <button onClick={() => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: r.capacidad || 1, overbooking: r.overbooking_pct || 0, buffer: r.buffer_minutos || 0 }); }} className="text-[11px] font-bold text-gray-500 underline">
-                        Pasar a grupal (cupos + extra + aseo)
+                      <button onClick={() => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: r.capacidad || 1 }); }} className="text-[11px] font-bold text-gray-500 underline">
+                        Pasar a grupal (cupos)
                       </button>
                     )}
                   </li>
@@ -1982,6 +1978,32 @@ function AdminPanel() {
                     className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   />
                 </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Qué se dicta? (opcional)</span>
+                    <select
+                      value={nuevoRecurso.servicio_id}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, servicio_id: e.target.value })}
+                      aria-label="Servicio que se dicta en el espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    >
+                      <option value="">Sin atar (espacio libre)…</option>
+                      {servicios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Quién lo dicta? (opcional)</span>
+                    <select
+                      value={nuevoRecurso.emp_id}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, emp_id: e.target.value })}
+                      aria-label="Profesional que dicta en el espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    >
+                      <option value="">Sin atar…</option>
+                      {profesionales.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </label>
+                </div>
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio</button>
               </form>
             </div>

@@ -1,5 +1,24 @@
 # Changelog — Turnobot
 
+## 2026-09-20 (clase predefinida: herencia real)
+
+- El atado servicio/profesional del espacio deja de ser decorativo: al reservar un espacio con atados (modo espacio, sin elegir), el backend hereda `servicio_id`/`emp_id` — la cita lleva nombre, duración y precio reales del servicio y queda en la agenda del profesional (evento de Calendar, portal del empleado, "con Ana" en MisCitas).
+- `slots` y `primer-hueco` con `recurso_id` usan la duración del servicio atado (rejilla correcta para clases de 30/90 min, no solo 60).
+- Si el empleado atado no ofrece el servicio atado se rechaza; espacio con instructor pero sin servicio no exige especialidad.
+- Reserva: tarjetas de espacio muestran "Yoga · con Ana · ⏱️ 60 min · $30.000"; confirmación, ICS y Google Calendar usan los datos heredados.
+- Test nuevo `TestRecursoClasePredefinidaHereda` (201 + nombre/duración/profesional heredados).
+- Desplegado: frontend. Backend pendiente (falta el YAML de entorno).
+
+## 2026-09-20 (espacios: creación en backend + clase predefinida)
+
+- Nuevo `POST /api/v1/b/{slug}/recursos` (solo dueño): sanea nombre (1-100), capacidad (1-100), tipo válido y verifica `servicio_id`/`emp_id` si vienen; invalida caché. La creación ya no es `addDoc` directo.
+- `Recurso` cambia de concepto: fuera `overbooking_pct` y `buffer_minutos` (capacidad exacta, sin colchón); dentro `servicio_id` + `emp_id` opcionales -> "clase grupal predefinida" (qué se dicta y quién la da).
+- Disponibilidad y transacción sin buffer: la reserva ocupa [inicio, fin); un turno puede empezar justo cuando termina otro.
+- Admin: form con selects de servicio y profesional (opcionales), lista muestra el atado ("Yoga · con Ana"), edición solo de cupos; fuera Extra % y Aseo.
+- Rules: `recursos` con `allow create: if false` (solo backend), update valida capacidad + atados + horario. Tests actualizados (llenado exacto, horario propio sin buffer).
+- Desplegado: frontend + rules. Backend pendiente de desplegar (falta el YAML de entorno).
+- Datos viejos con `overbooking_pct`/`buffer_minutos` se ignoran (capacidad exacta).
+
 ## 2026-09-18 (flujo Espacio separado del servicio)
 
 - El cliente elige primero el camino: "Reservar un servicio" o "Reservar un espacio" (solo si el negocio tiene espacios).
