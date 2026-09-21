@@ -297,7 +297,13 @@ function PortalEmpleado() {
     setGuardandoPin(false);
   };
 
-  const ahora = Date.now();
+  // Reloj vivo (igual que Admin): pestaña abierta todo el día sin recargar;
+  // los botones por hora (No vino, Mover) aparecen solos al pasar la hora.
+  const [ahora, setAhora] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setAhora(Date.now()), 60000);
+    return () => clearInterval(interval);
+  }, []);
   const zonaNegocio = negocio?.timezone || 'America/Bogota';
 
   // Calcular fechas en la zona horaria del negocio (no en UTC)

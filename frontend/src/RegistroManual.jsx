@@ -5,7 +5,7 @@
 // Props: slug, API_URL, negocio, getHeaders (async -> {Authorization}),
 //        empFijo (empleado: agenda bloqueada a sí mismo), compacto opcional.
 import { useState, useEffect, useRef } from 'react';
-import { formatearFechaLarga } from './fecha.js';
+import { formatearFechaLarga, fechaHoyEnZona } from './fecha.js';
 
 const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
 const duracionAmable = (m) => {
@@ -14,10 +14,6 @@ const duracionAmable = (m) => {
   const h = Math.floor(n / 60);
   const r = n % 60;
   return r === 0 ? `${h} h` : `${h} h ${r} min`;
-};
-const hoyLocal = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const sumarDiasStr = (base, n) => {
   const [y, m, d] = base.split('-').map(Number);
@@ -51,6 +47,9 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const enviandoRef = useRef(false);
 
   const modoEspacio = modo === 'espacio';
+  // Hoy en la zona del negocio (no del dispositivo: si el reloj del equipo
+  // está mal, igual se bloquea el día correcto).
+  const hoy = fechaHoyEnZona(negocio?.timezone);
   const servicioElegido = negocio?.servicios?.find(s => s.id === servicioId);
   const recursoElegido = negocio?.recursos?.find(r => r.id === recursoId);
   const empleadoElegido = negocio?.empleados?.find(e => e.id === (empFijo || empleadoId));
@@ -401,7 +400,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
             </p>
           )}
           <div className="flex gap-2 mb-2" role="group" aria-label="Atajos de día">
-            {[{ id: 'hoy', label: 'Hoy', valor: hoyLocal() }, { id: 'manana', label: 'Mañana', valor: sumarDiasStr(hoyLocal(), 1) }].map((a) => (
+            {[{ id: 'hoy', label: 'Hoy', valor: hoy }, { id: 'manana', label: 'Mañana', valor: sumarDiasStr(hoy, 1) }].map((a) => (
               <button
                 key={a.id}
                 type="button"
@@ -415,8 +414,8 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
             <input
               type="date"
               value={fecha}
-              min={hoyLocal()}
-              max={sumarDiasStr(hoyLocal(), 30)}
+              min={hoy}
+              max={sumarDiasStr(hoy, 30)}
               onChange={(e) => { if (e.target.value) elegirFecha(e.target.value); }}
               aria-label="Elegir otro día"
               className="flex-1 min-h-[44px] p-2 border border-gray-200 rounded-xl text-sm bg-white text-gray-600 focus:border-black focus:outline-none"
