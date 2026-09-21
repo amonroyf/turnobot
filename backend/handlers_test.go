@@ -17,6 +17,8 @@ import (
 
 	firebase "firebase.google.com/go/v4"
 	"cloud.google.com/go/firestore"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 // Tests de handlers contra el emulador de Firestore.
@@ -1406,5 +1408,60 @@ func TestUnLugarPorPersonaYSesion(t *testing.T) {
 	// Otra hora: libre.
 	if c := bookUID("+573002222221", "11:00"); c != http.StatusCreated {
 		t.Fatalf("otra hora code=%d, esperaba 201", c)
+	}
+}
+
+func TestOAuthConSesionYEstadoCalendar(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-oauth")
+	seedTienda(t, ctx, slug)
+
+	// Sin sesión -> 401 (cierra la revinculación abierta).
+	req := httptest.NewRequest(http.MethodGet, "/auth/google/login?negocio_id="+slug+"&emp_id=emp1", nil)
+	rec := httptest.NewRecorder()
+	googleLoginHandler(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("sin sesión code=%d, esperaba 401", rec.Code)
+	}
+	// Token de OTRO empleado -> 401.
+	otroTok := signEmployeeToken(slug, "emp2")
+	req2 := httptest.NewRequest(http.MethodGet, "/auth/google/login?negocio_id="+slug+"&emp_id=emp1&tok="+otroTok, nil)
+	rec2 := httptest.NewRecorder()
+	googleLoginHandler(rec2, req2)
+	if rec2.Code != http.StatusUnauthorized {
+		t.Fatalf("token ajeno code=%d, esperaba 401", rec2.Code)
+	}
+	// Token propio -> redirect a Google (307). Requiere config OAuth (en prod
+	// la pone main; aquí una mínima).
+	googleOauthCfg = &oauth2.Config{
+		ClientID: "test-id", RedirectURL: "http://localhost/cb",
+		Scopes:   []string{"https://www.googleapis.com/auth/calendar"},
+		Endpoint: google.Endpoint,
+	}
+	miTok := signEmployeeToken(slug, "emp1")
+	req3 := httptest.NewRequest(http.MethodGet, "/auth/google/login?negocio_id="+slug+"&emp_id=emp1&tok="+miTok+"&ret=emp", nil)
+	rec3 := httptest.NewRecorder()
+	googleLoginHandler(rec3, req3)
+	if rec3.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("token propio code=%d, esperaba 307", rec3.Code)
+	}
+	if loc := rec3.Header().Get("Location"); loc == "" || !strings.Contains(loc, "accounts.google.com") {
+		t.Fatalf("sin redirect a Google: %q", loc)
+	}
+
+	// Estado calendar sin conectar -> false.
+	req4 := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/employee/emp1/calendar-status", nil)
+	req4.Header.Set("Authorization", "Bearer "+miTok)
+	rec4 := httptest.NewRecorder()
+	employeeCalendarStatusHandler(rec4, req4, slug, "emp1")
+	if rec4.Code != http.StatusOK {
+		t.Fatalf("status code=%d, esperaba 200", rec4.Code)
+	}
+	var out map[string]interface{}
+	_ = json.Unmarshal(rec4.Body.Bytes(), &out)
+	if con, _ := out["conectado"].(bool); con {
+		t.Fatal("conectado=true sin vincular")
 	}
 }

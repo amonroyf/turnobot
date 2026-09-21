@@ -573,6 +573,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Estado Calendar: GET /api/v1/b/{slug}/employee/{empId}/calendar-status
+	// -> {conectado} para mostrarlo en el portal (sin exponer tokens).
+	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "calendar-status" && r.Method == http.MethodGet {
+		employeeCalendarStatusHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Mi clave (autonomía del empleado): POST /api/v1/b/{slug}/employee/{empId}/pin.
 	// Cambia su PIN con su sesión (token de empleado); mismo hash que el dueño.
 	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "pin" && r.Method == http.MethodPost {
@@ -1445,7 +1452,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		}
 	}
 	if req.EmpleadoID != "" {
-		eventID = createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, calendarioNotas, req.ClienteNombre, req.ClienteTelefono, negocioInfo.Direccion)
+		eventID = createCalendarEvent(ctx, slug, req.EmpleadoID, serviceName, duration, eventDateTime, calendarioNotas, req.ClienteNombre, req.ClienteTelefono, negocioInfo.Direccion, clientEmail)
 	}
 
 	// Escritura transaccional: re-verifica el solapamiento DENTRO de la
@@ -3446,7 +3453,9 @@ func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart tim
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
 // El evento lleva todos los detalles de la cita (cliente, teléfono, local,
 // notas) y recordatorios automáticos de 1 día y 1 hora antes.
-func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time, notes, clientName, clientPhone, shopAddress string) string {
+// Con clientEmail, el cliente queda como invitado: Google le manda la
+// invitación al instante y los recordatorios por correo ($0, sin spam).
+func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName string, durationMinutes int, start time.Time, notes, clientName, clientPhone, shopAddress, clientEmail string) string {
 	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
 	if err != nil {
 		log.Printf("Aviso: %v. Generando mock event ID.", err)
@@ -3478,6 +3487,20 @@ func createCalendarEvent(ctx context.Context, negocioID, empID, serviceName stri
 		},
 		Location:  shopAddress,
 		Reminders: remindersConfig(ctx, negocioID),
+	}
+
+	// Invitado: el cliente recibe la invitación y los recordatorios de Google.
+	// SendUpdates solo con invitado (sin él, nada cambia para el profesional).
+	if clientEmail != "" {
+		evt.Attendees = []*calendar.EventAttendee{
+			{Email: clientEmail, DisplayName: clientName},
+		}
+		created, err := svc.Events.Insert(emp.CalendarID, evt).SendUpdates("all").Context(ctx).Do()
+		if err != nil {
+			log.Printf("Error creando evento en Calendar: %v", err)
+			return ""
+		}
+		return created.Id
 	}
 	created, err := svc.Events.Insert(emp.CalendarID, evt).Context(ctx).Do()
 	if err != nil {
@@ -3516,7 +3539,10 @@ func firstLinesSuffix(notes string) string {
 // Google OAuth (Vincular Google Calendar por Empleado)
 // ---------------------------------------------------------------------------
 
-// GET /auth/google/login?negocio_id=barberia-vip&emp_id=emp_alejandro
+// GET /auth/google/login?negocio_id=barberia-vip&emp_id=emp_alejandro&tok=&otok=&ret=
+// Conecta el Google Calendar del empleado. Con sesión obligatoria para que
+// nadie revincule la agenda ajena: tok = sesión del empleado (portal) u otok
+// = sesión del dueño (panel). ret = admin|emp define a dónde volver.
 func googleLoginHandler(w http.ResponseWriter, r *http.Request) {
 	negocioID := r.URL.Query().Get("negocio_id")
 	empID := r.URL.Query().Get("emp_id")
@@ -3526,8 +3552,45 @@ func googleLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Usamos el 'state' para recordar a qué empleado y negocio pertenece este login
-	state := fmt.Sprintf("%s|%s", negocioID, empID)
+	// Autorización: el empleado solo vincula la SUYA; el dueño, las de su local.
+	if tok := r.URL.Query().Get("tok"); tok != "" {
+		ts, te, err := verifyEmployeeToken(tok)
+		if err != nil || ts != negocioID || te != empID {
+			http.Error(w, "Sesión de empleado inválida", http.StatusUnauthorized)
+			return
+		}
+	} else if otok := r.URL.Query().Get("otok"); otok != "" {
+		if firebaseAuth == nil {
+			http.Error(w, "Auth no disponible", http.StatusInternalServerError)
+			return
+		}
+		t, err := firebaseAuth.VerifyIDToken(r.Context(), otok)
+		if err != nil {
+			http.Error(w, "Sesión de dueño inválida", http.StatusUnauthorized)
+			return
+		}
+		doc, err := firestoreClient.Collection("negocios").Doc(negocioID).Get(r.Context())
+		if err != nil {
+			http.Error(w, "Negocio no encontrado", http.StatusNotFound)
+			return
+		}
+		var n Negocio
+		doc.DataTo(&n)
+		if t.UID == "" || t.UID != n.OwnerUID {
+			http.Error(w, "No autorizado", http.StatusUnauthorized)
+			return
+		}
+	} else {
+		http.Error(w, "Falta sesión (tok u otok)", http.StatusUnauthorized)
+		return
+	}
+
+	ret := r.URL.Query().Get("ret")
+	if ret != "emp" {
+		ret = "admin"
+	}
+	// Usamos el 'state' para recordar negocio, empleado y destino.
+	state := fmt.Sprintf("%s|%s|%s", negocioID, empID, ret)
 
 	// AccessTypeOffline pide el refresh_token. ApprovalForce obliga a mostrar la pantalla
 	// de consentimiento para asegurarnos de que Google siempre nos dé el refresh_token.
@@ -3552,13 +3615,18 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Recuperar el negocioID y empID del state
+	// Recuperar el negocioID, empID y destino del state
 	parts := strings.Split(state, "|")
-	if len(parts) != 2 {
-		http.Error(w, "State malformado", http.StatusBadRequest)
-		return
+	if len(parts) != 3 {
+		// Compatibilidad: states viejos "negocio|emp" vuelven al admin.
+		if len(parts) == 2 {
+			parts = append(parts, "admin")
+		} else {
+			http.Error(w, "State malformado", http.StatusBadRequest)
+			return
+		}
 	}
-	negocioID, empID := parts[0], parts[1]
+	negocioID, empID, ret := parts[0], parts[1], parts[2]
 
 	// Intercambiar el código por los tokens (access_token y refresh_token)
 	token, err := googleOauthCfg.Exchange(ctx, code)
@@ -3593,8 +3661,12 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 		frontendURL = "http://localhost:5173"
 	}
 
-	// NUEVO: Asegurarnos de limpiar barras finales y apuntar a la ruta /admin
-	adminURL := strings.TrimRight(frontendURL, "/") + "/admin"
+	// NUEVO: Asegurarnos de limpiar barras finales y volver a donde empezó
+	// (panel del dueño o portal del empleado).
+	destino := strings.TrimRight(frontendURL, "/") + "/admin"
+	if ret == "emp" {
+		destino = strings.TrimRight(frontendURL, "/") + "/employee/" + negocioID
+	}
 
 	// Renderizar pantalla de éxito y redirigir
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -3605,7 +3677,7 @@ func googleCallbackHandler(w http.ResponseWriter, r *http.Request) {
 			<p style="color: gray; font-size: 14px;">Redirigiendo a tu panel...</p>
 			<script>setTimeout(() => window.location.href='%s', 3000)</script>
 		</div>
-	`, adminURL)
+	`, destino)
 	fmt.Fprint(w, html)
 }
 
@@ -3879,6 +3951,26 @@ func verificaTokenEmpleado(r *http.Request, slug, empID string) bool {
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
 	return err == nil && tokenSlug == slug && tokenEmpID == empID
+}
+
+// GET /api/v1/b/{slug}/employee/{empId}/calendar-status -> si el profesional
+// vinculó su Google Calendar (sin exponer ningún token al frontend).
+func employeeCalendarStatusHandler(w http.ResponseWriter, r *http.Request, slug, empID string) {
+	if !verificaTokenEmpleado(r, slug, empID) {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Get(r.Context())
+	if err != nil {
+		http.Error(w, "Profesional no encontrado", http.StatusNotFound)
+		return
+	}
+	var emp Employee
+	doc.DataTo(&emp)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"conectado": emp.CalendarID != "",
+	})
 }
 
 // PUT /api/v1/b/{slug}/employee/{empId}/horario -> el profesional edita sus

@@ -167,7 +167,7 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 			if dur <= 0 {
 				dur = 60
 			}
-			newEvt := createCalendarEvent(bgCtx, slug, b.EmpID, b.ServiceName, dur, b.DateTime, b.Notes, b.ClientName, b.UserPhone, direccion)
+			newEvt := createCalendarEvent(bgCtx, slug, b.EmpID, b.ServiceName, dur, b.DateTime, b.Notes, b.ClientName, b.UserPhone, direccion, b.ClientEmail)
 			if newEvt == "" {
 				log.Printf("Aviso: undo %s restauró la cita pero no el evento de Calendar", citaID)
 				return

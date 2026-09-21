@@ -1752,7 +1752,19 @@ function AdminPanel() {
                       {p.calendar_id ? (
                         <span className="flex-1 text-center py-2.5 bg-green-50 text-green-700 text-[11px] font-black rounded-lg border border-green-100">✓ Google Calendar conectado</span>
                       ) : (
-                        <a href={`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}`} className="flex-1 text-center py-2.5 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm min-h-[44px] flex items-center justify-center">🔗 Conectar Google Calendar</a>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const t = await user.getIdToken();
+                              window.open(`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}&otok=${t}&ret=admin`, '_blank', 'noopener');
+                            } catch {
+                              await avisar('No pudimos abrir la conexión. Intenta de nuevo.', 'error');
+                            }
+                          }}
+                          className="flex-1 text-center py-2.5 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm min-h-[44px] flex items-center justify-center"
+                        >
+                          🔗 Conectar Google Calendar
+                        </button>
                       )}
                       <button onClick={() => setServiciosModal(p)} title="Elegir qué servicios atiende esta persona" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Qué hace</button>
                       <button onClick={() => setHorarioModal(p)} title="Definir días y turnos de trabajo" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
@@ -1788,6 +1800,11 @@ function AdminPanel() {
               {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
                 <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
                   ⚠️ A alguien del equipo le falta horario. Toca <b>🕒 Horario</b> en su tarjeta para definir sus días y turnos; sin eso no recibe reservas.
+                </div>
+              )}
+              {profesionales.length > 0 && profesionales.some((p) => !p.calendar_id) && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
+                  📅 {profesionales.filter((p) => !p.calendar_id).map((p) => p.name).join(', ')} sin Google Calendar: reciben reservas igual, pero sin anti-choque con su agenda personal. Pueden conectarlo ellos mismos desde su portal.
                 </div>
               )}
               <form onSubmit={handleAddProfesional} className="space-y-3 pt-3 border-t border-gray-100">

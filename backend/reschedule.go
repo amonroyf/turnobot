@@ -264,7 +264,7 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 	}
 	nuevoEvento := ""
 	if b.EmpID != "" {
-		nuevoEvento = createCalendarEvent(ctx, slug, b.EmpID, b.ServiceName, dur, nuevo, b.Notes, b.ClientName, b.UserPhone, direccion)
+		nuevoEvento = createCalendarEvent(ctx, slug, b.EmpID, b.ServiceName, dur, nuevo, b.Notes, b.ClientName, b.UserPhone, direccion, b.ClientEmail)
 		if nuevoEvento == "" {
 			log.Printf("Aviso: no se pudo crear el evento nuevo al mover %s", citaID)
 		}

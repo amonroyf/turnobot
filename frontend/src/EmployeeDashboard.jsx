@@ -43,6 +43,20 @@ function PortalEmpleado() {
   const [showHorario, setShowHorario] = useState(false);
   const [showPin, setShowPin] = useState(false);
   const [showRegistro, setShowRegistro] = useState(false);
+  // Estado del Google Calendar propio (anti-choque con agenda personal).
+  const [calendarConectado, setCalendarConectado] = useState(null);
+
+  useEffect(() => {
+    if (!token || !empId) return;
+    fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/calendar-status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.conectado === 'boolean') setCalendarConectado(data.conectado);
+      })
+      .catch(() => {});
+  }, [slug, token, empId]);
   const [pinNuevo, setPinNuevo] = useState('');
   const [guardandoPin, setGuardandoPin] = useState(false);
 
@@ -522,7 +536,20 @@ function PortalEmpleado() {
               🔑 Mi clave
             </button>
           </div>
-          <p className="text-[11px] text-gray-400 font-medium mt-2">Cierra días cuando descanses: dejan de ofrecerse para reservar.</p>
+          <button
+            type="button"
+            onClick={() => {
+              window.open(`${API_URL}/auth/google/login?negocio_id=${slug}&emp_id=${empId}&tok=${token}&ret=emp`, '_blank', 'noopener');
+            }}
+            className={`mt-2 w-full min-h-[48px] py-2.5 font-bold rounded-xl text-xs active:scale-95 transition-transform flex items-center justify-center gap-2 ${
+              calendarConectado
+                ? 'bg-green-50 border border-green-200 text-green-700'
+                : 'bg-blue-600 text-white'
+            }`}
+          >
+            {calendarConectado ? '✓ Mi Calendar conectado' : '📅 Conectar mi Google Calendar'}
+          </button>
+          <p className="text-[11px] text-gray-400 font-medium mt-2">Cierra días cuando descanses: dejan de ofrecerse para reservar. Con tu Calendar conectado evitamos choques con tus citas personales.</p>
         </div>
 
         {/* Registrar cliente sin cita previa (solo tu agenda) */}
