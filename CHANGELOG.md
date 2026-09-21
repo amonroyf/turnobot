@@ -1,5 +1,13 @@
 # Changelog — Turnobot
 
+## 2026-09-21 (espacios simples: fuera servicio/empleado, dentro info libre)
+
+- `Recurso` vuelve a espacio simple: fuera `servicio_id`/`emp_id`, dentro `descripcion` libre (máx 500: reglas, dotación, ubicación).
+- Fuera herencia en `/book` (genérico "Reserva de X", 60 min, $0), duración atada en slots y descuento de instructor en rejilla.
+- Admin: crear pide info libre (no servicio/profesor); lista la muestra. Reserva y registro manual: tarjetas con tipo+cupos+descripcion.
+- Rules sin atados (+descripcion ≤500). Tests de atados removidos. Suite: 38 PASS.
+- Desplegado: backend + frontend + rules.
+
 ## 2026-09-20 (registro manual: dueño y empleado anotan citas)
 
 - `POST /book` con `origen: "panel"`: dueño agenda por cualquiera; empleado solo su agenda (403 `solo_propia_agenda` si cruza). Sin UID (la cita es del anotado). Mismas reglas: topes, antelación, disponibilidad, transacción.

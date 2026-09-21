@@ -163,7 +163,8 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		return
 	}
 
-	// Anti-spam: si cambia de día, el día nuevo debe respetar el tope.
+	// Anti-spam: si cambia de día, el día nuevo debe respetar el tope
+	// (por teléfono y por cuenta, igual que al reservar).
 	mismoDia := nuevo.In(loc).Format("2006-01-02") == b.DateTime.In(loc).Format("2006-01-02")
 	if !mismoDia && hasBookingOnDate(ctx, slug, b.UserPhone, nuevo) {
 		w.Header().Set("Content-Type", "application/json")
@@ -172,6 +173,16 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 			"success": false,
 			"error":   "max_per_day",
 			"message": "Ya tienes el máximo de reservas ese día con este número. Escríbenos para turnos adicionales.",
+		})
+		return
+	}
+	if !mismoDia && b.ClientUID != "" && hasBookingOnDateUID(ctx, slug, b.ClientUID, nuevo) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "max_per_day",
+			"message": "Ya tienes el máximo de reservas ese día con tu cuenta. Escríbenos para turnos adicionales.",
 		})
 		return
 	}

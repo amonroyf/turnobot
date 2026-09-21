@@ -24,6 +24,11 @@ const sumarDiasStr = (base, n) => {
   const f = new Date(y, m - 1, d + n);
   return `${f.getFullYear()}-${String(f.getMonth() + 1).padStart(2, '0')}-${String(f.getDate()).padStart(2, '0')}`;
 };
+// Icono por tipo de espacio (igual que la reserva del cliente).
+const iconoEspacio = (tipo) => (
+  tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🔧' : tipo === 'consultorio' ? '🩺'
+  : tipo === 'sala' ? '🎶' : tipo === 'camilla' ? '💆' : tipo === 'clase' ? '🧘' : '📍'
+);
 
 export default function RegistroManual({ slug, API_URL, negocio, getHeaders, empFijo, onRegistrada }) {
   const hayRecursos = (negocio?.recursos || []).length > 0;
@@ -41,6 +46,9 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [exito, setExito] = useState(null);
+  // Primer hueco (igual que la reserva del cliente).
+  const [buscandoHueco, setBuscandoHueco] = useState(false);
+  const [primerHueco, setPrimerHueco] = useState(null);
   const enviandoRef = useRef(false);
 
   const modoEspacio = modo === 'espacio';
@@ -65,25 +73,25 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
 
   // Orientación: pasos 1 Qué → 2 Quién/Dónde → 3 Cuándo → 4 Cliente.
   const pasoActual = !listoParaDias ? (modoEspacio ? (!recursoId ? 1 : 2) : (!servicioId ? 1 : 2)) : (!hora ? 3 : 4);
+  const etiquetasPasos = modoEspacio ? ['Qué', 'Dónde', 'Cuándo', 'Cliente'] : ['Qué', 'Quién', 'Cuándo', 'Cliente'];
   // Reconocimiento > recuerdo: resumen vivo de lo elegido.
   const textoResumen = [
-    servicioElegido?.name || recursoElegido?.name || null,
+    servicioElegido?.name || (recursoElegido ? (modoEspacio ? `Reserva de ${recursoElegido.name}` : recursoElegido.name) : null),
     empleadoElegido && !modoEspacio ? `con ${empleadoElegido.name}` : null,
-    recursoElegido ? `en ${recursoElegido.name}` : null,
     fecha ? `${formatearFechaLarga(fecha)}${hora ? ` a las ${hora}` : ''}` : null,
   ].filter(Boolean).join(' · ');
 
   const fetchSlots = async (f) => {
     setSlots([]);
     setHora('');
+    setPrimerHueco(null);
     if (!f || !listoParaDias) return;
     setLoading(true);
     setError('');
     try {
       let url;
       if (modoEspacio) {
-        const serv = recursoElegido?.servicio_id || '';
-        url = `${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&servicio_id=${serv}&fecha=${f}&cupos=${cupos}`;
+        url = `${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&fecha=${f}&cupos=${cupos}`;
       } else {
         url = `${API_URL}/api/v1/b/${slug}/slots?emp_id=${empFijo || empleadoId}&servicio_id=${servicioId}&fecha=${f}`;
       }
@@ -99,8 +107,41 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
 
   const elegirFecha = (f) => {
     setFecha(f);
+    setPrimerHueco(null);
     fetchSlots(f);
   };
+
+  // Primer hueco disponible (igual que la reserva): lo deja seleccionado.
+  const buscarPrimerHueco = async () => {
+    if (!listoParaDias) return;
+    setBuscandoHueco(true);
+    setError('');
+    try {
+      let url;
+      if (modoEspacio) {
+        url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?recurso_id=${recursoId}&cupos=${cupos}`;
+      } else {
+        url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${servicioId}&emp_id=${empFijo || empleadoId}`;
+      }
+      const res = await fetch(url);
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.fecha || !data?.hora) {
+        setPrimerHueco(null);
+        setError('No encontramos huecos próximos. Elige el día manual.');
+        return;
+      }
+      setPrimerHueco(data);
+      setFecha(data.fecha);
+      await fetchSlots(data.fecha);
+      setHora(data.hora);
+    } catch {
+      setError('No pudimos buscar el primer hueco.');
+    }
+    setBuscandoHueco(false);
+  };
+
+  // Duración del turno para la nota (servicio elegido; espacio: 60 fijos).
+  const duracionTurno = !modoEspacio ? (servicioElegido?.duration_minutes || 60) : 60;
 
   const confirmar = async (e) => {
     e.preventDefault();
@@ -115,8 +156,8 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     try {
       const headers = { 'Content-Type': 'application/json', ...(await getHeaders?.()) };
       const payload = {
-        servicioId: modoEspacio ? (recursoElegido?.servicio_id || '') : servicioId,
-        empleadoId: modoEspacio ? (recursoElegido?.emp_id || '') : (empFijo || empleadoId),
+        servicioId: modoEspacio ? '' : servicioId,
+        empleadoId: modoEspacio ? '' : (empFijo || empleadoId),
         recursoId: recursoId || '',
         cupos: recursoId ? Math.max(1, Number(cupos) || 1) : 1,
         fecha, hora,
@@ -203,7 +244,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     <form onSubmit={confirmar} className="space-y-4">
       {/* Orientación: en qué paso va */}
       <ol className="flex items-center gap-1" aria-label="Progreso del registro">
-        {['Qué', 'Quién', 'Cuándo', 'Cliente'].map((label, i) => {
+        {etiquetasPasos.map((label, i) => {
           const n = i + 1;
           const activo = pasoActual === n;
           const listo = pasoActual > n;
@@ -242,7 +283,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         </div>
       )}
 
-      {/* Servicio (con buscador si hay muchos: ley de Hick) */}
+      {/* Servicio: tarjetas como la reserva del cliente */}
       {!modoEspacio && (negocio?.servicios || []).length > 6 && (
         <input
           type="search"
@@ -254,15 +295,33 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         />
       )}
       {!modoEspacio && (
-        <label className="block">
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. Servicio</span>
-          <select value={servicioId} onChange={(e) => { setServicioId(e.target.value); setFecha(''); setSlots([]); setHora(''); }} required className={inputCls} aria-label="Servicio">
-            <option value="">Elige…</option>
-            {serviciosFiltrados.map((s) => (
-              <option key={s.id} value={s.id}>{s.name} · {duracionAmable(s.duration_minutes)} · {formatDinero(s.price)}</option>
-            ))}
-          </select>
-        </label>
+        <div>
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿Qué servicio?</span>
+          <div className="grid grid-cols-1 gap-2" role="radiogroup" aria-label="Servicios">
+            {serviciosFiltrados.map((s) => {
+              const activo = servicioId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={activo}
+                  aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price)}`}
+                  onClick={() => { setServicioId(activo ? '' : s.id); setFecha(''); setSlots([]); setHora(''); }}
+                  className={`p-3 border rounded-2xl text-left active:scale-95 transition-all shadow-2xs ${activo ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800'}`}
+                >
+                  <span className="block text-sm font-bold">{s.name}</span>
+                  <span className={`block text-[11px] font-semibold mt-0.5 ${activo ? 'opacity-80' : 'text-gray-500'}`}>
+                    ⏱️ {duracionAmable(s.duration_minutes)} · {formatDinero(s.price)}
+                  </span>
+                </button>
+              );
+            })}
+            {serviciosFiltrados.length === 0 && (
+              <p className="text-xs text-gray-500 font-medium text-center py-3 bg-gray-50 rounded-xl">Sin servicios con ese nombre.</p>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Profesional (fijo si es empleado) */}
@@ -279,15 +338,51 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         <p className="text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">👤 En tu agenda ({empleadoElegido.name})</p>
       )}
 
-      {/* Espacio */}
+      {/* Espacio: tarjetas como la reserva del cliente */}
       {modoEspacio && (
-        <label className="block">
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">2. Espacio</span>
-          <select value={recursoId} onChange={(e) => { setRecursoId(e.target.value); setCupos(1); setFecha(''); setSlots([]); setHora(''); }} required className={inputCls} aria-label="Espacio">
-            <option value="">Elige…</option>
-            {(negocio?.recursos || []).map((r) => <option key={r.id} value={r.id}>{r.name} ({r.tipo})</option>)}
-          </select>
-        </label>
+        <div>
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿Qué espacio?</span>
+          <p className="text-[11px] text-gray-500 font-medium mb-2">Si el plan necesita un espacio concreto (cancha, box), elige cuál.</p>
+          <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Espacios disponibles">
+            {(negocio?.recursos || []).map((r) => {
+              const activo = recursoId === r.id;
+              return (
+                <button
+                  key={r.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={activo}
+                  onClick={() => {
+                    const nuevo = activo ? '' : r.id;
+                    setRecursoId(nuevo);
+                    setCupos(1);
+                    setFecha('');
+                    setSlots([]);
+                    setHora('');
+                  }}
+                  className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${activo ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'}`}
+                >
+                  <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border text-base ${activo ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'}`} aria-hidden="true">
+                    {iconoEspacio(r.tipo)}
+                  </span>
+                  <span className="leading-tight text-left min-w-0">
+                    <span className="block truncate">{r.name}</span>
+                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''}</span>
+                    {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {recursoElegido && (
+            <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
+              ✅ Espacio: <strong>{recursoElegido.name}</strong>
+              {(recursoElegido.capacidad || 1) > 1
+                ? ` (para ${recursoElegido.capacidad} personas — dime cuántos van).`
+                : '. Sigue a elegir el día 👇.'}
+            </p>
+          )}
+        </div>
       )}
       {modoEspacio && recursoElegido && (recursoElegido.capacidad || 1) > 1 && (
         <label className="block">
@@ -311,7 +406,21 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       {/* Día: atajos Hoy/Mañana (1 toque) + calendario para el resto */}
       {listoParaDias && (
         <div>
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">3. Día y hora</span>
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">3. ¿Qué día quieres ir?</span>
+          <p className="text-[11px] text-gray-500 font-medium mb-2">⏱️ Los turnos son de {duracionAmable(duracionTurno)}. El pago se coordina con el local.</p>
+          <button
+            type="button"
+            onClick={buscarPrimerHueco}
+            disabled={buscandoHueco}
+            className="w-full min-h-[44px] py-2.5 mb-2 bg-blue-50 border border-blue-200 text-blue-800 font-bold rounded-xl text-xs active:scale-95 transition-transform disabled:opacity-50"
+          >
+            {buscandoHueco ? 'Buscando…' : '🔎 Buscar primer hueco disponible'}
+          </button>
+          {primerHueco && (
+            <p aria-live="polite" className="text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-2">
+              Primer hueco: {formatearFechaLarga(primerHueco.fecha)} a las {primerHueco.hora} — ya lo seleccionamos abajo 👇
+            </p>
+          )}
           <div className="flex gap-2 mb-2" role="group" aria-label="Atajos de día">
             {[{ id: 'hoy', label: 'Hoy', valor: hoyLocal() }, { id: 'manana', label: 'Mañana', valor: sumarDiasStr(hoyLocal(), 1) }].map((a) => (
               <button

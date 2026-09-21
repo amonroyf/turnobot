@@ -972,52 +972,6 @@ func TestBookRecursoSinServicio(t *testing.T) {
 	}
 }
 
-func TestRecursoClasePredefinidaHereda(t *testing.T) {
-
-	testFirestoreClient(t)
-	ctx := context.Background()
-	slug := slugUnico("test-rec5")
-	seedTienda(t, ctx, slug)
-	// Clase predefinida: Yoga es svc1 (Corte/30 min) dictada por emp1 (Ana).
-	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
-		"name": "Sala Yoga", "tipo": "clase", "capacidad": 10,
-		"servicio_id": "svc1", "emp_id": "emp1",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Modo espacio sin servicio ni empleado: hereda del espacio.
-	body, _ := json.Marshal(map[string]interface{}{
-		"recursoId": "rec1",
-		"fecha":     mañanaStr(), "hora": "10:00",
-		"clienteNombre": "X", "clienteTelefono": "+573005555553",
-	})
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	authClienteTest(t, req)
-	rec := httptest.NewRecorder()
-	bookHandler(rec, req, slug)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
-	}
-	ids := reservaIDsPorTelefono(t, ctx, slug, "+573005555553")
-	if len(ids) != 1 {
-		t.Fatalf("reservas=%d", len(ids))
-	}
-	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
-	var b Booking
-	doc.DataTo(&b)
-	if b.ServiceName != "Corte" {
-		t.Fatalf("service=%q, esperaba el atado (Corte)", b.ServiceName)
-	}
-	if b.DurationMinute != 30 {
-		t.Fatalf("dur=%d, esperaba 30 del servicio atado", b.DurationMinute)
-	}
-	if b.EmpID != "emp1" {
-		t.Fatalf("emp=%q, esperaba emp1 (Ana atada)", b.EmpID)
-	}
-}
 
 func TestEmpleadoAutonomoHorarioYPin(t *testing.T) {
 	testFirestoreClient(t)
@@ -1361,3 +1315,53 @@ func TestBookPanelDuenoYEmpleado(t *testing.T) {
 		t.Fatalf("panel empleado ajeno code=%d, esperaba 403", c)
 	}
 }
+
+func TestMoverRespetaTopeUID(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-movetope")
+	seedTienda(t, ctx, slug)
+	fechaA := time.Now().Add(48 * time.Hour).Format("2006-01-02")
+	fechaB := time.Now().Add(72 * time.Hour).Format("2006-01-02")
+	tok := tokenClienteTest(t, "movetope@test.com")
+
+	bookUID := func(phone, fecha, hora string) int {
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "empleadoId": "emp1",
+			"fecha": fecha, "hora": hora,
+			"clienteNombre": "X", "clienteTelefono": phone,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+	// Llena el tope (3) el día A con números rotados.
+	for i, h := range []string{"10:00", "11:00", "12:00"} {
+		if c := bookUID(fmt.Sprintf("+57300111001%d", i), fechaA, h); c != http.StatusCreated {
+			t.Fatalf("llenado %d code=%d, esperaba 201", i+1, c)
+		}
+	}
+	// Una el día B.
+	if c := bookUID("+573001110019", fechaB, "10:00"); c != http.StatusCreated {
+		t.Fatalf("día B code=%d, esperaba 201", c)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573001110019")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	// Moverla al día A (lleno por UID) -> 409.
+	mr := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+ids[0]+"/reschedule",
+		bytes.NewReader([]byte(`{"fecha":"`+fechaA+`","hora":"13:00"}`)))
+	mr.Header.Set("Content-Type", "application/json")
+	mr.Header.Set("Authorization", "Bearer "+tok)
+	mrec := httptest.NewRecorder()
+	rescheduleCitaHandler(mrec, mr, slug, ids[0])
+	if mrec.Code != http.StatusConflict {
+		t.Fatalf("mover a día lleno code=%d body=%s, esperaba 409", mrec.Code, mrec.Body.String())
+	}
+}
+

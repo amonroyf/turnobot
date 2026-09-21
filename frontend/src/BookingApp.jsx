@@ -368,12 +368,6 @@ export default function BookingApp() {
 
   const hayRecursos = (negocio?.recursos || []).length > 0;
   const recursoElegido = negocio?.recursos?.find(r => r.id === booking.recursoId);
-  // Clase predefinida: servicio y profesional atados al espacio (el backend
-  // los hereda al reservar: nombre, duración y precio reales).
-  const recursoServAtado = recursoElegido?.servicio_id
-    ? negocio?.servicios?.find(s => s.id === recursoElegido.servicio_id) : null;
-  const recursoEmpAtado = recursoElegido?.emp_id
-    ? negocio?.empleados?.find(e => e.id === recursoElegido.emp_id) : null;
   // En modo espacio no hay servicio: el nombre se deriva del espacio.
   const servicioNombre = servicioElegido?.name || (recursoElegido ? `Reserva de ${recursoElegido.name}` : '');
   const pasos = modo === 'espacio' ? PASOS_ESPACIO : PASOS;
@@ -737,11 +731,11 @@ export default function BookingApp() {
   const descargarMiICS = () => {
     descargarICS({
       slug,
-      servicio: recursoServAtado?.name || servicioNombre,
-      profesional: empleadoElegido?.name || recursoEmpAtado?.name || '',
+      servicio: servicioNombre,
+      profesional: empleadoElegido?.name || '',
       fecha: booking.fecha,
       hora: booking.hora,
-      duracionMin: servicioElegido?.duration_minutes || recursoServAtado?.duration_minutes || 60,
+      duracionMin: servicioElegido?.duration_minutes || 60,
       direccion: negocio?.direccion || '',
       timezone: negocio?.timezone || 'America/Bogota',
       notas: booking.clienteNotas || '',
@@ -1201,10 +1195,6 @@ export default function BookingApp() {
                         <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Espacios disponibles">
                           {negocio.recursos.map((r) => {
                             const isActive = booking.recursoId === r.id;
-                            // Clase predefinida: muestra qué se dicta, quién,
-                            // cuánto dura y cuánto cuesta (se hereda al reservar).
-                            const servAtado = r.servicio_id ? negocio.servicios?.find(s => s.id === r.servicio_id) : null;
-                            const empAtado = r.emp_id ? negocio.empleados?.find(e => e.id === r.emp_id) : null;
                             return (
                               <button
                                 key={r.id}
@@ -1231,14 +1221,8 @@ export default function BookingApp() {
                                 </span>
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block truncate">{r.name}</span>
-                                  {servAtado ? (
-                                    <>
-                                      <span className="block text-[11px] font-bold opacity-90 truncate">{servAtado.name}{empAtado ? ` · con ${empAtado.name}` : ''}</span>
-                                      <span className="block text-[11px] font-semibold opacity-70">⏱️ {duracionAmable(servAtado.duration_minutes)} · {formatDinero(servAtado.price)}</span>
-                                    </>
-                                  ) : (
-                                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{empAtado ? ` · con ${empAtado.name}` : ''}</span>
-                                  )}
+                                  <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''}</span>
+                                  {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                                 </span>
                               </button>
                             );
@@ -1247,7 +1231,6 @@ export default function BookingApp() {
                         {recursoElegido && (
                           <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
                             ✅ Espacio: <strong>{recursoElegido.name}</strong>
-                            {recursoServAtado ? ` — ${recursoServAtado.name}${recursoEmpAtado ? ` con ${recursoEmpAtado.name}` : ''} (${duracionAmable(recursoServAtado.duration_minutes)}, ${formatDinero(recursoServAtado.price)})` : ''}
                             {(recursoElegido.capacidad || 1) > 1
                               ? ` (para ${recursoElegido.capacidad} personas — dime cuántos van).`
                               : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
@@ -1547,8 +1530,8 @@ export default function BookingApp() {
                       <h2 className="font-bold text-gray-800 text-sm">{modoEspacio ? '4. Tus datos para confirmar' : '5. Tus datos para confirmar'}</h2>
 
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>📋 {modoEspacio ? 'Reserva' : 'Servicio'}: <strong>{recursoServAtado?.name || servicioNombre}</strong>{(servicioElegido || recursoServAtado) ? ` (${formatDinero((servicioElegido || recursoServAtado).price)})` : ''}</p>
-                        <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : (empleadoElegido || recursoEmpAtado)?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
+                        <p>📋 {modoEspacio ? 'Reserva' : 'Servicio'}: <strong>{servicioNombre}</strong>{servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : ''}</p>
+                        <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
                         {recursoElegido && (
                           <p>📍 Espacio: <strong>{recursoElegido.name}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</strong></p>
                         )}
@@ -1732,11 +1715,11 @@ export default function BookingApp() {
                     <div className="space-y-3 pt-2">
                       <a
                         href={generarEnlaceGoogleCalendar({
-                          servicio: recursoServAtado?.name || servicioNombre,
-                          profesional: empleadoElegido?.name || recursoEmpAtado?.name || '',
+                          servicio: servicioNombre,
+                          profesional: empleadoElegido?.name || '',
                           fecha: booking.fecha,
                           hora: booking.hora,
-                          duracionMin: servicioElegido?.duration_minutes || recursoServAtado?.duration_minutes || 60,
+                          duracionMin: servicioElegido?.duration_minutes || 60,
                           direccion: negocio?.direccion || '',
                           timezone: negocio?.timezone || 'America/Bogota',
                           notas: booking.clienteNotas || ''

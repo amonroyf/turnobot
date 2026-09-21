@@ -250,18 +250,16 @@ type Employee struct {
 }
 
 // Recurso reservable de un negocio (cancha, box, camilla, consultorio,
-// silla...). Capacidad = cupos por intervalo (1 = exclusivo). Un recurso
-// puede ser una "clase grupal predefinida": ServicioID dice qué se dicta y
-// EmpID quién la da (ej. Yoga con Ana). Horario propio opcional (si no,
-// jornada del negocio).
+// silla...). Espacio simple: capacidad = cupos por intervalo (1 = exclusivo),
+// descripcion = info libre del admin (reglas, dotación, ubicación).
+// Horario propio opcional (si no, jornada del negocio).
 type Recurso struct {
-	ID         string          `json:"id"`
-	Name       string          `firestore:"name" json:"name"`
-	Tipo       string          `firestore:"tipo" json:"tipo"`
-	Capacidad  int             `firestore:"capacidad" json:"capacidad"`
-	ServicioID string          `firestore:"servicio_id" json:"servicio_id,omitempty"`
-	EmpID      string          `firestore:"emp_id" json:"emp_id,omitempty"`
-	Horario    *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
+	ID          string          `json:"id"`
+	Name        string          `firestore:"name" json:"name"`
+	Tipo        string          `firestore:"tipo" json:"tipo"`
+	Capacidad   int             `firestore:"capacidad" json:"capacidad"`
+	Descripcion string          `firestore:"descripcion" json:"descripcion,omitempty"`
+	Horario     *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
 }
 
 // capacidadEfectiva es la capacidad exacta (sin overbooking).
@@ -693,8 +691,6 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Agrega la lectura del servicio para calcular la rejilla según su duración
 	// real (si el servicio no existe se usa el fallback de 60 min para previsualizar).
-	// Clase predefinida: si el recurso ata un servicio y no se pidió otro, la
-	// rejilla usa la duración de ese servicio.
 	// Mover cita del empleado: sin servicio se acepta `duracion` explícita
 	// (15-480) para armar la rejilla con la duración real de la cita.
 	_, duration, _, _ := resolveService(r.Context(), slug, servicioID)
@@ -704,11 +700,6 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 15 && n <= 480 {
 				duration = n
 			}
-		}
-	}
-	if servicioID == "" && recursoID != "" {
-		if rec, ok := resolveRecurso(r.Context(), slug, recursoID); ok && rec.ServicioID != "" {
-			_, duration, _, _ = resolveService(r.Context(), slug, rec.ServicioID)
 		}
 	}
 
@@ -836,11 +827,6 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 			if _, err := fmt.Sscanf(q, "%d", &n); err == nil && n >= 15 && n <= 480 {
 				duration = n
 			}
-		}
-	}
-	if servicioID == "" && recursoID != "" {
-		if rec, ok := resolveRecurso(ctx, slug, recursoID); ok && rec.ServicioID != "" {
-			_, duration, _, _ = resolveService(ctx, slug, rec.ServicioID)
 		}
 	}
 
@@ -1297,31 +1283,9 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			})
 			return
 		}
-		// Clase predefinida: el espacio ata qué se dicta y quién lo da. Si el
-		// cliente no eligió servicio/profesional (modo espacio), se heredan
-		// del espacio: la reserva lleva nombre, duración y precio reales y
-		// queda en la agenda del profesional (estándar Mindbody/Vagaro).
-		if req.ServicioID == "" && recurso.ServicioID != "" {
-			req.ServicioID = recurso.ServicioID
-		}
-		if req.EmpleadoID == "" && recurso.EmpID != "" {
-			req.EmpleadoID = recurso.EmpID
-		}
-		if req.ServicioID != "" && serviceName == "" {
-			var found bool
-			serviceName, duration, precioServicio, found = resolveService(ctx, slug, req.ServicioID)
-			if !found {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"success": false,
-					"error":   "servicio_no_encontrado",
-					"message": "El servicio de este espacio ya no existe. Por favor elige otro.",
-				})
-				return
-			}
-		}
-		// Modo "reservar espacio" sin servicio: nombre genérico del espacio.
+		// Modo "reservar espacio" sin servicio: nombre genérico del espacio
+		// (60 min, precio 0). El espacio es simple: sin servicio ni
+		// profesional atados.
 		if serviceName == "" {
 			serviceName = "Reserva de " + recurso.Name
 		}
@@ -1461,7 +1425,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"success": false,
 			"error":   "slot_taken",
-			"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
+			"message": "Ese horario ya no está libre (se ocupó o el profesional quedó asignado a otra cita). Elige otro.",
 		})
 		return
 	}
@@ -1627,7 +1591,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
 				"error":   "slot_taken",
-				"message": "El horario que elegiste acaba de ser reservado por alguien más. Por favor elige otro.",
+				"message": "Ese horario ya no está libre (se ocupó o el profesional quedó asignado a otra cita). Elige otro.",
 			})
 			return
 		}
@@ -2363,20 +2327,19 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	})
 }
 
-// POST /api/v1/b/{slug}/recursos -> crea un espacio/clase (solo dueño).
+// POST /api/v1/b/{slug}/recursos -> crea un espacio (solo dueño).
 // Sanea y acota todo en el servidor: nombre 1-100, capacidad 1-100, tipo
-// válido. servicio_id/emp_id opcionales (se verifican si vienen).
+// válido, descripción libre máx 500 (info del espacio, sin atados).
 func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	if !isOwnerRequest(r, slug) {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
 		return
 	}
 	var req struct {
-		Name       string `json:"name"`
-		Tipo       string `json:"tipo"`
-		Capacidad  int    `json:"capacidad"`
-		ServicioID string `json:"servicio_id"`
-		EmpID      string `json:"emp_id"`
+		Name        string `json:"name"`
+		Tipo        string `json:"tipo"`
+		Capacidad   int    `json:"capacidad"`
+		Descripcion string `json:"descripcion"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -2402,30 +2365,17 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	default:
 		tipo = "otro"
 	}
+	descripcion := strings.TrimSpace(req.Descripcion)
+	if r := []rune(descripcion); len(r) > 500 {
+		descripcion = string(r[:500])
+	}
 
 	ctx := r.Context()
-	// Si atan servicio/empleado, deben existir en el negocio.
-	servicioID := strings.TrimSpace(req.ServicioID)
-	if servicioID != "" {
-		if _, _, _, found := resolveService(ctx, slug, servicioID); !found {
-			http.Error(w, "Servicio no encontrado", http.StatusBadRequest)
-			return
-		}
-	}
-	empID := strings.TrimSpace(req.EmpID)
-	if empID != "" {
-		if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(empID).Get(ctx); err != nil {
-			http.Error(w, "Profesional no encontrado", http.StatusBadRequest)
-			return
-		}
-	}
-
 	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, map[string]interface{}{
 		"name":        name,
 		"tipo":        tipo,
 		"capacidad":   capacidad,
-		"servicio_id": servicioID,
-		"emp_id":      empID,
+		"descripcion": descripcion,
 		"created_at":  time.Now(),
 	})
 	if err != nil {

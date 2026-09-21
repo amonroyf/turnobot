@@ -230,7 +230,7 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, servicio_id: '', emp_id: '' });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '' });
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -586,8 +586,7 @@ function AdminPanel() {
           name: nombre,
           tipo: nuevoRecurso.tipo,
           capacidad: Number(nuevoRecurso.capacidad) || 1,
-          servicio_id: nuevoRecurso.servicio_id || '',
-          emp_id: nuevoRecurso.emp_id || '',
+          descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
         }),
       });
       if (!res.ok) {
@@ -595,7 +594,7 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, servicio_id: '', emp_id: '' });
+      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '' });
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
@@ -1686,7 +1685,7 @@ function AdminPanel() {
             {/* ESPACIOS RESERVABLES (canchas, boxes...) */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, boxes y espacios</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Crea espacios libres (cancha, box) o clases predefinidas atando qué se dicta y quién la da; los clientes los eligen al agendar.</p>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Si tu negocio reserva espacios (no solo personas), créalos aquí y los clientes los elegirán al agendar.</p>
               <ul className="space-y-3 mb-4">
                 {recursos.length === 0 && (
                   <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
@@ -1702,11 +1701,8 @@ function AdminPanel() {
                         <p className="text-xs font-medium text-gray-500 capitalize">
                           {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
                         </p>
-                        {(r.servicio_id || r.emp_id) && (
-                          <p className="text-xs font-bold text-gray-700 mt-0.5">
-                            {r.servicio_id ? (servicios.find((s) => s.id === r.servicio_id)?.name || 'Servicio') : 'Sin servicio atado'}
-                            {r.emp_id ? ` · con ${(profesionales.find((p) => p.id === r.emp_id)?.name || 'profesional')}` : ''}
-                          </p>
+                        {r.descripcion && (
+                          <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
                         )}
                       </div>
                       <div className="flex gap-1 shrink-0">
@@ -1785,32 +1781,16 @@ function AdminPanel() {
                     className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   />
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Qué se dicta? (opcional)</span>
-                    <select
-                      value={nuevoRecurso.servicio_id}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, servicio_id: e.target.value })}
-                      aria-label="Servicio que se dicta en el espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    >
-                      <option value="">Sin atar (espacio libre)…</option>
-                      {servicios.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Quién lo dicta? (opcional)</span>
-                    <select
-                      value={nuevoRecurso.emp_id}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, emp_id: e.target.value })}
-                      aria-label="Profesional que dicta en el espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    >
-                      <option value="">Sin atar…</option>
-                      {profesionales.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </label>
-                </div>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
+                  <textarea
+                    rows={2} maxLength={500} placeholder="Ej. Cancha sintética techada, trae zapatos de goma…"
+                    value={nuevoRecurso.descripcion}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, descripcion: e.target.value })}
+                    aria-label="Información del espacio nuevo"
+                    className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio</button>
               </form>
             </div>

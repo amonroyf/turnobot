@@ -45,20 +45,16 @@ service cloud.firestore {
              isValidHorarioSemanal(request.resource.data.horario);
     }
 
-    // Un recurso: capacidad sana (1-100), servicio/empleado atados como
-    // texto corto opcional y horario con la misma forma que el de empleados.
-    // (Sin overbooking ni buffer: la capacidad es exacta.)
+    // Un recurso: capacidad sana (1-100), descripción libre (máx 500) y
+    // horario con la misma forma que el de empleados. Espacio simple.
     function politicasRecursoValidas() {
       return (!('capacidad' in request.resource.data) ||
               (request.resource.data.capacidad is number &&
                request.resource.data.capacidad >= 1 &&
                request.resource.data.capacidad <= 100)) &&
-             (!('servicio_id' in request.resource.data) ||
-              (request.resource.data.servicio_id is string &&
-               request.resource.data.servicio_id.size() <= 100)) &&
-             (!('emp_id' in request.resource.data) ||
-              (request.resource.data.emp_id is string &&
-               request.resource.data.emp_id.size() <= 100)) &&
+             (!('descripcion' in request.resource.data) ||
+              (request.resource.data.descripcion is string &&
+               request.resource.data.descripcion.size() <= 500)) &&
              (!('horario' in request.resource.data) ||
               request.resource.data.horario == null ||
               isValidHorarioSemanal(request.resource.data.horario));
