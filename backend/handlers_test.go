@@ -1279,3 +1279,85 @@ func TestBookDuenoConSesionGuardaUID(t *testing.T) {
 		t.Fatalf("client_uid=%q, esperaba el del dueño %q (MisCitas lo necesita)", b.ClientUID, uid)
 	}
 }
+
+func TestBookPanelDuenoYEmpleado(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-panel")
+	seedTienda(t, ctx, slug)
+	fecha := mañanaStr()
+
+	panelBook := func(auth, body map[string]interface{}) int {
+		if body == nil {
+			body = map[string]interface{}{}
+		}
+		b, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(b))
+		req.Header.Set("Content-Type", "application/json")
+		if tok, ok := auth["token"].(string); ok {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+	base := func() map[string]interface{} {
+		return map[string]interface{}{
+			"servicioId": "svc1", "empleadoId": "emp1",
+			"fecha": fecha, "hora": "10:00",
+			"clienteNombre": "Walk", "clienteTelefono": "+573002222221",
+			"origen": "panel",
+		}
+	}
+
+	// Panel sin sesión -> 401.
+	if c := panelBook(nil, base()); c != http.StatusUnauthorized {
+		t.Fatalf("panel sin token code=%d, esperaba 401", c)
+	}
+
+	// Dueño con sesión: 201 y SIN UID (es del cliente anotado).
+	duenoUID := clienteUIDTest(t, "duenopanel@test.com")
+	duenoTok := tokenClienteTest(t, "duenopanel@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	b1 := base()
+	b1["hora"] = "10:00"
+	if c := panelBook(map[string]interface{}{"token": duenoTok}, b1); c != http.StatusCreated {
+		t.Fatalf("panel dueño code=%d, esperaba 201", c)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573002222221")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.ClientUID != "" {
+		t.Fatalf("client_uid=%q, el panel no adjunta UID", b.ClientUID)
+	}
+
+	// Empleado en su agenda: 201.
+	empTok := signEmployeeToken(slug, "emp1")
+	b2 := base()
+	b2["hora"] = "11:00"
+	b2["clienteTelefono"] = "+573002222222"
+	if c := panelBook(map[string]interface{}{"token": empTok}, b2); c != http.StatusCreated {
+		t.Fatalf("panel empleado propio code=%d, esperaba 201", c)
+	}
+
+	// Empleado en agenda ajena: 403.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc("emp2").Set(ctx, map[string]interface{}{"name": "Luis"}); err != nil {
+		t.Fatal(err)
+	}
+	b3 := base()
+	b3["hora"] = "12:00"
+	b3["empleadoId"] = "emp2"
+	b3["clienteTelefono"] = "+573002222223"
+	if c := panelBook(map[string]interface{}{"token": empTok}, b3); c != http.StatusForbidden {
+		t.Fatalf("panel empleado ajeno code=%d, esperaba 403", c)
+	}
+}

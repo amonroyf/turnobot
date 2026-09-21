@@ -6,6 +6,7 @@ import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 import { textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 import { HorarioModal } from './HorarioModal.jsx';
+import RegistroManual from './RegistroManual.jsx';
 import NotificationDrawer from './NotificationDrawer';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -41,6 +42,7 @@ function PortalEmpleado() {
   const [moverLoading, setMoverLoading] = useState(false);
   const [showHorario, setShowHorario] = useState(false);
   const [showPin, setShowPin] = useState(false);
+  const [showRegistro, setShowRegistro] = useState(false);
   const [pinNuevo, setPinNuevo] = useState('');
   const [guardandoPin, setGuardandoPin] = useState(false);
 
@@ -472,6 +474,30 @@ function PortalEmpleado() {
             </button>
           </div>
           <p className="text-[11px] text-gray-400 font-medium mt-2">Cierra días cuando descanses: dejan de ofrecerse para reservar.</p>
+        </div>
+
+        {/* Registrar cliente sin cita previa (solo tu agenda) */}
+        <div className="bg-white border border-gray-200 rounded-2xl p-4">
+          <button
+            type="button"
+            onClick={() => setShowRegistro((v) => !v)}
+            aria-expanded={showRegistro}
+            className="w-full flex items-center justify-between min-h-[44px]"
+          >
+            <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">＋ Registrar cita</span>
+            <span className="text-xs font-bold text-gray-400">{showRegistro ? '▲' : '▼'}</span>
+          </button>
+          {showRegistro && (
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <RegistroManual
+                slug={slug}
+                API_URL={API_URL}
+                negocio={negocio}
+                getHeaders={async () => ({ Authorization: `Bearer ${token}` })}
+                empFijo={empId}
+              />
+            </div>
+          )}
         </div>
 
         {loading && (

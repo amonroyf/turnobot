@@ -306,6 +306,10 @@ type BookingRequest struct {
 	// Website es un honeypot anti-bots: los humanos nunca lo llenan.
 	// Si trae valor, la reserva se finge exitosa sin escribir nada.
 	Website string `json:"website,omitempty"`
+	// Origen "panel": registro manual del dueño/empleado desde su panel
+	// (mismo flujo y reglas que el cliente). No adjunta UID aunque el token
+	// sea válido: la cita es del cliente anotado, no de quien la registra.
+	Origen string `json:"origen,omitempty"`
 }
 
 // Booking is a confirmed appointment.
@@ -1086,12 +1090,59 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// Identidad del cliente: login Google obligatorio en la web (cierra las
 	// citas a nombre ajeno y blinda MisCitas). Excepción: el dueño agenda por
 	// el cliente desde su panel (llamada/WhatsApp) sin sesión del cliente.
-	// El UID se adjunta siempre que venga un token válido (aunque sea el
-	// dueño probando su local): sin esto sus pruebas no aparecen en MisCitas.
-	// El teléfono sigue obligatorio: es el canal de WhatsApp y del CRM.
+	// Origen "panel" (registro manual dueño/empleado): autoriza sesión de
+	// dueño o del empleado ASIGNADO (solo su propia agenda) y nunca adjunta
+	// UID: la cita es del cliente anotado, no de quien la registra.
+	// El UID se adjunta siempre que venga un token válido de cliente (aunque
+	// sea el dueño probando su local): sin esto sus pruebas no aparecen en
+	// MisCitas. El teléfono sigue obligatorio: canal de WhatsApp y del CRM.
 	esDueno := isOwnerRequest(r, slug)
+	esPanel := req.Origen == "panel"
 	var clientUID, clientEmail string
-	if uid, email, ok := verificarCliente(r); ok {
+	var empTokenID string
+	if esPanel {
+		if esDueno {
+			// Dueño: agenda por cualquiera, sin UID.
+		} else if token := bearerToken(r.Header.Get("Authorization")); token != "" {
+			if ts, te, err := verifyEmployeeToken(token); err == nil && ts == slug {
+				empTokenID = te
+			} else {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "login_requerido",
+					"message": "Inicia sesión para registrar citas.",
+				})
+				return
+			}
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "login_requerido",
+				"message": "Inicia sesión para registrar citas.",
+			})
+			return
+		}
+		// Empleado: solo su propia agenda (forzado abajo).
+		if empTokenID != "" && req.EmpleadoID != "" && req.EmpleadoID != empTokenID {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "solo_propia_agenda",
+				"message": "Solo puedes registrar citas en tu propia agenda.",
+			})
+			return
+		}
+		// Empleado: solo su propia agenda. Si no indicó profesional, se le
+		// asigna él (la herencia de clase aún puede traer el servicio).
+		if empTokenID != "" && req.EmpleadoID == "" {
+			req.EmpleadoID = empTokenID
+		}
+	} else if uid, email, ok := verificarCliente(r); ok {
 		clientUID, clientEmail = uid, email
 	} else if !esDueno {
 		w.Header().Set("Content-Type", "application/json")

@@ -1,5 +1,12 @@
 # Changelog — Turnobot
 
+## 2026-09-20 (registro manual: dueño y empleado anotan citas)
+
+- `POST /book` con `origen: "panel"`: dueño agenda por cualquiera; empleado solo su agenda (403 `solo_propia_agenda` si cruza). Sin UID (la cita es del anotado). Mismas reglas: topes, antelación, disponibilidad, transacción.
+- Frontend: `RegistroManual.jsx` compartido (flujo como el cliente: servicio/espacio → profesional → día → hora → datos) en Admin ("＋ Nueva cita") y Empleado ("＋ Registrar cita", agenda fija); cierra con resumen + botón WhatsApp manual al cliente.
+- Tests: `TestBookPanelDuenoYEmpleado` (401/201/403). Suite: 38 PASS.
+- Desplegado: backend + frontend.
+
 ## 2026-09-20 (solo Google: fuera la vía teléfono)
 
 - MisCitas solo con sesión (fuera formulario, divisor y `buscarCitas` por teléfono); sin sesión solo el botón Google. Cancelar/mover solo con token.

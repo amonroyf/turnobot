@@ -21,6 +21,7 @@ import {
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
 import { HorarioModal } from './HorarioModal.jsx';
+import RegistroManual from './RegistroManual.jsx';
 import { COLORES_MARCA, colorMarca, textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 
 export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
@@ -257,6 +258,8 @@ function AdminPanel() {
   const [contenidoCopiado, setContenidoCopiado] = useState('');
   const [searchTermClientes, setSearchTermClientes] = useState('');
   const [filtroEstado, setFiltroEstado] = useState('todas'); // 'todas' | 'activas' | 'canceladas' | 'noshow'
+  // Registro manual de citas (dueño anota clientes sin cita previa).
+  const [showRegistro, setShowRegistro] = useState(false);
 
   const [ahora, setAhora] = useState(Date.now());
   useEffect(() => {
@@ -1037,6 +1040,30 @@ function AdminPanel() {
             <p className="text-[11px] text-gray-400 font-medium text-center leading-relaxed">
               Para cancelar una cita, hazlo siempre desde aquí. Si borras el evento desde Google Calendar, el espacio seguirá bloqueado en tu página de reservas.
             </p>
+
+            {/* Registrar cita manual (dueño anota un cliente sin cita previa) */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <button
+                type="button"
+                onClick={() => setShowRegistro((v) => !v)}
+                aria-expanded={showRegistro}
+                className="w-full flex items-center justify-between min-h-[44px]"
+              >
+                <span className="text-base font-bold text-gray-900">＋ Nueva cita</span>
+                <span className="text-xs font-bold text-gray-400">{showRegistro ? '▲' : '▼'}</span>
+              </button>
+              <p className="text-xs font-medium text-gray-500 mt-1">Anota un cliente de WhatsApp o mostrador con las mismas reglas.</p>
+              {showRegistro && (
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <RegistroManual
+                    slug={negocio.id}
+                    API_URL={import.meta.env.VITE_API_URL || ''}
+                    negocio={{ ...negocio, servicios, empleados: profesionales, recursos }}
+                    getHeaders={async () => ({ Authorization: `Bearer ${await user.getIdToken()}` })}
+                  />
+                </div>
+              )}
+            </div>
 
             {/* Filtros de estado */}
             {reservas.length > 0 && (
