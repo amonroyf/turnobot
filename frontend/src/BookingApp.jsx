@@ -654,8 +654,8 @@ export default function BookingApp() {
       ...booking,
       empleadoId: empleadoFinal,
       recursoId: booking.recursoId || '',
-      cupos: booking.recursoId ? Math.max(1, Number(booking.cupos) || 1) : 1,
-      participantes: (booking.participantes || []).map((p) => String(p || '').trim()).filter(Boolean).slice(0, 20),
+      cupos: 1,
+      participantes: [],
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
     };
     try {
@@ -1232,37 +1232,9 @@ export default function BookingApp() {
                           <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
                             ✅ Espacio: <strong>{recursoElegido.name}</strong>
                             {(recursoElegido.capacidad || 1) > 1
-                              ? ` (para ${recursoElegido.capacidad} personas — dime cuántos van).`
+                              ? ` (para ${recursoElegido.capacidad} personas — cada una reserva la suya).`
                               : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
                           </p>
-                        )}
-                        {/* ¿Cuántos van? (solo espacios grupales) */}
-                        {recursoElegido && (recursoElegido.capacidad || 1) > 1 && (
-                          <label className="block mt-3">
-                            <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Cuántos van?</span>
-                            <span className="flex gap-2 flex-wrap" role="radiogroup" aria-label="Número de personas">
-                              {Array.from({ length: Math.min(recursoElegido.capacidad, 20) }, (_, i) => i + 1).map((n) => (
-                                <button
-                                  key={n}
-                                  type="button"
-                                  role="radio"
-                                  aria-checked={Number(booking.cupos) === n}
-                                  onClick={() => {
-                                    const fechaActual = booking.fecha;
-                                    setBooking((prev) => ({ ...prev, cupos: n }));
-                                    if (fechaActual) {
-                                      setTimeout(() => fetchHorariosRef.current?.(fechaActual), 0);
-                                    }
-                                  }}
-                                  className={`min-w-[44px] min-h-[44px] px-3 rounded-xl font-black text-sm active:scale-95 transition-all ${
-                                    Number(booking.cupos) === n ? 'bg-black text-white shadow-md' : 'bg-white border border-gray-200 text-gray-700'
-                                  }`}
-                                >
-                                  {n}
-                                </button>
-                              ))}
-                            </span>
-                          </label>
                         )}
                       </div>
                     )}
@@ -1533,7 +1505,7 @@ export default function BookingApp() {
                         <p>📋 {modoEspacio ? 'Reserva' : 'Servicio'}: <strong>{servicioNombre}</strong>{servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : ''}</p>
                         <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
                         {recursoElegido && (
-                          <p>📍 Espacio: <strong>{recursoElegido.name}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</strong></p>
+                          <p>📍 Espacio: <strong>{recursoElegido.name}</strong></p>
                         )}
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
@@ -1608,31 +1580,7 @@ export default function BookingApp() {
                         onChange={e => setBooking({ ...booking, clienteTelefono: formatPhoneNumber(e.target.value) })}
                         className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                       />
-                      {/* Acompañantes (opcional): quiénes van además de ti */}
-                      {booking.recursoId && Number(booking.cupos) > 1 && (
-                        <div className="space-y-2">
-                          <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                            ¿Quiénes van? (opcional, hasta {Math.min(Number(booking.cupos), 10)} nombres)
-                          </p>
-                          {Array.from({ length: Math.min(Number(booking.cupos), 10) }, (_, i) => (
-                            <input
-                              key={i}
-                              type="text"
-                              placeholder={`Acompañante ${i + 1}`}
-                              aria-label={`Nombre del acompañante ${i + 1}`}
-                              autoComplete="off"
-                              maxLength={100}
-                              value={(booking.participantes || [])[i] || ''}
-                              onChange={(e) => setBooking((prev) => {
-                                const arr = [...(prev.participantes || [])];
-                                arr[i] = e.target.value;
-                                return { ...prev, participantes: arr };
-                              })}
-                              className="w-full p-3.5 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
-                            />
-                          ))}
-                        </div>
-                      )}
+                      {/* Acompañantes: fuera (una persona por reserva) */}
                       <textarea
                         placeholder="¿Algo que debamos saber? (opcional, máx 500 caracteres)"
                         aria-label="Descripción de lo que necesitas (opcional)"

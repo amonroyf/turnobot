@@ -36,7 +36,6 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const [servicioId, setServicioId] = useState('');
   const [empleadoId, setEmpleadoId] = useState(empFijo || '');
   const [recursoId, setRecursoId] = useState('');
-  const [cupos, setCupos] = useState(1);
   const [fecha, setFecha] = useState('');
   const [slots, setSlots] = useState([]);
   const [hora, setHora] = useState('');
@@ -91,7 +90,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     try {
       let url;
       if (modoEspacio) {
-        url = `${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&fecha=${f}&cupos=${cupos}`;
+        url = `${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&fecha=${f}&cupos=1`;
       } else {
         url = `${API_URL}/api/v1/b/${slug}/slots?emp_id=${empFijo || empleadoId}&servicio_id=${servicioId}&fecha=${f}`;
       }
@@ -119,7 +118,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     try {
       let url;
       if (modoEspacio) {
-        url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?recurso_id=${recursoId}&cupos=${cupos}`;
+        url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?recurso_id=${recursoId}&cupos=1`;
       } else {
         url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${servicioId}&emp_id=${empFijo || empleadoId}`;
       }
@@ -159,7 +158,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         servicioId: modoEspacio ? '' : servicioId,
         empleadoId: modoEspacio ? '' : (empFijo || empleadoId),
         recursoId: recursoId || '',
-        cupos: recursoId ? Math.max(1, Number(cupos) || 1) : 1,
+        cupos: 1,
         fecha, hora,
         clienteNombre: nombre.trim(),
         clienteTelefono: telefono.replace(/\D/g, ''),
@@ -195,7 +194,6 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     setServicioId('');
     if (!empFijo) setEmpleadoId('');
     setRecursoId('');
-    setCupos(1);
     setFecha('');
     setSlots([]);
     setHora('');
@@ -355,8 +353,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
                   onClick={() => {
                     const nuevo = activo ? '' : r.id;
                     setRecursoId(nuevo);
-                    setCupos(1);
-                    setFecha('');
+                                    setFecha('');
                     setSlots([]);
                     setHora('');
                   }}
@@ -378,29 +375,11 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
             <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
               ✅ Espacio: <strong>{recursoElegido.name}</strong>
               {(recursoElegido.capacidad || 1) > 1
-                ? ` (para ${recursoElegido.capacidad} personas — dime cuántos van).`
+                ? ` (para ${recursoElegido.capacidad} personas — cada una con su reserva).`
                 : '. Sigue a elegir el día 👇.'}
             </p>
           )}
         </div>
-      )}
-      {modoEspacio && recursoElegido && (recursoElegido.capacidad || 1) > 1 && (
-        <label className="block">
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">¿Cuántos van? (máx {recursoElegido.capacidad})</span>
-          <span className="flex gap-2 flex-wrap">
-            {Array.from({ length: Math.min(recursoElegido.capacidad, 20) }, (_, i) => i + 1).map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => setCupos(n)}
-                aria-pressed={cupos === n}
-                className={`min-h-[44px] px-4 py-2 rounded-xl text-sm font-bold active:scale-95 transition-all ${cupos === n ? 'bg-black text-white' : 'bg-gray-100 text-gray-700'}`}
-              >
-                {n}
-              </button>
-            ))}
-          </span>
-        </label>
       )}
 
       {/* Día: atajos Hoy/Mañana (1 toque) + calendario para el resto */}

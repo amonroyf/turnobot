@@ -325,6 +325,49 @@ function PortalEmpleado() {
   const misNoShow = citas.filter(c => c.no_show).length;
   const miPerfil = negocio?.empleados?.find(e => e.id === empId);
 
+  // Agrupación de espacios (igual que Admin): mismo espacio-hora = una
+  // tarjeta de ocupación con las citas adentro (acciones intactas).
+  const ListaEmpleado = ({ items }) => {
+    const sueltas = [];
+    const gruposMap = new Map();
+    for (const c of items) {
+      if (!c.recurso) {
+        sueltas.push(c);
+        continue;
+      }
+      const key = `${c.recurso}|${c.fecha}|${c.hora}`;
+      if (!gruposMap.has(key)) gruposMap.set(key, []);
+      gruposMap.get(key).push(c);
+    }
+    const capDe = (nombre) => negocio?.recursos?.find(r => r.name === nombre)?.capacidad || 0;
+    return (
+      <div className="space-y-2">
+        {sueltas.map(c => (
+          <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+        ))}
+        {[...gruposMap.entries()].map(([key, miembros]) => {
+          const activas = miembros.filter(m => !m.cancelled && !m.no_show);
+          const cap = capDe(miembros[0].recurso);
+          return (
+            <div key={key} className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+              <div className="px-4 py-3 bg-emerald-50/60 border-b border-gray-100">
+                <p className="text-sm font-bold text-gray-900">📍 {miembros[0].recurso} <span className="text-gray-500 font-bold">a las {miembros[0].hora}</span></p>
+                <p className="text-[11px] font-bold text-gray-500 mt-0.5">
+                  {activas.length}{cap > 0 ? `/${cap}` : ''} personas
+                </p>
+              </div>
+              <div className="space-y-2 p-2">
+                {miembros.map(c => (
+                  <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   if (!token) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 font-sans">
@@ -539,33 +582,21 @@ function PortalEmpleado() {
         {filtrarPorEstado(citasHoy).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
-            <div className="space-y-2">
-              {filtrarPorEstado(citasHoy).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
-              ))}
-            </div>
+            <ListaEmpleado items={filtrarPorEstado(citasHoy)} />
           </section>
         )}
 
         {filtrarPorEstado(citasManana).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
-            <div className="space-y-2">
-              {filtrarPorEstado(citasManana).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
-              ))}
-            </div>
+            <ListaEmpleado items={filtrarPorEstado(citasManana)} />
           </section>
         )}
 
         {filtrarPorEstado(citasProximas).length > 0 && (
           <section>
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
-            <div className="space-y-2">
-              {filtrarPorEstado(citasProximas).map(c => (
-                <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
-              ))}
-            </div>
+            <ListaEmpleado items={filtrarPorEstado(citasProximas)} />
           </section>
         )}
       </main>

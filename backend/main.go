@@ -1289,56 +1289,44 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		if serviceName == "" {
 			serviceName = "Reserva de " + recurso.Name
 		}
-		// Cupos: 1 por defecto; tope = capacidad del recurso (una sola
-		// reserva no supera la capacidad).
+		// Una persona por reserva: el cupo se llena con reservas individuales
+		// (evita acaparar y desperdiciar puestos; cada quien con su nombre,
+		// su WhatsApp, su recordatorio y su no-show).
 		if req.Cupos > 1 {
-			if req.Cupos > recurso.Capacidad {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"success": false,
-					"error":   "cupos_exceden",
-					"message": fmt.Sprintf("Este espacio admite máximo %d personas por reserva.", recurso.Capacidad),
-				})
-				return
-			}
-			cuposPedidos = req.Cupos
-		}
-		// Participantes: nombres de quienes van (opcional, máx = cupos, cada
-		// uno 1-100 caracteres). Vacíos se descartan en silencio.
-		participantes = nil
-		for _, p := range req.Participantes {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if len(p) > 100 {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusBadRequest)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"success": false,
-					"error":   "participante_largo",
-					"message": "Cada nombre debe tener máximo 100 caracteres.",
-				})
-				return
-			}
-			participantes = append(participantes, p)
-		}
-		if len(participantes) > cuposPedidos {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
-				"error":   "muchos_participantes",
-				"message": fmt.Sprintf("Son %d cupos: sobran nombres. Quita o pide más cupos.", cuposPedidos),
+				"error":   "solo_un_cupo",
+				"message": "Cada reserva es para una persona. Si van varios, cada uno reserva la suya.",
+			})
+			return
+		}
+		if len(req.Participantes) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "sin_acompanantes",
+				"message": "Cada reserva es para una persona. Si van varios, cada uno reserva la suya.",
+			})
+			return
+		}
+		// Un lugar por persona y sesión: si ya apartó este espacio a esta
+		// hora, no puede apartarlo otra vez (ni rotando de número/cuenta).
+		if yaTieneLugar(ctx, slug, req.RecursoID, eventDateTime, clientUID, req.ClienteTelefono, "") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "lugar_duplicado",
+				"message": "Ya tienes un lugar en esta clase a esta hora.",
 			})
 			return
 		}
 	}
 
 	// El empleado (si viene) debe ofrecer este servicio (multi-especialidad).
-	// Sin servicio (espacio libre con instructor atado) no hay nada que
-	// validar: el profesional solo presta el lugar.
 	// Falla rápido aquí; la transacción lo re-verifica contra TOCTOU.
 	var empData Employee
 	if req.EmpleadoID != "" {
@@ -3353,6 +3341,44 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 		}
 	}
 	return count >= negocioMaxBookings(ctx, negocioID)
+}
+
+// yaTieneLugar evita el doble puesto: una persona no puede apartar dos veces
+// la misma sesión (mismo espacio, fecha y hora). Vale por UID o por teléfono,
+// excluye canceladas e ignora una cita (para reagendar la propia).
+func yaTieneLugar(ctx context.Context, slug, recursoID string, evento time.Time, uid, phone, ignorarID string) bool {
+	if recursoID == "" {
+		return false
+	}
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("recurso_id", "==", recursoID).
+		Where("date_time", "==", evento).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: error verificando duplicado en %s: %v", slug, err)
+		return false
+	}
+	for _, d := range docs {
+		if d.Ref.ID == ignorarID || d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		if err := d.DataTo(&b); err != nil {
+			continue
+		}
+		if uid != "" && b.ClientUID != "" && b.ClientUID == uid {
+			return true
+		}
+		if phone != "" {
+			for _, key := range phoneQueryKeys(phone) {
+				if b.UserPhone == key {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // hasBookingOnDateUID es el tope diario por CUENTA Google (mismo límite que

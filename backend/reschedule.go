@@ -186,6 +186,18 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		})
 		return
 	}
+	// Un lugar por persona y sesión también al mover: si ya tiene otro lugar
+	// en esa clase-hora, no puede sumar este (se ignora la propia cita).
+	if b.RecursoID != "" && yaTieneLugar(ctx, slug, b.RecursoID, nuevo, b.ClientUID, b.UserPhone, citaID) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "lugar_duplicado",
+			"message": "Ya tienes un lugar en esta clase a esta hora.",
+		})
+		return
+	}
 
 	// Disponibilidad del nuevo slot con la duración real de la cita.
 	// Con recurso se verifica el espacio (y el profesional si lo hay).

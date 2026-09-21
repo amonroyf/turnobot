@@ -1,5 +1,24 @@
 # Changelog — Turnobot
 
+## 2026-09-21 (un lugar por persona y sesión)
+
+- `yaTieneLugar`: misma persona no aparta dos veces la misma sesión (espacio+hora), ni rotando número ni cuenta (409 `lugar_duplicado`). Vale al reservar y al mover (ignora la propia cita).
+- Test `TestUnLugarPorPersonaYSesion`. Suite: 39 PASS. Desplegado: backend.
+
+## 2026-09-21 (agenda: espacios como ocupación)
+
+- Las reservas del mismo espacio-hora se agrupan en UNA tarjeta: "📍 Fútbol · 10:00 · 12/30" con barra de ocupación (verde/ámbar/lleno) y roster plegable por persona (WhatsApp, No llegó, Cancelar). Adiós a 30 tarjetas por clase.
+- Intercalado por hora con las citas de profesional (una sola línea de tiempo). Filtros existentes respetados.
+- Desplegado: frontend.
+
+## 2026-09-21 (uno por persona: fuera cupos grupales)
+
+- `/book` rechaza `cupos>1` (400 `solo_un_cupo`) y acompañantes (400): cada reserva es una persona; el cupo se llena con reservas individuales.
+- Reserva y registro manual: fuera "¿Cuántos van?" y "¿Quiénes van?"; el ✅ dice "(para N personas — cada una con su reserva)".
+- Capacidad del espacio intacta (sigue definiendo el lleno) + "¡Quedan N!" intacto.
+- Tests: llenado con 4 personas, rechazo cupos=2. Suite: 38 PASS.
+- Desplegado: backend + frontend.
+
 ## 2026-09-21 (espacios simples: fuera servicio/empleado, dentro info libre)
 
 - `Recurso` vuelve a espacio simple: fuera `servicio_id`/`emp_id`, dentro `descripcion` libre (máx 500: reglas, dotación, ubicación).

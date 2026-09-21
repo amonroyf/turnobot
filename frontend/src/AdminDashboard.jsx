@@ -831,6 +831,121 @@ function AdminPanel() {
     return horasOrdenadas.map(hora => ({ hora, citas: agrupadas[hora] }));
   };
 
+  // Agrupación de espacios (chunking): las reservas del mismo espacio y
+  // hora se ven como UNA tarjeta de ocupación ("Fútbol · 10:00 · 12/30") con
+  // lista plegable, en vez de inundar la agenda con 30 tarjetas.
+  const iconoEspacio = (tipo) => (
+    tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🔧' : tipo === 'consultorio' ? '🩺'
+    : tipo === 'sala' ? '🎶' : tipo === 'camilla' ? '💆' : tipo === 'clase' ? '🧘' : '📍'
+  );
+
+  const GrupoEspacioCard = ({ grupo }) => {
+    const [abierto, setAbierto] = useState(true);
+    const { recurso, horaStr, miembros } = grupo;
+    const activas = miembros.filter(m => !m.cancelled && !m.no_show);
+    const capacidad = recurso?.capacidad || Math.max(activas.length, 1);
+    const pct = Math.min(100, Math.round((activas.length / capacidad) * 100));
+    const lleno = activas.length >= capacidad;
+    return (
+      <div className="mb-4 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setAbierto((v) => !v)}
+          aria-expanded={abierto}
+          className="w-full p-4 flex items-center gap-3 text-left active:bg-gray-50 transition-colors"
+        >
+          <span className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-lg shrink-0" aria-hidden="true">
+            {iconoEspacio(recurso?.tipo)}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block font-bold text-gray-900 text-sm truncate">📍 {grupo.nombre} · {horaStr}</span>
+            <span className="block mt-1.5 h-2 bg-gray-100 rounded-full overflow-hidden" aria-hidden="true">
+              <span
+                className={`block h-full rounded-full transition-all ${lleno ? 'bg-emerald-600' : pct >= 70 ? 'bg-amber-500' : 'bg-emerald-400'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </span>
+            <span className="block text-[11px] font-bold text-gray-500 mt-1">
+              {activas.length}/{capacidad} {lleno ? '· ¡Lleno!' : pct >= 70 ? '· ¡Casi lleno!' : ''}
+            </span>
+          </span>
+          <span className={`text-xs font-black px-2.5 py-1 rounded-lg shrink-0 ${lleno ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700'}`}>
+            {activas.length}/{capacidad}
+          </span>
+          <span className="text-gray-400 text-xs font-bold shrink-0" aria-hidden="true">{abierto ? '▲' : '▼'}</span>
+        </button>
+        {abierto && (
+          <ul className="border-t border-gray-100 divide-y divide-gray-50">
+            {miembros.map((m) => (
+              <li key={m.id} className={`px-4 py-2.5 flex items-center gap-2 ${m.cancelled ? 'bg-red-50/60' : m.no_show ? 'bg-amber-50/60' : ''}`}>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-bold text-gray-800 truncate">
+                    {m.client_name}
+                    {m.cancelled && <span className="ml-2 text-[9px] font-black bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
+                    {m.no_show && <span className="ml-2 text-[9px] font-black bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase">No llegó</span>}
+                  </p>
+                  <p className="text-[11px] text-gray-500 font-medium">📞 {formatearTelefono(m.user_phone)}</p>
+                </div>
+                {!m.cancelled && !m.no_show && (
+                  <div className="flex gap-1 shrink-0">
+                    <a
+                      href={`https://wa.me/${m.user_phone}`} target="_blank" rel="noreferrer" aria-label={`WhatsApp a ${m.client_name}`}
+                      className="min-h-[40px] min-w-[40px] inline-flex items-center justify-center text-green-700 bg-green-50 border border-green-200 rounded-lg text-xs font-bold active:scale-95"
+                    >
+                      📲
+                    </a>
+                    <button
+                      onClick={() => handleMarcarNoShow(m.id)} disabled={noShowMarking === m.id} aria-label={`Marcar no llegó a ${m.client_name}`}
+                      className="min-h-[40px] px-2.5 text-[11px] text-gray-600 font-bold border border-transparent hover:border-amber-200 hover:bg-amber-50 rounded-lg active:scale-95 disabled:opacity-50"
+                    >
+                      {noShowMarking === m.id ? '…' : 'No llegó'}
+                    </button>
+                    <button
+                      onClick={() => handleCancelarReserva(m.id)} disabled={cancelando === m.id} aria-label={`Cancelar cita de ${m.client_name}`}
+                      className="min-h-[40px] px-2.5 text-[11px] text-red-600 font-bold bg-red-50 border border-red-100 rounded-lg active:scale-95 disabled:opacity-50"
+                    >
+                      {cancelando === m.id ? '…' : '✕'}
+                    </button>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    );
+  };
+
+  // Divide la lista en citas de profesional (tarjeta individual) y grupos de
+  // espacio (tarjeta de ocupación), ordenados por hora.
+  const ListaAgenda = ({ items }) => {
+    const pros = [];
+    const gruposMap = new Map();
+    for (const r of items) {
+      if (!r.recurso_name) {
+        pros.push(r);
+        continue;
+      }
+      const timeMs = r.date_time?.seconds * 1000;
+      const hora = timeMs ? horaEnZona(timeMs, zonaNegocio) : '--:--';
+      const key = `${r.recurso_id || r.recurso_name}|${hora}`;
+      if (!gruposMap.has(key)) {
+        const recurso = recursos.find((x) => (r.recurso_id && x.id === r.recurso_id) || x.name === r.recurso_name);
+        gruposMap.set(key, { key, nombre: r.recurso_name, recurso, horaStr: hora, miembros: [], minMs: timeMs || 0 });
+      }
+      gruposMap.get(key).miembros.push(r);
+      if (timeMs && timeMs < gruposMap.get(key).minMs) gruposMap.get(key).minMs = timeMs;
+    }
+    pros.sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
+    const grupos = [...gruposMap.values()].sort((a, b) => a.minMs - b.minMs);
+    // Intercala por hora: profesionales y grupos en una sola línea de tiempo.
+    const bloques = [
+      ...pros.map((r) => ({ ms: r.date_time?.seconds * 1000 || 0, nodo: <RenderCitaCard key={r.id} r={r} /> })),
+      ...grupos.map((g) => ({ ms: g.minMs, nodo: <GrupoEspacioCard key={g.key} grupo={g} /> })),
+    ].sort((a, b) => a.ms - b.ms);
+    return <>{bloques.map((b, i) => <span key={i} className="block">{b.nodo}</span>)}</>;
+  };
+
   const RenderCitaCard = ({ r }) => {
     const timeMs = r.date_time?.seconds * 1000;
     const durationMs = (r.duration_minutes || 60) * 60000;
@@ -1112,7 +1227,7 @@ function AdminPanel() {
                         </h3>
                       </div>
                       <div className="pl-1">
-                        {filtradas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                        <ListaAgenda items={filtradas} />
                       </div>
                     </div>
                   );
@@ -1135,7 +1250,7 @@ function AdminPanel() {
                         </h3>
                       </div>
                       <div className="pl-1">
-                        {filtradas.map(r => <RenderCitaCard key={r.id} r={r} />)}
+                        <ListaAgenda items={filtradas} />
                       </div>
                     </div>
                   );
@@ -1158,18 +1273,26 @@ function AdminPanel() {
                         </h3>
                       </div>
                       <div className="pl-1">
-                        {filtradas.map(r => {
-                          const timeMs = r.date_time?.seconds * 1000;
-                          const fechaStr = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) : '';
-                          return (
-                            <div key={r.id}>
+                        {(() => {
+                          // Agrupa por día para la etiqueta de fecha, y dentro
+                          // de cada día aplica la misma lista (profesionales +
+                          // ocupación de espacios).
+                          const porDia = new Map();
+                          for (const r of filtradas) {
+                            const timeMs = r.date_time?.seconds * 1000;
+                            const fechaStr = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) : '';
+                            if (!porDia.has(fechaStr)) porDia.set(fechaStr, []);
+                            porDia.get(fechaStr).push(r);
+                          }
+                          return [...porDia.entries()].map(([fechaStr, items]) => (
+                            <div key={fechaStr}>
                               <div className="text-[10px] font-bold text-gray-400 ml-16 mb-2 uppercase tracking-wider">
                                 {formatearFechaLarga(fechaStr)}
                               </div>
-                              <RenderCitaCard r={r} />
+                              <ListaAgenda items={items} />
                             </div>
-                          );
-                        })}
+                          ));
+                        })()}
                       </div>
                     </div>
                   );

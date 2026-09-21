@@ -874,31 +874,37 @@ func TestRecursoHorarioPropio(t *testing.T) {
 		t.Fatalf("el martes inactivo debería estar vacío, hay %v", slotsM)
 	}
 
-	// Reserva lunes 10:00 (60 min, 3 cupos = lleno): bloquea 10:00, 11:00 libre.
+	// Tres personas (1 cupo c/u) llenan la capacidad 3 del lunes 10:00:
+	// 10:00 bloqueada, 11:00 libre. Uno por persona, sin acompañantes.
+	for i := 0; i < 3; i++ {
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "recursoId": "rec1",
+			"fecha": fecha, "hora": "10:00",
+			"clienteNombre": "X", "clienteTelefono": fmt.Sprintf("+57300444444%d", i),
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("persona %d code=%d body=%s, esperaba 201", i+1, rec.Code, rec.Body.String())
+		}
+	}
+	// Pedir 2 cupos se rechaza (uno por persona).
 	body, _ := json.Marshal(map[string]interface{}{
 		"servicioId": "svc1", "recursoId": "rec1",
-		"fecha": fecha, "hora": "10:00",
-		"clienteNombre": "X", "clienteTelefono": "+573004444441",
-		"cupos":         3,
-		"participantes": []string{"Ana", "Luis"},
+		"fecha": fecha, "hora": "11:00",
+		"clienteNombre": "Y", "clienteTelefono": "+573004444449",
+		"cupos": 2,
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	authClienteTest(t, req)
+	authClienteUnico(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("book con participantes code=%d body=%s", rec.Code, rec.Body.String())
-	}
-	ids := reservaIDsPorTelefono(t, ctx, slug, "+573004444441")
-	if len(ids) != 1 {
-		t.Fatalf("reservas=%d", len(ids))
-	}
-	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
-	var b Booking
-	doc.DataTo(&b)
-	if len(b.Participantes) != 2 || b.Participantes[0] != "Ana" {
-		t.Fatalf("participantes=%v", b.Participantes)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("cupos=2 code=%d, esperaba 400", rec.Code)
 	}
 	slots2, _, err := disponibilidadRecurso(ctx, slug, "rec1", lunes, 60, 1)
 	if err != nil {
@@ -1365,3 +1371,40 @@ func TestMoverRespetaTopeUID(t *testing.T) {
 	}
 }
 
+
+func TestUnLugarPorPersonaYSesion(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-unlugar")
+	seedTienda(t, ctx, slug)
+	seedRecurso(t, ctx, slug, "rec1", "Cancha 1")
+	fecha := mañanaStr()
+	tok := tokenClienteTest(t, "unlugar@test.com")
+
+	bookUID := func(phone, hora string) int {
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "recursoId": "rec1",
+			"fecha": fecha, "hora": hora,
+			"clienteNombre": "X", "clienteTelefono": phone,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+	// Primera: entra.
+	if c := bookUID("+573002222221", "10:00"); c != http.StatusCreated {
+		t.Fatalf("primera code=%d, esperaba 201", c)
+	}
+	// Misma sesión, otro número: duplicado -> 409.
+	if c := bookUID("+573002222229", "10:00"); c != http.StatusConflict {
+		t.Fatalf("duplicada code=%d body, esperaba 409", c)
+	}
+	// Otra hora: libre.
+	if c := bookUID("+573002222221", "11:00"); c != http.StatusCreated {
+		t.Fatalf("otra hora code=%d, esperaba 201", c)
+	}
+}
