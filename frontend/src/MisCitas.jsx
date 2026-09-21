@@ -1,21 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { auth, provider } from './firebase.js';
 import { formatearFechaLarga, sumarDias } from './fecha.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
-
-// Auto-formatea el teléfono mientras el usuario teclea (ej. 300 123 4567)
-const formatPhoneNumber = (value) => {
-  let cleaned = ('' + value).replace(/\D/g, '');
-  if (cleaned.length > 10) {
-    cleaned = cleaned.slice(-10);
-  }
-  const match = cleaned.match(/^(\d{0,3})(\d{0,3})(\d{0,4})$/);
-  if (match) {
-    return !match[2]
-      ? match[1]
-      : `${match[1]} ${match[2]}${match[3] ? ` ${match[3]}` : ''}`;
-  }
-  return value;
-};
 
 // Obtener fecha "YYYY-MM-DD" en la zona horaria del negocio
 const fmtFecha = (d, tz) => d.toLocaleDateString('sv-SE', { timeZone: tz || 'America/Bogota' });
@@ -31,32 +18,74 @@ export default function MisCitas(props) {
 function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
   const { confirmar } = useDialogo();
   const tz = timezone || 'America/Bogota';
-  const [telefono, setTelefono] = useState('');
   const [citas, setCitas] = useState(null); // null = aún no buscado
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [cancelando, setCancelando] = useState('');
   const [citaCancelada, setCitaCancelada] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('todas');
+  // Solo Google: toda reserva web exige cuenta. Sin vía teléfono.
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginLoading, setLoginLoading] = useState(false);
 
-  const buscarCitas = async (e) => {
-    e.preventDefault();
-    const telefonoLimpio = telefono.replace(/\D/g, '');
-    if (!telefonoLimpio) {
-      setError("Por favor ingresa un número válido.");
-      return;
-    }
+  useEffect(() => {
+    getRedirectResult(auth).catch(() => {});
+    return auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      if (user) {
+        cargarConSesion(user);
+      } else {
+        setCitas(null);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cargarConSesion = async (user) => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas?telefono=${telefonoLimpio}`);
+      const idToken = await user.getIdToken();
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas`, {
+        headers: { Authorization: `Bearer ${idToken}` },
+      });
       if (!res.ok) throw new Error('Error del servidor');
-      const data = await res.json();
-      setCitas(data);
-    } catch (err) {
-      setError("Error buscando tus citas. Intenta de nuevo.");
+      setCitas(await res.json());
+    } catch {
+      setError('Error buscando tus citas. Intenta de nuevo.');
     }
     setLoading(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    setLoginLoading(true);
+    setError('');
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      const code = err?.code || '';
+      if (code.includes('popup') || code.includes('cancelled') || code === 'auth/unauthorized-domain') {
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch {
+          setError('No pudimos abrir el ingreso con Google. Intenta de nuevo.');
+        }
+      } else {
+        setError('No pudimos ingresar con Google. Intenta de nuevo.');
+      }
+    }
+    setLoginLoading(false);
+  };
+
+  // Headers de cliente: solo sesión Google.
+  const headersCliente = async () => {
+    if (currentUser) {
+      try {
+        return { Authorization: `Bearer ${await currentUser.getIdToken()}` };
+      } catch { /* sesión vencida */ }
+    }
+    return {};
   };
 
   const cancelarCita = async (cita) => {
@@ -71,10 +100,9 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
     setCancelando(cita.id);
     setError('');
     try {
-      const telefonoLimpio = telefono.replace(/\D/g, '');
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${cita.id}`, {
         method: 'DELETE',
-        headers: { 'X-Client-Phone': telefonoLimpio },
+        headers: await headersCliente(),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
@@ -111,29 +139,37 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
       <div className="flex items-center gap-2 mb-1">
         <h2 className="font-bold text-gray-800 text-base">Tus citas</h2>
       </div>
-      <p className="text-[11px] text-gray-500 font-medium mb-4">Escríbe tu WhatsApp para verlas. ¿Otra hora? Cancela y reserva de nuevo en Agendar.</p>
+      <p className="text-[11px] text-gray-500 font-medium mb-4">
+        Ingresa con Google para ver tus citas.
+      </p>
 
-      <form onSubmit={buscarCitas} className="space-y-3">
-        <label className="block">
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tu WhatsApp</span>
-        <input
-          type="tel" required placeholder="Ej. 300 123 4567"
-          aria-label="Tu número de WhatsApp"
-          inputMode="tel"
-          autoComplete="tel"
-          value={telefono}
-          onChange={e => setTelefono(formatPhoneNumber(e.target.value))}
-          className="w-full min-h-[48px] p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black focus-visible:ring-2 focus-visible:ring-black shadow-2xs"
-        />
-        </label>
+      {!currentUser ? (
         <button
-          type="submit"
-          disabled={loading}
-          className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl active:scale-95 transition-transform disabled:opacity-50 shadow-md text-sm"
+          type="button"
+          onClick={handleGoogleLogin}
+          disabled={loginLoading}
+          className="w-full min-h-[52px] p-4 bg-white border border-gray-300 rounded-xl flex items-center justify-center gap-2 font-bold text-sm shadow-sm active:scale-95 transition-transform disabled:opacity-50"
         >
-          {loading ? 'Buscando...' : 'Ver mis citas'}
+          <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+            <path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z" />
+            <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.8-2.9c-1 .7-2.4 1.2-4.1 1.2-3.1 0-5.8-2.1-6.8-5l-3.7 2.9C3.5 21.3 7.5 24 12 24z" />
+            <path fill="#FBBC05" d="M5.2 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4L1.5 6.6C.5 8.9 0 10.4 0 12s.5 3.1 1.5 4.5l3.7-2.1z" />
+            <path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.5 0 3.5 2.7 1.5 6.6l3.7 2.9c1-2.9 3.7-4.8 6.8-4.8z" />
+          </svg>
+          {loginLoading ? 'Abriendo Google…' : 'Ingresar con Google'}
         </button>
-      </form>
+      ) : (
+        <div className="flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 p-3 rounded-xl border border-green-200 font-semibold">
+          <span className="min-w-0 truncate">✅ Viendo citas de <strong>{currentUser.email}</strong></span>
+          <button
+            type="button"
+            onClick={() => auth.signOut()}
+            className="underline font-bold text-green-900 active:scale-95 shrink-0"
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      )}
 
       {error && (
         <div role="alert" className="p-4 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl text-center font-medium">
@@ -160,8 +196,8 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
       {citas && citas.length === 0 && !citaCancelada && (
         <div className="text-center p-8 bg-white border border-gray-200 rounded-2xl shadow-sm">
           <div className="text-4xl mb-3">📭</div>
-          <p className="text-sm font-bold text-gray-700">Sin citas con este número</p>
-          <p className="text-[11px] text-gray-500 font-medium mt-1">Revisa que sea el mismo WhatsApp con el que reservaste.</p>
+            <p className="text-sm font-bold text-gray-700">{currentUser ? 'Sin citas con esta cuenta' : 'Sin citas con este número'}</p>
+            <p className="text-[11px] text-gray-500 font-medium mt-1">{currentUser ? 'Cuando reserves con Google, aparecerán aquí.' : 'Revisa que sea el mismo WhatsApp con el que reservaste.'}</p>
         </div>
       )}
 
@@ -194,7 +230,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
               <div className="space-y-3">
                 {citasHoy.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
                 ))}
               </div>
             </section>
@@ -206,7 +242,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
               <div className="space-y-3">
                 {citasManana.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
                 ))}
               </div>
             </section>
@@ -218,7 +254,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
               <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
               <div className="space-y-3">
                 {citasProximas.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} phone={telefono.replace(/\D/g, '')} hoyMin={hoy} onMoved={moverCita} />
+                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
                 ))}
               </div>
             </section>
@@ -229,7 +265,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
   );
 }
 
-function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMoved }) {
+function CitaCard({ c, onCancel, cancelando, slug, API_URL, hoyMin, onMoved, getHeaders }) {
   const isCancelled = c.cancelled === true;
   const [moviendo, setMoviendo] = useState(false);
   const [nuevaFecha, setNuevaFecha] = useState(c.fecha);
@@ -266,7 +302,7 @@ function CitaCard({ c, onCancel, cancelando, slug, API_URL, phone, hoyMin, onMov
     try {
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas/${c.id}/reschedule`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Client-Phone': phone || '' },
+        headers: { 'Content-Type': 'application/json', ...(await getHeaders?.()) },
         body: JSON.stringify({ fecha: nuevaFecha, hora: horaElegida }),
       });
       const data = await res.json().catch(() => null);

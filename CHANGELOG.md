@@ -1,5 +1,28 @@
 # Changelog — Turnobot
 
+## 2026-09-20 (solo Google: fuera la vía teléfono)
+
+- MisCitas solo con sesión (fuera formulario, divisor y `buscarCitas` por teléfono); sin sesión solo el botón Google. Cancelar/mover solo con token.
+- Backend: `listCitasHandler` 401 sin token; `isClientRequest` solo UID (las citas del dueño las gestiona el dueño/empleado).
+- Desplegado: backend `turnobot-00128-rb4` + frontend (verificado: `/citas?telefono=` → 401 en prod).
+
+## 2026-09-20 (blindaje UID + MisCitas sin fricción)
+
+- `isClientRequest` estricta: cita con UID solo se cancela/mueve con token Google (el teléfono ya no basta); sin UID (legado/dueño) sigue el phone match. Cierra el hueco donde adivinar el número cancelaba citas ajenas.
+- MisCitas: con sesión oculta el formulario de teléfono (carga sola) y el vacío dice "con esta cuenta".
+- Tests: `TestCitaUIDSoloTokenLaToca` (403 teléfono vs 200 token en cancelar y mover) + `deleteCitaComoCliente` con token. Suite: 36 PASS.
+- Desplegado: frontend. Backend pendiente (YAML).
+
+## 2026-09-20 (clientes con Google + teléfono obligatorios)
+
+- Identidad del cliente: login Google obligatorio para reservar en la web (`ClientUID`/`ClientEmail` en la reserva); el teléfono sigue obligatorio (WhatsApp + CRM por teléfono intacto, sin migración).
+- Excepción dueño: agenda por el cliente (llamada/WhatsApp) sin sesión, como antes.
+- Tope diario por CUENTA (mismo límite configurable): rotar números ya no burla el tope; excluye canceladas/no-show igual que el tope por teléfono.
+- MisCitas blindada: con sesión solo ve sus citas (por UID); por teléfono solo aparecen citas sin UID (legado/del dueño). Cancelar/mover aceptan sesión o teléfono.
+- Reserva: Paso 5 con botón Google (popup + fallback redirect para iOS), pre-llena el nombre, 401 con mensaje si la sesión vence.
+- Tests con emuladores Firestore+Auth (tokens reales): suite verde + `TestClienteLoginObligatorioYUID` (401 sin token, UID guardado, MisCitas por token sí / por teléfono no).
+- Desplegado: frontend + índices (client_uid+negocio+fecha). Backend pendiente (falta el YAML de entorno).
+
 ## 2026-09-20 (empleado autónomo)
 
 - El portal del empleado deja de ser solo-agenda: Mis números (activas, suman $, no-llegó), Mi turno (Mi horario 🕒 y Mi clave 🔑), teléfono del cliente con WhatsApp en cada cita y botón Mover para reprogramar (usa la duración real de la cita).

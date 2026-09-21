@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
+import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
+import { auth, provider, messaging } from './firebase.js';
 import { useParams } from 'react-router-dom';
 import { getToken } from 'firebase/messaging';
-import { messaging } from './firebase.js';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS, generarEnlaceGoogleCalendar } from './fecha.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
@@ -242,6 +243,10 @@ export default function BookingApp() {
   // Cliente recurrente: datos guardados en este dispositivo por negocio.
   const [clienteGuardado, setClienteGuardado] = useState(null);
   const [recordarDatos, setRecordarDatos] = useState(true);
+  // Identidad del cliente: login Google obligatorio para agendar (cierra las
+  // citas a nombre ajeno). El teléfono sigue obligatorio (WhatsApp + CRM).
+  const [currentUser, setCurrentUser] = useState(null);
+  const [loginLoading, setLoginLoading] = useState(false);
   // Modo de reserva: 'servicio' (clásico) o 'espacio' (canchas/boxes, sin
   // servicio ni profesional). Sin recursos en el negocio siempre es servicio.
   const [modo, setModo] = useState(null);
@@ -277,6 +282,44 @@ export default function BookingApp() {
       });
     setClienteGuardado(leerClienteGuardado(slug));
   }, [slug]);
+
+  // Sesión Google del cliente: retorno de redirect (iOS) + cambios de sesión.
+  // Pre-llena el nombre con el de Google sin borrar lo que ya escribía.
+  useEffect(() => {
+    getRedirectResult(auth).catch(() => {});
+    const unsub = auth.onAuthStateChanged((user) => {
+      setCurrentUser(user);
+      if (user?.displayName) {
+        setBooking((prev) => ({
+          ...prev,
+          clienteNombre: prev.clienteNombre || user.displayName || '',
+        }));
+      }
+    });
+    return unsub;
+  }, []);
+
+  // Login Google: popup, con fallback a redirect (iOS bloquea popups).
+  const handleGoogleLogin = async () => {
+    setLoginLoading(true);
+    setError('');
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (err) {
+      const code = err?.code || '';
+      if (code.includes('popup') || code.includes('cancelled') || code === 'auth/unauthorized-domain') {
+        try {
+          await signInWithRedirect(auth, provider);
+          return;
+        } catch {
+          setError('No pudimos abrir el ingreso con Google. Intenta de nuevo.');
+        }
+      } else {
+        setError('No pudimos ingresar con Google. Intenta de nuevo.');
+      }
+    }
+    setLoginLoading(false);
+  };
 
   // Actualizar <meta name="theme-color"> dinámicamente según la marca.
   useEffect(() => {
@@ -589,6 +632,11 @@ export default function BookingApp() {
   const confirmarCita = async (e) => {
     e.preventDefault();
     if (enviandoRef.current) return;
+    // Login obligatorio: sin sesión no se agenda (el backend lo exige).
+    if (!currentUser) {
+      setError('Ingresa con Google para confirmar tu reserva.');
+      return;
+    }
     enviandoRef.current = true;
     setLoading(true);
     setError('');
@@ -617,11 +665,16 @@ export default function BookingApp() {
       clienteTelefono: booking.clienteTelefono.replace(/\D/g, ''),
     };
     try {
+      const idToken = await currentUser.getIdToken();
       const res = await fetch(`${API_URL}/api/v1/b/${slug}/book`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
         body: JSON.stringify(payload)
       });
+      if (res.status === 401) {
+        setError('Tu sesión venció. Ingresa con Google de nuevo para confirmar.');
+        return;
+      }
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         if (data.cita_id) setCitaId(data.cita_id);
@@ -1518,6 +1571,41 @@ export default function BookingApp() {
                         >
                           👋 Hola de nuevo{clienteGuardado.nombre ? `, ${clienteGuardado.nombre.split(' ')[0]}` : ''} — usar mis datos anteriores
                         </button>
+                      )}
+
+                      {/* Identidad: login Google obligatorio para confirmar.
+                          El teléfono sigue pidiéndose abajo (WhatsApp). */}
+                      {!currentUser ? (
+                        <div className="p-4 bg-gray-50 border border-gray-200 rounded-2xl text-center">
+                          <p className="text-xs text-gray-600 font-semibold mb-3">
+                            🔒 Para confirmar, ingresa con Google. Así nadie reserva a tu nombre.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleGoogleLogin}
+                            disabled={loginLoading}
+                            className="w-full min-h-[52px] p-4 bg-white border border-gray-300 rounded-xl flex items-center justify-center gap-2 font-bold text-sm shadow-sm active:scale-95 transition-transform disabled:opacity-50"
+                          >
+                            <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden="true">
+                              <path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z" />
+                              <path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.8-2.9c-1 .7-2.4 1.2-4.1 1.2-3.1 0-5.8-2.1-6.8-5l-3.7 2.9C3.5 21.3 7.5 24 12 24z" />
+                              <path fill="#FBBC05" d="M5.2 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4L1.5 6.6C.5 8.9 0 10.4 0 12s.5 3.1 1.5 4.5l3.7-2.1z" />
+                              <path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.5 0 3.5 2.7 1.5 6.6l3.7 2.9c1-2.9 3.7-4.8 6.8-4.8z" />
+                            </svg>
+                            {loginLoading ? 'Abriendo Google…' : 'Ingresar con Google'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between gap-2 text-xs text-green-700 bg-green-50 p-3 rounded-xl border border-green-200 font-semibold">
+                          <span className="min-w-0 truncate">✅ Ingresaste como <strong>{currentUser.email}</strong></span>
+                          <button
+                            type="button"
+                            onClick={() => auth.signOut()}
+                            className="underline font-bold active:scale-95 shrink-0"
+                          >
+                            Cambiar cuenta
+                          </button>
+                        </div>
                       )}
 
                       <input

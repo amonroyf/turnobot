@@ -1,49 +1,109 @@
 {
-  "indexes": [
+ "indexes": [
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
     {
-      "collectionGroup": "reservas",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "negocio_id", "order": "ASCENDING" },
-        { "fieldPath": "emp_id", "order": "ASCENDING" },
-        { "fieldPath": "date_time", "order": "ASCENDING" }
-      ]
+     "fieldPath": "negocio_id",
+     "order": "ASCENDING"
     },
     {
-      "collectionGroup": "reservas",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "user_phone", "order": "ASCENDING" },
-        { "fieldPath": "negocio_id", "order": "ASCENDING" },
-        { "fieldPath": "date_time", "order": "ASCENDING" }
-      ]
+     "fieldPath": "emp_id",
+     "order": "ASCENDING"
     },
     {
-      "collectionGroup": "reservas",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "negocio_id", "order": "ASCENDING" },
-        { "fieldPath": "recurso_id", "order": "ASCENDING" },
-        { "fieldPath": "date_time", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "reservas",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "negocio_id", "order": "ASCENDING" },
-        { "fieldPath": "service_name", "order": "ASCENDING" },
-        { "fieldPath": "date_time", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "reservas",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "owner_uid", "order": "ASCENDING" },
-        { "fieldPath": "date_time", "order": "ASCENDING" }
-      ]
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
     }
-  ],
-  "fieldOverrides": []
+   ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "user_phone",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "negocio_id",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "negocio_id",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "recurso_id",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "negocio_id",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "service_name",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "owner_uid",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "client_uid",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "negocio_id",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
+  }
+ ],
+ "fieldOverrides": []
 }

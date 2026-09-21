@@ -325,6 +325,10 @@ type Booking struct {
 	Participantes  []string  `firestore:"participantes,omitempty" json:"participantes,omitempty"`
 	UserPhone      string    `firestore:"user_phone"`
 	ClientName     string    `firestore:"client_name"`
+	// ClientUID/ClientEmail: identidad Google del cliente (login obligatorio
+	// para reservar desde la web; vacío = creada por el dueño en su panel).
+	ClientUID      string    `firestore:"client_uid,omitempty"`
+	ClientEmail    string    `firestore:"client_email,omitempty"`
 	ServiceName    string    `firestore:"service_name"`
 	DurationMinute int       `firestore:"duration_minutes,omitempty"`
 	Price          int       `firestore:"price"`
@@ -1079,6 +1083,27 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 
+	// Identidad del cliente: login Google obligatorio en la web (cierra las
+	// citas a nombre ajeno y blinda MisCitas). Excepción: el dueño agenda por
+	// el cliente desde su panel (llamada/WhatsApp) sin sesión del cliente.
+	// El UID se adjunta siempre que venga un token válido (aunque sea el
+	// dueño probando su local): sin esto sus pruebas no aparecen en MisCitas.
+	// El teléfono sigue obligatorio: es el canal de WhatsApp y del CRM.
+	esDueno := isOwnerRequest(r, slug)
+	var clientUID, clientEmail string
+	if uid, email, ok := verificarCliente(r); ok {
+		clientUID, clientEmail = uid, email
+	} else if !esDueno {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "login_requerido",
+			"message": "Inicia sesión con Google para agendar.",
+		})
+		return
+	}
+
 	// Validar longitud del nombre (1-100 caracteres)
 	if len(req.ClienteNombre) < 1 || len(req.ClienteNombre) > 100 {
 		w.Header().Set("Content-Type", "application/json")
@@ -1163,6 +1188,20 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			"success": false,
 			"error":   "max_per_day",
 			"message": fmt.Sprintf("Has alcanzado el límite de %d reservas para este día con este número de WhatsApp. Para turnos adicionales, escribe directamente al local.", topeDia),
+		})
+		return
+	}
+
+	// 0b. Tope por cuenta Google (mismo límite): evita rotar números de
+	// WhatsApp para sacar más citas con la misma sesión.
+	if clientUID != "" && hasBookingOnDateUID(ctx, slug, clientUID, eventDateTime) {
+		log.Printf("Límite diario por UID en %s: ya tiene %d citas el %s", slug, topeDia, req.Fecha)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "max_per_day",
+			"message": fmt.Sprintf("Has alcanzado el límite de %d reservas para este día con tu cuenta. Para turnos adicionales, escribe directamente al local.", topeDia),
 		})
 		return
 	}
@@ -1457,19 +1496,21 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				}
 			}
 
-			if err := tx.Create(newRef, Booking{
-				NegocioID:      slug,
-				OwnerUID:       negocioInfo.OwnerUID,
-				EmpID:          req.EmpleadoID,
-				RecursoID:      req.RecursoID,
-				RecursoName:    recurso.Name,
-				Cupos:          cuposPedidos,
-				Participantes:  participantes,
-				UserPhone:      req.ClienteTelefono,
-				ClientName:     req.ClienteNombre,
-				ServiceName:    serviceName,
-				DurationMinute: duration,
-				Price:          precioServicio,
+		if err := tx.Create(newRef, Booking{
+			NegocioID:      slug,
+			OwnerUID:       negocioInfo.OwnerUID,
+			EmpID:          req.EmpleadoID,
+			RecursoID:      req.RecursoID,
+			RecursoName:    recurso.Name,
+			Cupos:          cuposPedidos,
+			Participantes:  participantes,
+			UserPhone:      req.ClienteTelefono,
+			ClientName:     req.ClienteNombre,
+			ClientUID:      clientUID,
+			ClientEmail:    clientEmail,
+			ServiceName:    serviceName,
+			DurationMinute: duration,
+			Price:          precioServicio,
 		DateTime:       eventDateTime,
 			CalendarEvt:    eventID,
 			CreatedAt:      time.Now(),
@@ -1604,45 +1645,33 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 // GET /api/v1/b/{slug}/citas?telefono=3001234567 -> citas activas del cliente
 func listCitasHandler(w http.ResponseWriter, r *http.Request, slug string) {
-	telefono := r.URL.Query().Get("telefono")
-	if telefono == "" {
-		http.Error(w, "Falta parámetro telefono", http.StatusBadRequest)
-		return
-	}
-	// Freno a enumeración: sin al menos 7 dígitos no se busca nada (evita
-	// barridos con prefijos cortos; un número real siempre los supera).
-	if len(digitsOnly(telefono)) < 7 {
-		http.Error(w, "Número demasiado corto", http.StatusBadRequest)
-		return
-	}
 	ctx := r.Context()
-
-	docsByRef := map[string]*firestore.DocumentSnapshot{}
 	now := time.Now()
 
-	for _, key := range phoneQueryKeys(telefono) {
-		keyDocs, err := firestoreClient.Collection("reservas").
-			Where("user_phone", "==", key).
-			Where("negocio_id", "==", slug).
-			Where("date_time", ">", now).
-			Documents(ctx).GetAll()
-
-		if err != nil {
-			log.Printf("Error consultando citas: %v", err)
-			http.Error(w, "Error consultando citas", http.StatusInternalServerError)
-			return
-		}
-
-		for _, d := range keyDocs {
-			docsByRef[d.Ref.ID] = d
-		}
+	// Solo sesión Google: cada cliente ve SUS citas (blindado por UID).
+	// Sin vía teléfono: toda reserva web exige cuenta, y las creadas por el
+	// dueño las gestiona el dueño desde su panel.
+	uid, _, ok := verificarCliente(r)
+	if !ok {
+		http.Error(w, "Inicia sesión con Google para ver tus citas", http.StatusUnauthorized)
+		return
 	}
-
-	var citasPendientes []*firestore.DocumentSnapshot
-	for _, d := range docsByRef {
-		citasPendientes = append(citasPendientes, d)
+	docs, err := firestoreClient.Collection("reservas").
+		Where("client_uid", "==", uid).
+		Where("negocio_id", "==", slug).
+		Where("date_time", ">", now).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Error consultando citas por UID: %v", err)
+		http.Error(w, "Error consultando citas", http.StatusInternalServerError)
+		return
 	}
+	responderCitas(w, ctx, slug, docs, now)
+}
 
+// responderCitas formatea citas futuras (ordenadas) para MisCitas.
+func responderCitas(w http.ResponseWriter, ctx context.Context, slug string, docs []*firestore.DocumentSnapshot, now time.Time) {
+	citasPendientes := append([]*firestore.DocumentSnapshot{}, docs...)
 	sort.Slice(citasPendientes, func(i, j int) bool {
 		var bi, bj Booking
 		citasPendientes[i].DataTo(&bi)
@@ -1736,7 +1765,7 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 	// AUTORIZACIÓN: dueño, empleado asignado, o cliente (por phone match).
 	isOwner := isOwnerRequest(r, slug)
 	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
-	isClient := !isOwner && !isEmployee && isClientRequest(r, b.UserPhone)
+	isClient := !isOwner && !isEmployee && isClientRequest(r, b.UserPhone, b.ClientUID)
 	if !isOwner && !isEmployee && !isClient {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
@@ -2037,23 +2066,32 @@ func isAssignedEmployeeRequest(r *http.Request, slug, empID string) bool {
 	return true
 }
 
-// isClientRequest verifica si el request viene del cliente (por phone match).
-// No usa autenticación fuerte: compara el header X-Client-Phone con el
-// teléfono de la cita. Aceptable para cancelación de citas propias donde
-// el riesgo es bajo (solo puede afectar sus propias citas).
-// Usa phoneQueryKeys para manejar diferentes formatos (E.164, nacional, etc.).
-func isClientRequest(r *http.Request, clientPhone string) bool {
-	phone := r.Header.Get("X-Client-Phone")
-	if phone == "" {
+// verificarCliente valida el ID token de Firebase del cliente (login Google
+// obligatorio para reservar). Retorna UID y email (lectura segura del claim).
+func verificarCliente(r *http.Request) (uid, email string, ok bool) {
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		return "", "", false
+	}
+	tok, err := firebaseAuth.VerifyIDToken(r.Context(), token)
+	if err != nil || tok.UID == "" {
+		return "", "", false
+	}
+	if em, _ := tok.Claims["email"].(string); em != "" {
+		email = em
+	}
+	return tok.UID, email, true
+}
+
+// isClientRequest verifica si el request viene del cliente: SOLO su sesión
+// Google (UID coincide con la cita). Sin vía teléfono: toda reserva web
+// exige cuenta; las citas del dueño las gestiona el dueño o el empleado.
+func isClientRequest(r *http.Request, clientPhone, clientUID string) bool {
+	if clientUID == "" {
 		return false
 	}
-	// Comparar contra todos los formatos posibles del teléfono
-	for _, key := range phoneQueryKeys(phone) {
-		if key == clientPhone {
-			return true
-		}
-	}
-	return false
+	uid, _, ok := verificarCliente(r)
+	return ok && uid == clientUID
 }
 
 // DELETE /api/v1/b/{slug}/servicios/{servicioID}
@@ -3312,6 +3350,37 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 			}
 			count++
 		}
+	}
+	return count >= negocioMaxBookings(ctx, negocioID)
+}
+
+// hasBookingOnDateUID es el tope diario por CUENTA Google (mismo límite que
+// por teléfono). Sin esto, rotar números burlaría el tope con sesión válida.
+// Excluye canceladas y no-show del conteo, igual que el tope por teléfono.
+func hasBookingOnDateUID(ctx context.Context, negocioID, uid string, requested time.Time) bool {
+	if uid == "" {
+		return false
+	}
+	loc := shopLocation(ctx, negocioID)
+	startOfDay := time.Date(requested.In(loc).Year(), requested.In(loc).Month(), requested.In(loc).Day(), 0, 0, 0, 0, loc)
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	docs, err := firestoreClient.Collection("reservas").
+		Where("client_uid", "==", uid).
+		Where("negocio_id", "==", negocioID).
+		Where("date_time", ">=", startOfDay).
+		Where("date_time", "<", endOfDay).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: error verificando tope diario por UID: %v", err)
+		return false
+	}
+	count := 0
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true || d.Data()["no_show"] == true {
+			continue
+		}
+		count++
 	}
 	return count >= negocioMaxBookings(ctx, negocioID)
 }

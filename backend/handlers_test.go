@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	firebase "firebase.google.com/go/v4"
 	"cloud.google.com/go/firestore"
 )
 
@@ -78,11 +80,121 @@ func postBook(t *testing.T, slug string, payload map[string]string) (int, map[st
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
 	var out map[string]interface{}
 	_ = json.Unmarshal(rec.Body.Bytes(), &out)
 	return rec.Code, out
+}
+
+// testAuthClient inicializa el cliente Firebase Auth contra el emulador
+// (FIREBASE_AUTH_EMULATOR_HOST). Sin emulador Auth se omite.
+var authInitOnce sync.Once
+
+func testAuthClient(t *testing.T) {
+	t.Helper()
+	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" || os.Getenv("FIREBASE_AUTH_EMULATOR_HOST") == "" {
+		t.Skip("sin emuladores (Firestore/Auth), se omite")
+	}
+	authInitOnce.Do(func() {
+		ctx := context.Background()
+		// Mismo ProjectID que el emulador (demo-test): si no, VerifyIDToken
+		// rechaza por 'aud' inválida.
+		app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: "demo-test"})
+		if err != nil {
+			t.Fatalf("firebase app test: %v", err)
+		}
+		firebaseApp = app
+		firebaseAuth, err = app.Auth(ctx)
+		if err != nil {
+			t.Fatalf("firebase auth test: %v", err)
+		}
+	})
+}
+
+// tokenClienteTest crea (o reusa) un usuario Google de prueba en el emulador
+// Auth y retorna su ID token, como lo manda la web al reservar.
+var clienteTokenCache sync.Map // email -> idToken
+
+func tokenClienteTest(t *testing.T, email string) string {
+	t.Helper()
+	testAuthClient(t)
+	if v, ok := clienteTokenCache.Load(email); ok {
+		return v.(string)
+	}
+	host := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
+	authREST := func(op string, body string) (int, []byte) {
+		req, _ := http.NewRequest(http.MethodPost,
+			fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:%s?key=fake", host, op),
+			strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("auth emulator %s: %v", op, err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		return res.StatusCode, b
+	}
+	crear := fmt.Sprintf(`{"email":%q,"password":"test1234","returnSecureToken":true}`, email)
+	code, b := authREST("signUp", crear)
+	if code != 200 {
+		if !strings.Contains(string(b), "EMAIL_EXISTS") {
+			t.Fatalf("signUp test: code=%d body=%s", code, b)
+		}
+		var code2 int
+		code2, b = authREST("signInWithPassword", crear)
+		if code2 != 200 {
+			t.Fatalf("signIn test: code=%d body=%s", code2, b)
+		}
+	}
+	var out map[string]interface{}
+	_ = json.Unmarshal(b, &out)
+	tok, _ := out["idToken"].(string)
+	uid, _ := out["localId"].(string)
+	if tok == "" || uid == "" {
+		t.Fatalf("auth test sin idToken/uid: %s", b)
+	}
+	clienteTokenCache.Store(email, tok)
+	clienteUIDCache.Store(email, uid)
+	return tok
+}
+
+// clienteUIDTest retorna el UID del usuario de prueba (para sembrar owner).
+func clienteUIDTest(t *testing.T, email string) string {
+	t.Helper()
+	if v, ok := clienteUIDCache.Load(email); ok {
+		return v.(string)
+	}
+	tokenClienteTest(t, email)
+	if v, ok := clienteUIDCache.Load(email); ok {
+		return v.(string)
+	}
+	t.Fatalf("sin UID para %s", email)
+	return ""
+}
+
+var clienteUIDCache sync.Map // email -> uid
+
+// authClienteTest adjunta el Bearer del cliente de prueba al request.
+// Cada test usa su propio usuario (derivado de t.Name()): así el tope diario
+// por UID no interfiere entre tests, pero sí aplica dentro de cada uno.
+func authClienteTest(t *testing.T, req *http.Request) {
+	t.Helper()
+	email := strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "@test.com"
+	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
+}
+
+var clienteUnicoContador int64
+
+// authClienteUnico adjunta un usuario NUEVO por llamado: simula clientes
+// distintos llenando una clase (el tope por UID no debe frenarlos).
+func authClienteUnico(t *testing.T, req *http.Request) {
+	t.Helper()
+	n := atomic.AddInt64(&clienteUnicoContador, 1)
+	email := fmt.Sprintf("unico-%d@test.com", n)
+	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
 }
 
 func reservaIDsPorTelefono(t *testing.T, ctx context.Context, slug, phone string) []string {
@@ -267,6 +379,9 @@ func deleteCitaComoCliente(t *testing.T, slug, id, phone string) int {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+id, nil)
 	req.Header.Set("X-Client-Phone", phone)
+	// La cita se creó con el UID del test (postBook): el token manda.
+	email := strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "@test.com"
+	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
 	rec := httptest.NewRecorder()
 	cancelCitaHandler(rec, req, slug, id)
 	return rec.Code
@@ -591,12 +706,17 @@ func TestBookRecursoSolapeYLibre(t *testing.T) {
 	fecha := mañanaStr()
 
 	book := func(phone, recurso, hora string) int {
-		code, _ := postBook(t, slug, map[string]string{
+		body, _ := json.Marshal(map[string]interface{}{
 			"servicioId": "svc1", "recursoId": recurso,
 			"fecha": fecha, "hora": hora,
 			"clienteNombre": "X", "clienteTelefono": phone,
 		})
-		return code
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
 	}
 	if c := book("+573002222221", "rec1", "10:00"); c != http.StatusCreated {
 		t.Fatalf("primera reserva code=%d", c)
@@ -656,6 +776,7 @@ func TestRecursoCuposLlenado(t *testing.T) {
 		})
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
 		rec := httptest.NewRecorder()
 		bookHandler(rec, req, slug)
 		return rec.Code
@@ -689,6 +810,7 @@ func TestRecursoCuposLlenado(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
 	if rec.Code != http.StatusBadRequest {
@@ -762,6 +884,7 @@ func TestRecursoHorarioPropio(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
 	if rec.Code != http.StatusCreated {
@@ -814,6 +937,7 @@ func TestBookRecursoSinServicio(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
 	if rec.Code != http.StatusCreated {
@@ -840,6 +964,7 @@ func TestBookRecursoSinServicio(t *testing.T) {
 	})
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body2))
 	req2.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req2)
 	rec2 := httptest.NewRecorder()
 	bookHandler(rec2, req2, slug)
 	if rec2.Code != http.StatusBadRequest {
@@ -870,6 +995,7 @@ func TestRecursoClasePredefinidaHereda(t *testing.T) {
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
 	rec := httptest.NewRecorder()
 	bookHandler(rec, req, slug)
 	if rec.Code != http.StatusCreated {
@@ -943,5 +1069,213 @@ func TestEmpleadoAutonomoHorarioYPin(t *testing.T) {
 	corto := conToken(http.MethodPost, "/api/v1/b/"+slug+"/employee/emp1/pin", `{"pin":"12"}`)
 	if corto.Code != http.StatusBadRequest {
 		t.Fatalf("pin corto code=%d, esperaba 400", corto.Code)
+	}
+}
+
+func TestClienteLoginObligatorioYUID(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-login")
+	seedTienda(t, ctx, slug)
+	fecha := mañanaStr()
+	tok := tokenClienteTest(t, "cliente@test.com")
+
+	// Sin token -> 401 login_requerido.
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573001111111",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("sin token code=%d, esperaba 401", rec.Code)
+	}
+
+	// Con token -> 201 y guarda client_uid.
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req2.Header.Set("Content-Type", "application/json")
+	req2.Header.Set("Authorization", "Bearer "+tok)
+	rec2 := httptest.NewRecorder()
+	bookHandler(rec2, req2, slug)
+	if rec2.Code != http.StatusCreated {
+		t.Fatalf("con token code=%d body=%s, esperaba 201", rec2.Code, rec2.Body.String())
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573001111111")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.ClientUID == "" {
+		t.Fatal("client_uid vacío, debía guardarse del token")
+	}
+
+	// MisCitas con token -> la ve.
+	lreq := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/citas", nil)
+	lreq.Header.Set("Authorization", "Bearer "+tok)
+	lrec := httptest.NewRecorder()
+	listCitasHandler(lrec, lreq, slug)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("citas con token code=%d, esperaba 200", lrec.Code)
+	}
+	var citas []map[string]interface{}
+	_ = json.Unmarshal(lrec.Body.Bytes(), &citas)
+	if len(citas) != 1 {
+		t.Fatalf("citas=%d, esperaba 1", len(citas))
+	}
+
+	// MisCitas por teléfono -> 401 (vía eliminada: solo sesión).
+	preq := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/citas?telefono=+573001111111", nil)
+	prec := httptest.NewRecorder()
+	listCitasHandler(prec, preq, slug)
+	if prec.Code != http.StatusUnauthorized {
+		t.Fatalf("citas por teléfono code=%d, esperaba 401", prec.Code)
+	}
+}
+
+func TestTopeDiarioPorUID(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-topeuid")
+	seedTienda(t, ctx, slug)
+	fecha := mañanaStr()
+	tok := tokenClienteTest(t, "cliente@test.com")
+
+	book := func(phone, hora string) int {
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "empleadoId": "emp1",
+			"fecha": fecha, "hora": hora,
+			"clienteNombre": "X", "clienteTelefono": phone,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+
+	// Tope default 3: tres citas con DISTINTO teléfono entran (misma cuenta).
+	for i, h := range []string{"10:00", "11:00", "12:00"} {
+		if c := book(fmt.Sprintf("+57300999990%d", i), h); c != http.StatusCreated {
+			t.Fatalf("cita %d code=%d body, esperaba 201 (rotar número no debía importar)", i+1, c)
+		}
+	}
+	// 4ta con otro número distinto: el tope por UID la frena.
+	if c := book("+573009999903", "13:00"); c != http.StatusConflict {
+		t.Fatalf("4ta cita code=%d, esperaba 409 por tope UID", c)
+	}
+}
+
+func TestCitaUIDSoloTokenLaToca(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-uidlock")
+	seedTienda(t, ctx, slug)
+	// +2 días: fuera de la ventana de 24h para que el cliente pueda mover.
+	fecha := time.Now().Add(48 * time.Hour).Format("2006-01-02")
+	tok := tokenClienteTest(t, "lock@test.com")
+	phone := "+573007777771"
+
+	// Reserva con sesión (queda con UID).
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": phone,
+	})
+	br := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	br.Header.Set("Content-Type", "application/json")
+	br.Header.Set("Authorization", "Bearer "+tok)
+	brec := httptest.NewRecorder()
+	bookHandler(brec, br, slug)
+	if brec.Code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", brec.Code)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, phone)
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	citaID := ids[0]
+
+	// Atacante con solo el teléfono: cancelar -> 403, mover -> 403.
+	cr := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+citaID, nil)
+	cr.Header.Set("X-Client-Phone", phone)
+	crec := httptest.NewRecorder()
+	cancelCitaHandler(crec, cr, slug, citaID)
+	if crec.Code != http.StatusForbidden {
+		t.Fatalf("cancel con teléfono code=%d, esperaba 403", crec.Code)
+	}
+	mr := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+citaID+"/reschedule",
+		bytes.NewReader([]byte(`{"fecha":"`+fecha+`","hora":"11:00"}`)))
+	mr.Header.Set("Content-Type", "application/json")
+	mr.Header.Set("X-Client-Phone", phone)
+	mrec := httptest.NewRecorder()
+	rescheduleCitaHandler(mrec, mr, slug, citaID)
+	if mrec.Code != http.StatusForbidden {
+		t.Fatalf("mover con teléfono code=%d, esperaba 403", mrec.Code)
+	}
+
+	// Dueño de la cita con token: mover -> 200, cancelar -> 200.
+	mr2 := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+citaID+"/reschedule",
+		bytes.NewReader([]byte(`{"fecha":"`+fecha+`","hora":"11:00"}`)))
+	mr2.Header.Set("Content-Type", "application/json")
+	mr2.Header.Set("Authorization", "Bearer "+tok)
+	mrec2 := httptest.NewRecorder()
+	rescheduleCitaHandler(mrec2, mr2, slug, citaID)
+	if mrec2.Code != http.StatusOK {
+		t.Fatalf("mover con token code=%d body=%s, esperaba 200", mrec2.Code, mrec2.Body.String())
+	}
+	cr2 := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+citaID, nil)
+	cr2.Header.Set("Authorization", "Bearer "+tok)
+	crec2 := httptest.NewRecorder()
+	cancelCitaHandler(crec2, cr2, slug, citaID)
+	if crec2.Code != http.StatusOK {
+		t.Fatalf("cancel con token code=%d body=%s, esperaba 200", crec2.Code, crec2.Body.String())
+	}
+}
+
+func TestBookDuenoConSesionGuardaUID(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-owneruid")
+	seedTienda(t, ctx, slug)
+	// El dueño es el usuario de prueba: su token pasa isOwnerRequest.
+	uid := clienteUIDTest(t, "dueno@test.com")
+	tok := tokenClienteTest(t, "dueno@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": uid,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Dueño", "clienteTelefono": "+573006666661",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("book dueño code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573006666661")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.ClientUID != uid {
+		t.Fatalf("client_uid=%q, esperaba el del dueño %q (MisCitas lo necesita)", b.ClientUID, uid)
 	}
 }
