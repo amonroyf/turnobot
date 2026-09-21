@@ -1,5 +1,10 @@
 # Changelog — Turnobot
 
+## 2026-09-21 (recordatorios: filtro en base de datos)
+
+- El cron filtra `reminder_sent == false` en Firestore (antes traía 72h y filtraba en memoria). Índice compuesto nuevo (en creación al desplegar).
+- Desplegado: backend + índices.
+
 ## 2026-09-21 (un lugar por persona y sesión)
 
 - `yaTieneLugar`: misma persona no aparta dos veces la misma sesión (espacio+hora), ni rotando número ni cuenta (409 `lugar_duplicado`). Vale al reservar y al mover (ignora la propia cita).

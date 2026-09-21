@@ -59,6 +59,7 @@ func checkRemindersHandler(w http.ResponseWriter, r *http.Request) {
 	docs, err := firestoreClient.Collection("reservas").
 		Where("date_time", ">=", now).
 		Where("date_time", "<=", now.Add(maxReminderScan)).
+		Where("reminder_sent", "==", false).
 		Documents(ctx).GetAll()
 	if err != nil {
 		log.Printf("checkReminders: error consultando reservas: %v", err)
@@ -75,6 +76,8 @@ func checkRemindersHandler(w http.ResponseWriter, r *http.Request) {
 		if err := d.DataTo(&b); err != nil {
 			continue
 		}
+		// reminder_sent ya viene filtrado en la consulta (ahorro de lecturas);
+		// se re-verifica en memoria por seguridad.
 		if b.ReminderSent || b.NegocioID == "" || !b.DateTime.After(now) {
 			continue
 		}

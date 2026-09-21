@@ -103,6 +103,20 @@
      "order": "ASCENDING"
     }
    ]
+  },
+  {
+   "collectionGroup": "reservas",
+   "queryScope": "COLLECTION",
+   "fields": [
+    {
+     "fieldPath": "reminder_sent",
+     "order": "ASCENDING"
+    },
+    {
+     "fieldPath": "date_time",
+     "order": "ASCENDING"
+    }
+   ]
   }
  ],
  "fieldOverrides": []
