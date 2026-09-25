@@ -1,5 +1,5 @@
-import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { lazy, Suspense, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import ErrorBoundary from './ErrorBoundary.jsx';
 
 // Lazy loading para code splitting — reduce el bundle inicial
@@ -21,10 +21,39 @@ function LoadingSpinner() {
   );
 }
 
+// SEO: título + descripción por ruta (Colombia). Las rutas privadas
+// (admin/empleado) se marcan noindex para no salir en Google.
+function TitulosPorRuta() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    const base = 'TurnoBot Colombia';
+    let titulo = `${base} — Agenda online para citas y cupos`;
+    let descripcion = 'Tu página de reservas online para servicios 1 a 1 y espacios por cupos. Tus clientes reservan solos 24/7.';
+    let robots = 'index, follow';
+    if (pathname === '/register') {
+      titulo = `${base} — Crea tu página de reservas gratis`;
+      descripcion = 'Crea tu página de reservas en 10 minutos. Servicios, espacios por cupos, equipo con PIN y panel desde el celular.';
+    } else if (pathname.startsWith('/shop/')) {
+      titulo = `${base} — Reserva tu cita en línea`;
+      descripcion = 'Elige servicio o espacio, día y hora, y confirma con Google. Sin llamadas ni filas.';
+    } else if (pathname.startsWith('/admin') || pathname.startsWith('/employee/') || pathname.startsWith('/super-admin')) {
+      titulo = `${base} — Panel privado`;
+      robots = 'noindex, nofollow';
+    }
+    document.title = titulo;
+    let meta = document.querySelector('meta[name="description"]');
+    if (meta) meta.setAttribute('content', descripcion);
+    let metaRobots = document.querySelector('meta[name="robots"]');
+    if (metaRobots) metaRobots.setAttribute('content', robots);
+  }, [pathname]);
+  return null;
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
+        <TitulosPorRuta />
         <Suspense fallback={<LoadingSpinner />}>
           <Routes>
             {/* Landing page pública */}

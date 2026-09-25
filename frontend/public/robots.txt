@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /employee/
+
+Sitemap: https://turnobot-web.web.app/sitemap.xml
