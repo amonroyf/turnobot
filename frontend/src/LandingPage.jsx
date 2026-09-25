@@ -560,7 +560,17 @@ function CTASection() {
             Crea tu página de reservas hoy. Sin tarjeta, sin enredos.
           </p>
           <CTAPrincipal />
-          <p className="text-xs text-gray-500 mt-6">Sin tarjeta · Sin contrato · Cancela cuando quieras</p>
+          <div className="mt-8 max-w-sm mx-auto bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-4 text-left">
+            <img src="/alejandro-monroy.png" alt="Alejandro Monroy, creador de TurnoBot" className="w-14 h-14 rounded-full object-cover border-2 border-green-500 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-sm font-black text-white">Alejandro Monroy</p>
+              <p className="text-xs text-gray-400">Creador de TurnoBot · te ayudo a montarlo</p>
+              <a href="https://wa.me/573229124517?text=Hola%20Alejandro%2C%20tengo%20una%20pregunta%20sobre%20TurnoBot" target="_blank" rel="noreferrer" className="text-xs font-bold text-green-400 hover:text-green-300 mt-1 inline-block">
+                💬 +57 322 912 4517 · Lun–Sáb 9am–6pm
+              </a>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 mt-4">Sin tarjeta · Sin contrato · Cancela cuando quieras</p>
         </FadeIn>
       </div>
     </section>
@@ -575,6 +585,9 @@ function Footer() {
           <div>
             <p className="text-white font-black text-lg">TurnoBot ✨</p>
             <p className="text-xs mt-1">Agendamiento en línea para negocios de servicios</p>
+            <a href="https://wa.me/573229124517?text=Hola%20Alejandro%2C%20tengo%20una%20pregunta%20sobre%20TurnoBot" target="_blank" rel="noreferrer" className="text-xs mt-2 inline-block text-green-400 hover:text-green-300 font-bold">
+              💬 Alejandro Monroy · +57 322 912 4517
+            </a>
           </div>
           <div className="flex gap-6 text-sm">
             <a href="/" className="hover:text-white transition-colors">Inicio</a>
