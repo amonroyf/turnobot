@@ -42,25 +42,26 @@ export default function PhoneMockup({ modo = 'servicio' }) {
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="text-xs font-bold text-gray-900">📍 Cancha Fútbol</p>
-                      <p className="text-[10px] text-gray-500">12/30 · ¡Quedan 18!</p>
+                      <p className="text-xs font-bold text-gray-900">🧘 Clase de Crossfit</p>
+                      <p className="text-[10px] text-gray-500">12/15 · ¡Quedan 3!</p>
                     </div>
-                    <span className="text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">18 libres</span>
+                    <span className="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg">3 libres</span>
                   </div>
                   <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full w-2/5 bg-emerald-500 rounded-full" />
+                    <div className="h-full w-4/5 bg-amber-500 rounded-full" />
                   </div>
                 </div>
 
                 {/* Date + hours espacio */}
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
-                  <p className="text-[10px] font-bold text-gray-700 mb-2">📅 Sábado, Sep 20 · sin profesional</p>
+                  <p className="text-[10px] font-bold text-gray-700 mb-2">📅 Viernes · Clase de Crossfit</p>
                   <div className="grid grid-cols-3 gap-1.5">
-                    {['10:00', '11:00', '12:00'].map((h, i) => (
+                    {['17:00', '18:00', '19:30'].map((h, i) => (
                       <div key={h} className={`text-center text-[10px] py-1.5 rounded-lg font-bold ${
                         i === 1 ? 'bg-green-500 text-white' : 'bg-white border border-gray-200 text-gray-600'
                       }`}>
                         {h}
+                        {i === 1 && <span className="block text-[8px] font-bold">¡Quedan 3!</span>}
                       </div>
                     ))}
                   </div>
@@ -118,7 +119,7 @@ export default function PhoneMockup({ modo = 'servicio' }) {
               Confirmar Reserva ✓
             </div>
             <p className="text-[9px] text-gray-400 text-center font-medium -mt-1">
-              {esEspacio ? 'Reserva de Cancha Fútbol · se libera si cancelas' : 'Pagas en el local · aquí solo apartas'}
+              {esEspacio ? 'Reserva de Crossfit · 18:00 · se libera si cancelas' : 'Pagas en el local · aquí solo apartas'}
             </p>
           </div>
         </div>
@@ -130,7 +131,7 @@ export default function PhoneMockup({ modo = 'servicio' }) {
           <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center text-white text-sm">📱</div>
           <div>
             <p className="text-[10px] font-bold text-gray-900">Nueva reserva</p>
-            <p className="text-[8px] text-gray-500">{esEspacio ? 'Ana · Cancha · Sáb 11am' : 'Juan · Corte · Vie 11am'}</p>
+            <p className="text-[8px] text-gray-500">{esEspacio ? 'Ana · Crossfit · Vie 6pm' : 'Juan · Corte · Vie 11am'}</p>
           </div>
         </div>
       </div>

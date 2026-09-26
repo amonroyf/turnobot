@@ -279,7 +279,7 @@ function TiposNegocioSection() {
       tag: 'Modo 2 · Cupo en espacio',
       title: 'Espacios por cupos',
       desc: 'El cliente elige espacio → día → hora → confirma. Sin elegir profesional. Ideal para grupos y canchas.',
-      ejemplos: ['Cancha ⚽ · Fútbol 12/30', 'Clase 🧘 · Yoga 8/20', 'Box 🔧 · Funcional 15/25', 'Sala 🎶 · Ensayo 1/6', 'Camilla 💆 · Spa'],
+      ejemplos: ['Clase 🧘 · Crossfit 18:00 ¡Quedan 3!', 'Cancha ⚽ · Fútbol 12/30', 'Box 🔧 · Funcional 15/25', 'Sala 🎶 · Ensayo 1/6', 'Camilla 💆 · Spa'],
       pie: 'Una sola tarjeta por horario con barra de ocupación y lista por persona.',
     },
   ];

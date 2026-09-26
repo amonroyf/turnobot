@@ -78,15 +78,15 @@ export default function DashboardMockup() {
           {/* Grupo espacio: UNA tarjeta por horario */}
           <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
             <div className="p-2.5 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-sm">⚽</span>
+              <span className="w-8 h-8 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-sm">🧘</span>
               <div className="flex-1">
-                <p className="text-[10px] font-bold text-gray-900">📍 Cancha Fútbol · 11:00</p>
+                <p className="text-[10px] font-bold text-gray-900">📍 Clase de Crossfit · 18:00</p>
                 <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mt-1">
-                  <div className="h-full w-2/5 bg-emerald-500 rounded-full" />
+                  <div className="h-full w-4/5 bg-amber-500 rounded-full" />
                 </div>
-                <p className="text-[8px] font-bold text-gray-500 mt-0.5">12/30 · ¡Quedan 18!</p>
+                <p className="text-[8px] font-bold text-gray-500 mt-0.5">12/15 · ¡Quedan 3!</p>
               </div>
-              <span className="text-[9px] font-black bg-gray-100 text-gray-700 px-2 py-1 rounded-lg">12/30</span>
+              <span className="text-[9px] font-black bg-gray-100 text-gray-700 px-2 py-1 rounded-lg">12/15</span>
             </div>
             <div className="border-t border-gray-100 divide-y divide-gray-50">
               <div className="px-3 py-1.5 flex items-center gap-2">
