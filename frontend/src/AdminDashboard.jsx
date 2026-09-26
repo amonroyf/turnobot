@@ -192,6 +192,7 @@ function AdminPanel() {
   const [user, setUser] = useState(null);
   const [negocio, setNegocio] = useState(null);
   const [view, setView] = useState('agenda');
+  const [tabCatalogo, setTabCatalogo] = useState('servicios'); // 'servicios' | 'espacios'
   const pushNotifications = usePushNotifications(negocio?.id);
 
   // Toast en app para pushes que llegan con el panel abierto (primer plano):
@@ -894,7 +895,7 @@ function AdminPanel() {
   // hora se ven como UNA tarjeta de ocupación ("Fútbol · 10:00 · 12/30") con
   // lista plegable, en vez de inundar la agenda con 30 tarjetas.
   const iconoEspacio = (tipo) => (
-    tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🔧' : tipo === 'consultorio' ? '🩺'
+    tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🏋️' : tipo === 'consultorio' ? '🩺'
     : tipo === 'sala' ? '🎶' : tipo === 'camilla' ? '💆' : tipo === 'clase' ? '🧘' : '📍'
   );
 
@@ -1553,6 +1554,535 @@ function AdminPanel() {
         {/* PESTAÑA: AJUSTES */}
         {view === 'ajustes' && (
           <div className="space-y-5">
+            {/* CATÁLOGO: SERVICIOS Y ESPACIOS POR PESTAÑA */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Lo que vendes</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Servicios 1 a 1 y espacios por cupos. El cliente los ve en tu página.</p>
+              <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4" role="tablist" aria-label="Catálogo">
+                {[{ id: 'servicios', label: `✂️ Servicios (${servicios.length})` }, { id: 'espacios', label: `🏟️ Espacios (${recursos.length})` }].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={tabCatalogo === t.id}
+                    onClick={() => setTabCatalogo(t.id)}
+                    className={`flex-1 min-h-[44px] py-2 rounded-lg text-xs font-bold transition-all ${tabCatalogo === t.id ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'}`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+              {tabCatalogo === 'servicios' && (
+              <>
+              <p className="text-xs font-medium text-gray-500 mb-4">Lo que verán tus clientes en el paso 1 de la reserva: nombre, duración y precio.</p>
+              <ul className="space-y-3 mb-4">
+                {servicios.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Aún no hay servicios</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega el primero abajo 👇 para que los clientes puedan reservar.</p>
+                  </div>
+                )}
+                {servicios.map((s) => {
+                  const encargados = profesionales.filter(
+                    (p) => !p.servicios_ids || p.servicios_ids.includes(s.id)
+                  );
+                  return (
+                    <li key={s.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
+                      <div className="flex justify-between items-center gap-2">
+                        <div className="min-w-0">
+                          <p className="font-bold text-gray-900">{s.name}</p>
+                          <p className="text-xs font-medium text-gray-500">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={async () => {
+                              const url = `${window.location.origin}/shop/${negocio.id}?s=${s.id}`;
+                              try {
+                                await navigator.clipboard.writeText(url);
+                                await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
+                              } catch {
+                                await avisar(`Copia este enlace:\n\n${url}`, 'info');
+                              }
+                            }}
+                            aria-label={`Copiar enlace directo de ${s.name}`}
+                            className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                          >
+                            🔗 Link
+                          </button>
+                          <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
+                            {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
+                          </button>
+                        </div>
+                      </div>
+                      <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
+                              <span className="text-[11px] font-bold text-gray-400 uppercase">Lo hacen:</span>
+                        {encargados.length === 0 ? (
+                          <span className="text-[11px] text-red-600 font-semibold">Nadie aún — asígnalo en “Qué servicios hace” del equipo</span>
+                        ) : (
+                          encargados.map((p) => (
+                            <span key={p.id} className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
+                              👤 {p.name}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
+              <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar un servicio nuevo</h3>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del servicio</span>
+                <input
+                  type="text" required placeholder="Ej. Corte, Uñas, Limpieza" value={nuevoServicio.name}
+                  onChange={(e) => setNuevoServicio({ ...nuevoServicio, name: e.target.value })}
+                  aria-label="Nombre del servicio nuevo"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                </label>
+                <div className="flex gap-2">
+                  <label className="flex-1 min-w-0">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
+                    <input
+                      type="number" required min={1} placeholder="Ej. 30" inputMode="numeric" value={nuevoServicio.duration_minutes}
+                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, duration_minutes: e.target.value })}
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                  <label className="flex-1 min-w-0">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
+                    <input
+                      type="number" required min={0} placeholder="Ej. 20000" inputMode="numeric" value={nuevoServicio.price}
+                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
+                    />
+                  </label>
+                </div>
+                <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                  + Agregar Servicio
+                </button>
+              </form>
+              </>
+              )}
+              {tabCatalogo === 'espacios' && (
+              <>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Define precio, duración y cupos: se reservan directo, sin elegir profesional.</p>
+              <ul className="space-y-3 mb-4">
+                {recursos.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Sin espacios</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Si solo atienden personas, no necesitas nada aquí.</p>
+                  </div>
+                )}
+                {recursos.map((r) => (
+                  <li key={r.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
+                    <div className="flex justify-between items-center gap-2">
+                      <div className="min-w-0">
+                        <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
+                        <p className="text-xs font-medium text-gray-500 capitalize">
+                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
+                        </p>
+                        <p className="text-xs font-semibold text-gray-700 mt-0.5">
+                          ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}
+                        </p>
+                        {r.descripcion && (
+                          <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
+                        )}
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <button
+                          onClick={async () => {
+                            const url = `${window.location.origin}/shop/${negocio.id}?r=${r.id}`;
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
+                            } catch {
+                              await avisar(`Copia este enlace:\n\n${url}`, 'info');
+                            }
+                          }}
+                          aria-label={`Copiar enlace directo de ${r.name}`}
+                          className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                        >
+                          🔗 Link
+                        </button>
+                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
+                        <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
+                          {eliminando === r.id ? 'Borrando…' : 'Borrar'}
+                        </button>
+                      </div>
+                    </div>
+                    {(r.capacidad || 1) > 1 || editandoRecurso === r.id ? (
+                      <div className="pt-2 border-t border-gray-100 flex items-end gap-2">
+                        <label className="flex-1 min-w-0">
+                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos</span>
+                          <input
+                            type="number" min={1} max={100} inputMode="numeric"
+                            value={editandoRecurso === r.id ? editRecursoVals.capacidad : (r.capacidad || 1)}
+                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: e.target.value }); }}
+                            aria-label={`Cupos de ${r.name}`}
+                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
+                          />
+                        </label>
+                        {editandoRecurso === r.id && (
+                          <>
+                            <button onClick={() => guardarRecurso(r)} disabled={guardandoRecurso} className="min-h-[44px] px-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 disabled:opacity-50">
+                              {guardandoRecurso ? '…' : 'Guardar'}
+                            </button>
+                            <button onClick={() => setEditandoRecurso(null)} className="min-h-[44px] px-3 bg-gray-100 text-gray-600 font-bold rounded-xl text-xs active:scale-95">
+                              X
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <button onClick={() => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: r.capacidad || 1 }); }} className="text-[11px] font-bold text-gray-500 underline">
+                        Pasar a grupal (cupos)
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <form onSubmit={handleAddRecurso} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar clase o espacio</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre</span>
+                    <input
+                      type="text" required placeholder="Ej. Yoga, Cancha 1…" value={nuevoRecurso.name}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, name: e.target.value })}
+                      aria-label="Nombre del espacio nuevo"
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo</span>
+                    <select
+                      value={nuevoRecurso.tipo}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, tipo: e.target.value })}
+                      aria-label="Tipo de espacio"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    >
+                      <option value="clase">🧘 Clase grupal</option>
+                      <option value="cancha">⚽ Cancha</option>
+                      <option value="box">🏋️ Box / crossfit</option>
+                      <option value="consultorio">🩺 Consultorio</option>
+                      <option value="sala">🎶 Sala</option>
+                      <option value="camilla">💆 Camilla</option>
+                      <option value="otro">📍 Otro</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
+                    <input
+                      type="number" min={1} max={100} inputMode="numeric"
+                      value={nuevoRecurso.capacidad}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
+                      aria-label="Cupos por horario del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
+                    <input
+                      type="number" required min={15} max={480} placeholder="60" inputMode="numeric"
+                      value={nuevoRecurso.duration_minutes}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, duration_minutes: e.target.value })}
+                      aria-label="Duración en minutos del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
+                    <input
+                      type="number" required min={0} placeholder="25000" inputMode="numeric"
+                      value={nuevoRecurso.price}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, price: e.target.value })}
+                      aria-label="Precio del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
+                  <textarea
+                    rows={2} maxLength={500} placeholder="Ej. Cancha sintética techada, trae zapatos de goma…"
+                    value={nuevoRecurso.descripcion}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, descripcion: e.target.value })}
+                    aria-label="Información del espacio nuevo"
+                    className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
+              </form>
+              </>
+              )}
+            </div>
+
+            {/* GESTIÓN DE PROFESIONALES */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Tu equipo</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Quienes atienden citas. Define qué servicios hace cada uno, su horario y su clave de acceso.</p>
+              <ul className="space-y-3 mb-4">
+                {profesionales.length === 0 && (
+                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
+                    <p className="text-sm font-bold text-gray-700">Aún no hay equipo</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega a la primera persona abajo 👇 para empezar a recibir reservas.</p>
+                  </div>
+                )}
+                {profesionales.map((p) => (
+                  <li key={p.id} className="p-4 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-3">
+                    <div className="flex justify-between items-center gap-2">
+                      <p className="font-bold text-gray-900 text-base">{p.name}</p>
+                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} aria-label={`Quitar a ${p.name} del equipo`} className="shrink-0 min-h-[44px] px-3 bg-red-50 text-red-600 font-bold rounded-xl text-xs border border-red-100 active:scale-95 transition-transform">
+                        {eliminando === p.id ? 'Quitando…' : 'Quitar'}
+                      </button>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
+                      {p.calendar_id ? (
+                        <span className="flex-1 text-center py-2.5 bg-green-50 text-green-700 text-[11px] font-black rounded-lg border border-green-100">✓ Google Calendar conectado</span>
+                      ) : (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const t = await user.getIdToken();
+                              window.open(`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}&otok=${t}&ret=admin`, '_blank', 'noopener');
+                            } catch {
+                              await avisar('No pudimos abrir la conexión. Intenta de nuevo.', 'error');
+                            }
+                          }}
+                          className="flex-1 text-center py-2.5 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm min-h-[44px] flex items-center justify-center"
+                        >
+                          🔗 Conectar Google Calendar
+                        </button>
+                      )}
+                      <button onClick={() => setServiciosModal(p)} title="Elegir qué servicios atiende esta persona" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Qué hace</button>
+                      <button onClick={() => setHorarioModal(p)} title="Definir días y turnos de trabajo" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
+                      <button onClick={() => setPinModal(p)} title="Ver o cambiar su clave de acceso" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 Clave</button>
+                    </div>
+                    <div className="pt-2 border-t border-gray-100">
+                      <p className="text-[11px] font-bold text-gray-500 mb-1">Enlace para {p.name}</p>
+                      <p className="text-[11px] text-gray-400 font-medium mb-2">Compártelo con {p.name} para que vea sus citas con su clave.</p>
+                      <div className="flex items-center gap-2">
+                      <a
+                        href={`/employee/${negocio.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate flex-1"
+                      >
+                        {window.location.origin}/employee/{negocio.id}
+                      </a>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`${window.location.origin}/employee/${negocio.id}`);
+                          setContenidoCopiado(p.id);
+                          setTimeout(() => setContenidoCopiado(''), 2000);
+                        }}
+                        className="min-h-[44px] px-3 text-[11px] text-gray-700 font-bold rounded-lg bg-gray-100 hover:bg-gray-200 shrink-0"
+                      >
+                        {contenidoCopiado === p.id ? '¡Copiado!' : 'Copiar enlace'}
+                      </button>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
+                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
+                  ⚠️ A alguien del equipo le falta horario. Toca <b>🕒 Horario</b> en su tarjeta para definir sus días y turnos; sin eso no recibe reservas.
+                </div>
+              )}
+              {profesionales.length > 0 && profesionales.some((p) => !p.calendar_id) && (
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
+                  📅 {profesionales.filter((p) => !p.calendar_id).map((p) => p.name).join(', ')} sin Google Calendar: reciben reservas igual, pero sin anti-choque con su agenda personal. Pueden conectarlo ellos mismos desde su portal.
+                </div>
+              )}
+              <form onSubmit={handleAddProfesional} className="space-y-3 pt-3 border-t border-gray-100">
+                <h3 className="text-sm font-bold text-gray-800">Agregar a alguien al equipo</h3>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre de la persona</span>
+                <input
+                  type="text" required placeholder="Ej. Camila, Andrés…" value={nuevoProfesional.name}
+                  onChange={(e) => setNuevoProfesional({ name: e.target.value })}
+                  aria-label="Nombre de la persona nueva del equipo"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                </label>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir al equipo</button>
+              </form>
+            </div>
+
+            <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider pt-2">2 · Cómo te ven</p>
+            {/* DATOS DEL LOCAL */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Datos de tu página pública</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Lo que ven los clientes al reservar: nombre, dónde estás y cómo contactarte.</p>
+              <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del negocio</span>
+                <input
+                  type="text" required placeholder="Ej. Barbería El Corte" value={infoLocal.name}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
+                  aria-label="Nombre del negocio"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Dirección</span>
+                <input
+                  type="text" placeholder="Ej. Calle 10 # 5-20, Bogotá" value={infoLocal.direccion}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
+                  aria-label="Dirección del local"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Horario de atención (texto para clientes)</span>
+                <input
+                  type="text" placeholder="Ej. Lun a Sáb, 9am a 7pm" value={infoLocal.horario}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
+                  aria-label="Horario de atención"
+                  aria-describedby="ayuda-horario-texto"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                <span id="ayuda-horario-texto" className="block text-[11px] text-gray-400 font-medium mt-1">Solo se muestra; la agenda real sale de la jornada y los horarios del equipo.</span>
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Teléfono de contacto</span>
+                <input
+                  type="tel" placeholder="Fijo o celular" value={infoLocal.telefono}
+                  onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
+                  aria-label="Teléfono de contacto"
+                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                />
+                </label>
+                <button type="submit" disabled={guardandoInfo} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                  {guardandoInfo ? 'Guardando...' : 'Guardar datos'}
+                </button>
+              </form>
+            </div>
+
+            {/* MARCA Y PROPÓSITO */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Marca y propósito ✨</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Tu color, tu mensaje y tus redes. Gratis, sin subir fotos: el logo es tu inicial y la portada un degradado. Así te ven al reservar y en los paneles.</p>
+              <form onSubmit={handleGuardarMarca} className="space-y-4">
+                <div>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Color de tu marca</span>
+                  <div className="flex gap-2 flex-wrap" role="radiogroup" aria-label="Color de la marca">
+                    {COLORES_MARCA.map((c) => {
+                      const activo = (marca.color || '') === c.color;
+                      return (
+                        <button
+                          key={c.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={activo}
+                          title={c.nombre}
+                          onClick={() => setMarca({ ...marca, color: c.color })}
+                          className={`w-11 h-11 rounded-full border-2 flex items-center justify-center font-black text-sm active:scale-95 transition-all ${
+                            activo ? 'border-black ring-2 ring-black ring-offset-2' : 'border-gray-200'
+                          }`}
+                          style={c.color ? { backgroundColor: c.color, color: textoSobreMarca(c.color) } : { backgroundColor: '#fff', color: '#111' }}
+                        >
+                          {activo ? '✓' : inicialMarca(infoLocal.name || negocio?.name)}
+                        </button>
+                      );
+                    })}
+                    <label
+                      title="Color propio"
+                      className={`relative w-11 h-11 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all ${
+                        marca.color && !COLORES_MARCA.some((c) => c.color === marca.color) ? 'ring-2 ring-black ring-offset-2' : ''
+                      }`}
+                      style={marca.color ? { backgroundColor: marca.color } : undefined}
+                    >
+                      <span className="sr-only">Elegir color propio</span>
+                      <span aria-hidden="true" className="text-lg font-black" style={{ color: marca.color ? textoSobreMarca(marca.color) : '#9ca3af' }}>+</span>
+                      <input
+                        type="color"
+                        value={/^#[0-9a-fA-F]{6}$/.test(marca.color || '') ? marca.color : '#16a34a'}
+                        onChange={(e) => setMarca({ ...marca, color: e.target.value })}
+                        className="absolute opacity-0 w-11 h-11 cursor-pointer"
+                        aria-label="Elegir color propio"
+                      />
+                    </label>
+                  </div>
+                </div>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Eslogan (máx 80)</span>
+                  <input
+                    type="text" maxLength={80} placeholder="Ej. Tu estilo, nuestra pasión"
+                    value={marca.eslogan}
+                    onChange={(e) => setMarca({ ...marca, eslogan: e.target.value })}
+                    aria-label="Eslogan del negocio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  />
+                </label>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tu propósito (máx 500)</span>
+                  <textarea
+                    rows={3} maxLength={500} placeholder="Ej. Hace 10 años embellecemos el barrio con precios justos…"
+                    value={marca.descripcion}
+                    onChange={(e) => setMarca({ ...marca, descripcion: e.target.value })}
+                    aria-label="Descripción o propósito del negocio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { key: 'instagram', etiqueta: 'Instagram (@usuario)' },
+                    { key: 'facebook', etiqueta: 'Facebook' },
+                    { key: 'tiktok', etiqueta: 'TikTok (@usuario)' },
+                  ].map((r) => (
+                    <label key={r.key} className="block">
+                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">{r.etiqueta}</span>
+                      <input
+                        type="text" maxLength={120} placeholder="@tu_cuenta"
+                        value={marca[r.key]}
+                        onChange={(e) => setMarca({ ...marca, [r.key]: e.target.value })}
+                        aria-label={r.etiqueta}
+                        className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                      />
+                    </label>
+                  ))}
+                </div>
+                {/* Vista previa en vivo: mini página de reserva */}
+                <div>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Así te verán</span>
+                  <div className="rounded-2xl overflow-hidden border border-gray-200" aria-hidden="true">
+                    <div className="px-4 py-4 text-center" style={marca.color ? { background: fondoMarca(marca.color), color: textoSobreMarca(marca.color) } : { backgroundColor: '#fff', color: '#111' }}>
+                      <div
+                        className="w-11 h-11 rounded-full mx-auto flex items-center justify-center text-xl font-black border"
+                        style={marca.color
+                          ? { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.5)' }
+                          : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
+                      >
+                        {inicialMarca(infoLocal.name || negocio?.name)}
+                      </div>
+                      <p className="font-bold text-sm mt-2">{infoLocal.name || negocio?.name || 'Tu negocio'}</p>
+                      {marca.eslogan ? <p className="text-[11px] opacity-90 font-medium">{marca.eslogan}</p> : null}
+                    </div>
+                    <div className="p-3 bg-gray-50">
+                      <div
+                        className="w-full py-3 rounded-xl text-center text-xs font-bold"
+                        style={marca.color ? { backgroundColor: marca.color, color: textoSobreMarca(marca.color) } : { backgroundColor: '#111', color: '#fff' }}
+                      >
+                        Confirmar Reserva
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <button type="submit" disabled={guardandoMarca} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                  {guardandoMarca ? 'Guardando…' : 'Guardar marca'}
+                </button>
+              </form>
+            </div>
+
+            <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider pt-2">3 · Ajustes finos</p>
             {/* WHATSAPP DEL NEGOCIO */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
               <h2 className="text-base font-bold text-gray-900 mb-1">WhatsApp de reservas</h2>
@@ -1591,59 +2121,6 @@ function AdminPanel() {
                   {guardandoWhatsApp ? 'Guardando...' : 'Actualizar WhatsApp'}
                 </button>
               </form>
-            </div>
-
-            {/* NOTIFICACIONES PUSH */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">🔔 Avisos de nuevas reservas</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Te avisamos en este dispositivo al instante cuando un cliente reserve, sin tener el panel abierto.</p>
-              {pushNotifications.permission === 'denied' ? (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
-                  <p className="text-xs font-bold text-red-700">
-                    ❌ Los avisos están bloqueados en este navegador.
-                  </p>
-                  <p className="text-[11px] text-red-600 mt-1">Actívalos en los ajustes del navegador para este sitio y vuelve aquí.</p>
-                </div>
-              ) : pushNotifications.isSubscribed ? (
-                <div className="space-y-3">
-                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
-                    <p className="text-xs font-bold text-green-800">✅ Avisos activados en este dispositivo</p>
-                    <p className="text-[11px] text-green-700 mt-1">Recibirás un aviso con cada reserva nueva.</p>
-                  </div>
-                  <button
-                    onClick={enviarPushPrueba}
-                    disabled={probandoPush}
-                    className="w-full min-h-[44px] py-3 bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 active:scale-95 transition-transform disabled:opacity-50"
-                  >
-                    {probandoPush ? '⏳ Enviando prueba...' : '📨 Enviarme una prueba'}
-                  </button>
-                  {pushTestMsg && (
-                    <p role="status" className="text-xs font-bold text-center p-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">{pushTestMsg}</p>
-                  )}
-                  <button
-                    onClick={pushNotifications.unsubscribe}
-                    className="w-full min-h-[44px] py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
-                  >
-                    Dejar de recibir avisos aquí
-                  </button>
-                </div>
-              ) : (
-                <>
-                <button
-                  onClick={async () => {
-                    setPushTestMsg('');
-                    const ok = await pushNotifications.subscribe();
-                    if (!ok) setPushTestMsg('⚠️ No se pudieron activar. Revisa el permiso del navegador e intenta de nuevo.');
-                  }}
-                  className="w-full min-h-[48px] py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
-                >
-                  🔔 Activar avisos en este dispositivo
-                </button>
-                {pushTestMsg && (
-                  <p role="alert" className="text-xs font-bold text-center p-3 rounded-xl bg-red-50 border border-red-200 text-red-700">{pushTestMsg}</p>
-                )}
-                </>
-              )}
             </div>
 
             {/* POLÍTICAS DE RESERVA */}
@@ -1765,513 +2242,57 @@ function AdminPanel() {
               </form>
             </div>
 
-            {/* GESTIÓN DE SERVICIOS */}
+            {/* NOTIFICACIONES PUSH */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Servicios que ofreces</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Lo que verán tus clientes en el paso 1 de la reserva: nombre, duración y precio.</p>
-              <ul className="space-y-3 mb-4">
-                {servicios.length === 0 && (
-                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-sm font-bold text-gray-700">Aún no hay servicios</p>
-                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega el primero abajo 👇 para que los clientes puedan reservar.</p>
-                  </div>
-                )}
-                {servicios.map((s) => {
-                  const encargados = profesionales.filter(
-                    (p) => !p.servicios_ids || p.servicios_ids.includes(s.id)
-                  );
-                  return (
-                    <li key={s.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
-                      <div className="flex justify-between items-center gap-2">
-                        <div className="min-w-0">
-                          <p className="font-bold text-gray-900">{s.name}</p>
-                          <p className="text-xs font-medium text-gray-500">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
-                        </div>
-                        <div className="flex gap-1 shrink-0">
-                          <button
-                            onClick={async () => {
-                              const url = `${window.location.origin}/shop/${negocio.id}?s=${s.id}`;
-                              try {
-                                await navigator.clipboard.writeText(url);
-                                await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
-                              } catch {
-                                await avisar(`Copia este enlace:\n\n${url}`, 'info');
-                              }
-                            }}
-                            aria-label={`Copiar enlace directo de ${s.name}`}
-                            className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
-                          >
-                            🔗 Link
-                          </button>
-                          <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
-                            {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
-                          </button>
-                        </div>
-                      </div>
-                      <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
-                              <span className="text-[11px] font-bold text-gray-400 uppercase">Lo hacen:</span>
-                        {encargados.length === 0 ? (
-                          <span className="text-[11px] text-red-600 font-semibold">Nadie aún — asígnalo en “Qué servicios hace” del equipo</span>
-                        ) : (
-                          encargados.map((p) => (
-                            <span key={p.id} className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
-                              👤 {p.name}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
-              <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar un servicio nuevo</h3>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del servicio</span>
-                <input
-                  type="text" required placeholder="Ej. Corte, Uñas, Limpieza" value={nuevoServicio.name}
-                  onChange={(e) => setNuevoServicio({ ...nuevoServicio, name: e.target.value })}
-                  aria-label="Nombre del servicio nuevo"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                </label>
-                <div className="flex gap-2">
-                  <label className="flex-1 min-w-0">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
-                    <input
-                      type="number" required min={1} placeholder="Ej. 30" inputMode="numeric" value={nuevoServicio.duration_minutes}
-                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, duration_minutes: e.target.value })}
-                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                    />
-                  </label>
-                  <label className="flex-1 min-w-0">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
-                    <input
-                      type="number" required min={0} placeholder="Ej. 20000" inputMode="numeric" value={nuevoServicio.price}
-                      onChange={(e) => setNuevoServicio({ ...nuevoServicio, price: e.target.value })}
-                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none"
-                    />
-                  </label>
+              <h2 className="text-base font-bold text-gray-900 mb-1">🔔 Avisos de nuevas reservas</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Te avisamos en este dispositivo al instante cuando un cliente reserve, sin tener el panel abierto.</p>
+              {pushNotifications.permission === 'denied' ? (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl" role="alert">
+                  <p className="text-xs font-bold text-red-700">
+                    ❌ Los avisos están bloqueados en este navegador.
+                  </p>
+                  <p className="text-[11px] text-red-600 mt-1">Actívalos en los ajustes del navegador para este sitio y vuelve aquí.</p>
                 </div>
-                <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
-                  + Agregar Servicio
+              ) : pushNotifications.isSubscribed ? (
+                <div className="space-y-3">
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
+                    <p className="text-xs font-bold text-green-800">✅ Avisos activados en este dispositivo</p>
+                    <p className="text-[11px] text-green-700 mt-1">Recibirás un aviso con cada reserva nueva.</p>
+                  </div>
+                  <button
+                    onClick={enviarPushPrueba}
+                    disabled={probandoPush}
+                    className="w-full min-h-[44px] py-3 bg-blue-50 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 active:scale-95 transition-transform disabled:opacity-50"
+                  >
+                    {probandoPush ? '⏳ Enviando prueba...' : '📨 Enviarme una prueba'}
+                  </button>
+                  {pushTestMsg && (
+                    <p role="status" className="text-xs font-bold text-center p-3 rounded-xl bg-gray-50 border border-gray-200 text-gray-700">{pushTestMsg}</p>
+                  )}
+                  <button
+                    onClick={pushNotifications.unsubscribe}
+                    className="w-full min-h-[44px] py-3 bg-gray-100 text-gray-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                  >
+                    Dejar de recibir avisos aquí
+                  </button>
+                </div>
+              ) : (
+                <>
+                <button
+                  onClick={async () => {
+                    setPushTestMsg('');
+                    const ok = await pushNotifications.subscribe();
+                    if (!ok) setPushTestMsg('⚠️ No se pudieron activar. Revisa el permiso del navegador e intenta de nuevo.');
+                  }}
+                  className="w-full min-h-[48px] py-3.5 bg-blue-600 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform shadow-sm"
+                >
+                  🔔 Activar avisos en este dispositivo
                 </button>
-              </form>
-            </div>
-
-            {/* GESTIÓN DE PROFESIONALES */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Tu equipo</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Quienes atienden citas. Define qué servicios hace cada uno, su horario y su clave de acceso.</p>
-              <ul className="space-y-3 mb-4">
-                {profesionales.length === 0 && (
-                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-sm font-bold text-gray-700">Aún no hay equipo</p>
-                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega a la primera persona abajo 👇 para empezar a recibir reservas.</p>
-                  </div>
+                {pushTestMsg && (
+                  <p role="alert" className="text-xs font-bold text-center p-3 rounded-xl bg-red-50 border border-red-200 text-red-700">{pushTestMsg}</p>
                 )}
-                {profesionales.map((p) => (
-                  <li key={p.id} className="p-4 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-3">
-                    <div className="flex justify-between items-center gap-2">
-                      <p className="font-bold text-gray-900 text-base">{p.name}</p>
-                      <button onClick={() => handleEliminarProfesional(p)} disabled={eliminando === p.id} aria-label={`Quitar a ${p.name} del equipo`} className="shrink-0 min-h-[44px] px-3 bg-red-50 text-red-600 font-bold rounded-xl text-xs border border-red-100 active:scale-95 transition-transform">
-                        {eliminando === p.id ? 'Quitando…' : 'Quitar'}
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100">
-                      {p.calendar_id ? (
-                        <span className="flex-1 text-center py-2.5 bg-green-50 text-green-700 text-[11px] font-black rounded-lg border border-green-100">✓ Google Calendar conectado</span>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            try {
-                              const t = await user.getIdToken();
-                              window.open(`${import.meta.env.VITE_API_URL || ''}/auth/google/login?negocio_id=${negocio.id}&emp_id=${p.id}&otok=${t}&ret=admin`, '_blank', 'noopener');
-                            } catch {
-                              await avisar('No pudimos abrir la conexión. Intenta de nuevo.', 'error');
-                            }
-                          }}
-                          className="flex-1 text-center py-2.5 bg-blue-600 text-white font-bold rounded-lg text-[11px] active:scale-95 shadow-sm min-h-[44px] flex items-center justify-center"
-                        >
-                          🔗 Conectar Google Calendar
-                        </button>
-                      )}
-                      <button onClick={() => setServiciosModal(p)} title="Elegir qué servicios atiende esta persona" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">📋 Qué hace</button>
-                      <button onClick={() => setHorarioModal(p)} title="Definir días y turnos de trabajo" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🕒 Horario</button>
-                      <button onClick={() => setPinModal(p)} title="Ver o cambiar su clave de acceso" className="min-h-[44px] px-3.5 py-2 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm active:scale-95">🔑 Clave</button>
-                    </div>
-                    <div className="pt-2 border-t border-gray-100">
-                      <p className="text-[11px] font-bold text-gray-500 mb-1">Enlace para {p.name}</p>
-                      <p className="text-[11px] text-gray-400 font-medium mb-2">Compártelo con {p.name} para que vea sus citas con su clave.</p>
-                      <div className="flex items-center gap-2">
-                      <a
-                        href={`/employee/${negocio.id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate flex-1"
-                      >
-                        {window.location.origin}/employee/{negocio.id}
-                      </a>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(`${window.location.origin}/employee/${negocio.id}`);
-                          setContenidoCopiado(p.id);
-                          setTimeout(() => setContenidoCopiado(''), 2000);
-                        }}
-                        className="min-h-[44px] px-3 text-[11px] text-gray-700 font-bold rounded-lg bg-gray-100 hover:bg-gray-200 shrink-0"
-                      >
-                        {contenidoCopiado === p.id ? '¡Copiado!' : 'Copiar enlace'}
-                      </button>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {profesionales.length > 0 && profesionales.some((p) => !p.horario) && (
-                <div className="mb-4 p-3 bg-amber-50 border border-amber-200 text-amber-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
-                  ⚠️ A alguien del equipo le falta horario. Toca <b>🕒 Horario</b> en su tarjeta para definir sus días y turnos; sin eso no recibe reservas.
-                </div>
+                </>
               )}
-              {profesionales.length > 0 && profesionales.some((p) => !p.calendar_id) && (
-                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-800 font-medium text-xs rounded-xl leading-relaxed" role="alert">
-                  📅 {profesionales.filter((p) => !p.calendar_id).map((p) => p.name).join(', ')} sin Google Calendar: reciben reservas igual, pero sin anti-choque con su agenda personal. Pueden conectarlo ellos mismos desde su portal.
-                </div>
-              )}
-              <form onSubmit={handleAddProfesional} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar a alguien al equipo</h3>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre de la persona</span>
-                <input
-                  type="text" required placeholder="Ej. Camila, Andrés…" value={nuevoProfesional.name}
-                  onChange={(e) => setNuevoProfesional({ name: e.target.value })}
-                  aria-label="Nombre de la persona nueva del equipo"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                </label>
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir al equipo</button>
-              </form>
-            </div>
-
-            {/* ESPACIOS RESERVABLES (canchas, boxes...) */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, clases y espacios</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Define precio, duración y cupos: una clase grupal o una cancha se reservan directo, sin elegir profesional.</p>
-              <ul className="space-y-3 mb-4">
-                {recursos.length === 0 && (
-                  <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-sm font-bold text-gray-700">Sin espacios</p>
-                    <p className="text-[11px] text-gray-500 font-medium mt-1">Si solo atienden personas, no necesitas nada aquí.</p>
-                  </div>
-                )}
-                {recursos.map((r) => (
-                  <li key={r.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
-                    <div className="flex justify-between items-center gap-2">
-                      <div className="min-w-0">
-                        <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
-                        <p className="text-xs font-medium text-gray-500 capitalize">
-                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
-                        </p>
-                        <p className="text-xs font-semibold text-gray-700 mt-0.5">
-                          ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}
-                        </p>
-                        {r.descripcion && (
-                          <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
-                        )}
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <button
-                          onClick={async () => {
-                            const url = `${window.location.origin}/shop/${negocio.id}?r=${r.id}`;
-                            try {
-                              await navigator.clipboard.writeText(url);
-                              await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
-                            } catch {
-                              await avisar(`Copia este enlace:\n\n${url}`, 'info');
-                            }
-                          }}
-                          aria-label={`Copiar enlace directo de ${r.name}`}
-                          className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
-                        >
-                          🔗 Link
-                        </button>
-                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
-                        <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
-                          {eliminando === r.id ? 'Borrando…' : 'Borrar'}
-                        </button>
-                      </div>
-                    </div>
-                    {(r.capacidad || 1) > 1 || editandoRecurso === r.id ? (
-                      <div className="pt-2 border-t border-gray-100 flex items-end gap-2">
-                        <label className="flex-1 min-w-0">
-                          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos</span>
-                          <input
-                            type="number" min={1} max={100} inputMode="numeric"
-                            value={editandoRecurso === r.id ? editRecursoVals.capacidad : (r.capacidad || 1)}
-                            onChange={(e) => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: e.target.value }); }}
-                            aria-label={`Cupos de ${r.name}`}
-                            className="w-full p-2.5 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none"
-                          />
-                        </label>
-                        {editandoRecurso === r.id && (
-                          <>
-                            <button onClick={() => guardarRecurso(r)} disabled={guardandoRecurso} className="min-h-[44px] px-3 bg-black text-white font-bold rounded-xl text-xs active:scale-95 disabled:opacity-50">
-                              {guardandoRecurso ? '…' : 'Guardar'}
-                            </button>
-                            <button onClick={() => setEditandoRecurso(null)} className="min-h-[44px] px-3 bg-gray-100 text-gray-600 font-bold rounded-xl text-xs active:scale-95">
-                              X
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <button onClick={() => { setEditandoRecurso(r.id); setEditRecursoVals({ capacidad: r.capacidad || 1 }); }} className="text-[11px] font-bold text-gray-500 underline">
-                        Pasar a grupal (cupos)
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <form onSubmit={handleAddRecurso} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar clase o espacio</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre</span>
-                    <input
-                      type="text" required placeholder="Ej. Yoga, Cancha 1…" value={nuevoRecurso.name}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, name: e.target.value })}
-                      aria-label="Nombre del espacio nuevo"
-                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo</span>
-                    <select
-                      value={nuevoRecurso.tipo}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, tipo: e.target.value })}
-                      aria-label="Tipo de espacio"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    >
-                      <option value="clase">🧘 Clase grupal</option>
-                      <option value="cancha">⚽ Cancha</option>
-                      <option value="box">🔧 Box / elevador</option>
-                      <option value="consultorio">🩺 Consultorio</option>
-                      <option value="sala">🎶 Sala</option>
-                      <option value="camilla">💆 Camilla</option>
-                      <option value="otro">📍 Otro</option>
-                    </select>
-                  </label>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
-                    <input
-                      type="number" min={1} max={100} inputMode="numeric"
-                      value={nuevoRecurso.capacidad}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
-                      aria-label="Cupos por horario del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
-                    <input
-                      type="number" required min={15} max={480} placeholder="60" inputMode="numeric"
-                      value={nuevoRecurso.duration_minutes}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, duration_minutes: e.target.value })}
-                      aria-label="Duración en minutos del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
-                    <input
-                      type="number" required min={0} placeholder="25000" inputMode="numeric"
-                      value={nuevoRecurso.price}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, price: e.target.value })}
-                      aria-label="Precio del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                </div>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
-                  <textarea
-                    rows={2} maxLength={500} placeholder="Ej. Cancha sintética techada, trae zapatos de goma…"
-                    value={nuevoRecurso.descripcion}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, descripcion: e.target.value })}
-                    aria-label="Información del espacio nuevo"
-                    className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
-                  />
-                </label>
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
-              </form>
-            </div>
-
-            {/* MARCA Y PROPÓSITO */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Marca y propósito ✨</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Tu color, tu mensaje y tus redes. Gratis, sin subir fotos: el logo es tu inicial y la portada un degradado. Así te ven al reservar y en los paneles.</p>
-              <form onSubmit={handleGuardarMarca} className="space-y-4">
-                <div>
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Color de tu marca</span>
-                  <div className="flex gap-2 flex-wrap" role="radiogroup" aria-label="Color de la marca">
-                    {COLORES_MARCA.map((c) => {
-                      const activo = (marca.color || '') === c.color;
-                      return (
-                        <button
-                          key={c.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={activo}
-                          title={c.nombre}
-                          onClick={() => setMarca({ ...marca, color: c.color })}
-                          className={`w-11 h-11 rounded-full border-2 flex items-center justify-center font-black text-sm active:scale-95 transition-all ${
-                            activo ? 'border-black ring-2 ring-black ring-offset-2' : 'border-gray-200'
-                          }`}
-                          style={c.color ? { backgroundColor: c.color, color: textoSobreMarca(c.color) } : { backgroundColor: '#fff', color: '#111' }}
-                        >
-                          {activo ? '✓' : inicialMarca(infoLocal.name || negocio?.name)}
-                        </button>
-                      );
-                    })}
-                    <label
-                      title="Color propio"
-                      className={`relative w-11 h-11 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden cursor-pointer active:scale-95 transition-all ${
-                        marca.color && !COLORES_MARCA.some((c) => c.color === marca.color) ? 'ring-2 ring-black ring-offset-2' : ''
-                      }`}
-                      style={marca.color ? { backgroundColor: marca.color } : undefined}
-                    >
-                      <span className="sr-only">Elegir color propio</span>
-                      <span aria-hidden="true" className="text-lg font-black" style={{ color: marca.color ? textoSobreMarca(marca.color) : '#9ca3af' }}>+</span>
-                      <input
-                        type="color"
-                        value={/^#[0-9a-fA-F]{6}$/.test(marca.color || '') ? marca.color : '#16a34a'}
-                        onChange={(e) => setMarca({ ...marca, color: e.target.value })}
-                        className="absolute opacity-0 w-11 h-11 cursor-pointer"
-                        aria-label="Elegir color propio"
-                      />
-                    </label>
-                  </div>
-                </div>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Eslogan (máx 80)</span>
-                  <input
-                    type="text" maxLength={80} placeholder="Ej. Tu estilo, nuestra pasión"
-                    value={marca.eslogan}
-                    onChange={(e) => setMarca({ ...marca, eslogan: e.target.value })}
-                    aria-label="Eslogan del negocio"
-                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                  />
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tu propósito (máx 500)</span>
-                  <textarea
-                    rows={3} maxLength={500} placeholder="Ej. Hace 10 años embellecemos el barrio con precios justos…"
-                    value={marca.descripcion}
-                    onChange={(e) => setMarca({ ...marca, descripcion: e.target.value })}
-                    aria-label="Descripción o propósito del negocio"
-                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
-                  />
-                </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {[
-                    { key: 'instagram', etiqueta: 'Instagram (@usuario)' },
-                    { key: 'facebook', etiqueta: 'Facebook' },
-                    { key: 'tiktok', etiqueta: 'TikTok (@usuario)' },
-                  ].map((r) => (
-                    <label key={r.key} className="block">
-                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">{r.etiqueta}</span>
-                      <input
-                        type="text" maxLength={120} placeholder="@tu_cuenta"
-                        value={marca[r.key]}
-                        onChange={(e) => setMarca({ ...marca, [r.key]: e.target.value })}
-                        aria-label={r.etiqueta}
-                        className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                      />
-                    </label>
-                  ))}
-                </div>
-                {/* Vista previa en vivo: mini página de reserva */}
-                <div>
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Así te verán</span>
-                  <div className="rounded-2xl overflow-hidden border border-gray-200" aria-hidden="true">
-                    <div className="px-4 py-4 text-center" style={marca.color ? { background: fondoMarca(marca.color), color: textoSobreMarca(marca.color) } : { backgroundColor: '#fff', color: '#111' }}>
-                      <div
-                        className="w-11 h-11 rounded-full mx-auto flex items-center justify-center text-xl font-black border"
-                        style={marca.color
-                          ? { backgroundColor: 'rgba(255,255,255,0.25)', borderColor: 'rgba(255,255,255,0.5)' }
-                          : { backgroundColor: '#111', color: '#fff', borderColor: '#111' }}
-                      >
-                        {inicialMarca(infoLocal.name || negocio?.name)}
-                      </div>
-                      <p className="font-bold text-sm mt-2">{infoLocal.name || negocio?.name || 'Tu negocio'}</p>
-                      {marca.eslogan ? <p className="text-[11px] opacity-90 font-medium">{marca.eslogan}</p> : null}
-                    </div>
-                    <div className="p-3 bg-gray-50">
-                      <div
-                        className="w-full py-3 rounded-xl text-center text-xs font-bold"
-                        style={marca.color ? { backgroundColor: marca.color, color: textoSobreMarca(marca.color) } : { backgroundColor: '#111', color: '#fff' }}
-                      >
-                        Confirmar Reserva
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <button type="submit" disabled={guardandoMarca} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
-                  {guardandoMarca ? 'Guardando…' : 'Guardar marca'}
-                </button>
-              </form>
-            </div>
-
-            {/* DATOS DEL LOCAL */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Datos de tu página pública</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Lo que ven los clientes al reservar: nombre, dónde estás y cómo contactarte.</p>
-              <form onSubmit={handleGuardarInfoLocal} className="space-y-3">
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del negocio</span>
-                <input
-                  type="text" required placeholder="Ej. Barbería El Corte" value={infoLocal.name}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, name: e.target.value })}
-                  aria-label="Nombre del negocio"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Dirección</span>
-                <input
-                  type="text" placeholder="Ej. Calle 10 # 5-20, Bogotá" value={infoLocal.direccion}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, direccion: e.target.value })}
-                  aria-label="Dirección del local"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Horario de atención (texto para clientes)</span>
-                <input
-                  type="text" placeholder="Ej. Lun a Sáb, 9am a 7pm" value={infoLocal.horario}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, horario: e.target.value })}
-                  aria-label="Horario de atención"
-                  aria-describedby="ayuda-horario-texto"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                <span id="ayuda-horario-texto" className="block text-[11px] text-gray-400 font-medium mt-1">Solo se muestra; la agenda real sale de la jornada y los horarios del equipo.</span>
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Teléfono de contacto</span>
-                <input
-                  type="tel" placeholder="Fijo o celular" value={infoLocal.telefono}
-                  onChange={(e) => setInfoLocal({ ...infoLocal, telefono: e.target.value })}
-                  aria-label="Teléfono de contacto"
-                  className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                />
-                </label>
-                <button type="submit" disabled={guardandoInfo} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
-                  {guardandoInfo ? 'Guardando...' : 'Guardar datos'}
-                </button>
-              </form>
             </div>
 
             {/* SOPORTE TURNOBOT */}
@@ -2289,6 +2310,7 @@ function AdminPanel() {
                 💬 Contactar soporte · 322 912 4517
               </a>
             </div>
+
 
             {/* BOTÓN CERRAR SESIÓN */}
             <div className="pt-4 pb-8 text-center">

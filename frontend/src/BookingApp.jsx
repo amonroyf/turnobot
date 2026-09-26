@@ -1248,7 +1248,7 @@ export default function BookingApp() {
                                 <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border text-base ${
                                   isActive ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'
                                 }`} aria-hidden="true">
-                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🔧' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : r.tipo === 'camilla' ? '💆' : r.tipo === 'clase' ? '🧘' : '📍'}
+                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🏋️' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : r.tipo === 'camilla' ? '💆' : r.tipo === 'clase' ? '🧘' : '📍'}
                                 </span>
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block font-bold truncate text-sm">{r.name}</span>

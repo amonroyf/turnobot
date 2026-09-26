@@ -22,7 +22,7 @@ const sumarDiasStr = (base, n) => {
 };
 // Icono por tipo de espacio (igual que la reserva del cliente).
 const iconoEspacio = (tipo) => (
-  tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🔧' : tipo === 'consultorio' ? '🩺'
+  tipo === 'cancha' ? '⚽' : tipo === 'box' ? '🏋️' : tipo === 'consultorio' ? '🩺'
   : tipo === 'sala' ? '🎶' : tipo === 'camilla' ? '💆' : tipo === 'clase' ? '🧘' : '📍'
 );
 
@@ -265,7 +265,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       {/* Modo */}
       {hayRecursos && !empFijo && (
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Tipo de registro">
-          {[{ id: 'servicio', label: '💈 Servicio' }, { id: 'espacio', label: '🏟️ Espacio' }].map((m) => (
+          {[{ id: 'servicio', label: '✂️ Servicio' }, { id: 'espacio', label: '🏟️ Espacio' }].map((m) => (
             <button
               key={m.id}
               type="button"
