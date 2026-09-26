@@ -1775,3 +1775,663 @@ func TestOAuthConSesionYEstadoCalendar(t *testing.T) {
 		t.Fatal("conectado=true sin vincular")
 	}
 }
+
+// Instructor en espacios: bloqueo cruzado clase<->1-a-1 en ambas direcciones.
+func TestEspacioInstructorBloqueo(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-instr")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Clase Yoga", "tipo": "clase", "capacidad": 5,
+		"duration_minutes": 60, "price": "0", "instructor_id": "emp1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fecha := mañanaStr()
+	slotsDe := func(q string) []string {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/slots?"+q, nil)
+		rec := httptest.NewRecorder()
+		getSlotsHandler(rec, req, slug)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("slots %s code=%d, esperaba 200", q, rec.Code)
+		}
+		var arr []string
+		if err := json.Unmarshal(rec.Body.Bytes(), &arr); err == nil {
+			return arr
+		}
+		var obj struct {
+			Slots []string `json:"slots"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &obj); err != nil {
+			t.Fatalf("slots %s respuesta ilegible: %s", q, rec.Body.String())
+		}
+		return obj.Slots
+	}
+	contiene := func(slots []string, h string) bool {
+		for _, s := range slots {
+			if s == h {
+				return true
+			}
+		}
+		return false
+	}
+	reservar := func(payload map[string]interface{}) int {
+		body, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		return rec.Code
+	}
+
+	// 1-a-1 con Ana 10:00-10:30.
+	if c := reservar(map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573004444441",
+	}); c != http.StatusCreated {
+		t.Fatalf("book 1-a-1 code=%d, esperaba 201", c)
+	}
+	// La sesión de Yoga 10:00 desaparece (instructora ocupada), 11:00 sigue.
+	esp := slotsDe("recurso_id=rec1&fecha=" + fecha + "&cupos=1")
+	if contiene(esp, "10:00") {
+		t.Fatalf("sesión 10:00 ofrecida con instructora ocupada: %v", esp)
+	}
+	if !contiene(esp, "11:00") {
+		t.Fatalf("sesión 11:00 ausente sin motivo: %v", esp)
+	}
+	// Viceversa: sesión 09:00 bloquea 09:00 y 09:30 del 1-a-1, no las 10:30.
+	if c := reservar(map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha": fecha, "hora": "09:00",
+		"clienteNombre": "Y", "clienteTelefono": "+573004444442",
+	}); c != http.StatusCreated {
+		t.Fatalf("book sesión code=%d, esperaba 201", c)
+	}
+	emp := slotsDe("emp_id=emp1&servicio_id=svc1&fecha=" + fecha)
+	if contiene(emp, "09:00") || contiene(emp, "09:30") {
+		t.Fatalf("1-a-1 ofrecido durante la clase: %v", emp)
+	}
+	if !contiene(emp, "10:30") {
+		t.Fatalf("10:30 ausente sin motivo: %v", emp)
+	}
+}
+
+// Instructor en espacios: visible en su portal, marca pago y se sustituye.
+func TestEspacioInstructorPortalYPago(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-instrportal")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Clase Yoga", "tipo": "clase", "capacidad": 5,
+		"duration_minutes": 60, "price": "20000", "instructor_id": "emp1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha": mañanaStr(), "hora": "11:00",
+		"clienteNombre": "Z", "clienteTelefono": "+573005555555",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	authClienteUnico(t, req)
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("book sesión code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
+	}
+	tok := signEmployeeToken(slug, "emp1")
+	verCitas := func(token string) []map[string]interface{} {
+		lreq := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/employee/emp1/citas", nil)
+		lreq.Header.Set("Authorization", "Bearer "+token)
+		lrec := httptest.NewRecorder()
+		apiRouter(lrec, lreq)
+		if lrec.Code != http.StatusOK {
+			t.Fatalf("citas code=%d, esperaba 200", lrec.Code)
+		}
+		var lista []map[string]interface{}
+		if err := json.Unmarshal(lrec.Body.Bytes(), &lista); err != nil {
+			t.Fatal(err)
+		}
+		return lista
+	}
+	lista := verCitas(tok)
+	if len(lista) != 1 || lista[0]["recurso"] != "Clase Yoga" {
+		t.Fatalf("portal sin la sesión: %v", lista)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573005555555")
+	pagoReq := httptest.NewRequest(http.MethodPost,
+		"/api/v1/b/"+slug+"/employee/emp1/citas/"+ids[0]+"/pago",
+		bytes.NewReader([]byte(`{"pagado":true}`)))
+	pagoReq.Header.Set("Content-Type", "application/json")
+	pagoReq.Header.Set("Authorization", "Bearer "+tok)
+	pagoRec := httptest.NewRecorder()
+	apiRouter(pagoRec, pagoReq)
+	if pagoRec.Code != http.StatusOK {
+		t.Fatalf("pago instructor code=%d body=%s, esperaba 200", pagoRec.Code, pagoRec.Body.String())
+	}
+	cli, _ := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, "+573005555555")).Get(ctx)
+	if p, _ := cli.Data()["paid_total"].(int64); p != 20000 {
+		t.Fatalf("paid_total=%v, esperaba 20000", cli.Data()["paid_total"])
+	}
+	// Sustitución: pasa a emp2, sale del portal de emp1 y entra al de emp2.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"instructor_id": "emp2",
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	if l := verCitas(tok); len(l) != 0 {
+		t.Fatalf("emp1 aún ve la sesión tras sustitución: %v", l)
+	}
+	tok2 := signEmployeeToken(slug, "emp2")
+	lreq := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/employee/emp2/citas", nil)
+	lreq.Header.Set("Authorization", "Bearer "+tok2)
+	lrec := httptest.NewRecorder()
+	apiRouter(lrec, lreq)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("citas emp2 code=%d, esperaba 200", lrec.Code)
+	}
+	var lista2 []map[string]interface{}
+	if err := json.Unmarshal(lrec.Body.Bytes(), &lista2); err != nil || len(lista2) != 1 {
+		t.Fatalf("emp2 no ve la sesión: %s", lrec.Body.String())
+	}
+}
+
+// Crear espacio con instructor inexistente se rechaza; con válido pasa.
+func TestCrearRecursoValidaInstructor(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-recinstr")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenorecinstr@test.com")
+	duenoTok := tokenClienteTest(t, "duenorecinstr@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code
+	}
+	if c := crear(`{"name":"X","tipo":"clase","capacidad":5,"instructor_id":"nadie"}`); c != http.StatusBadRequest {
+		t.Fatalf("instructor fantasma code=%d, esperaba 400", c)
+	}
+	if c := crear(`{"name":"Yoga","tipo":"clase","capacidad":5,"duration_minutes":90,"price":25000,"instructor_id":"emp1"}`); c != http.StatusCreated {
+		t.Fatalf("instructor válido code=%d, esperaba 201", c)
+	}
+}
+
+// Salud del servicio.
+func TestHealth(t *testing.T) {
+	testFirestoreClient(t)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	healthHandler(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("health code=%d, esperaba 200", rec.Code)
+	}
+}
+
+// El negocio público expone precio/duración/instructor del espacio
+// (lo que pinta "con Ana" en la reserva sin otro llamado).
+func TestGetNegocioExponeInstructor(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-pub")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Clase Yoga", "tipo": "clase", "capacidad": 5,
+		"duration_minutes": 90, "price": "25000", "instructor_id": "emp1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug, nil)
+	rec := httptest.NewRecorder()
+	getNegocioHandler(rec, req, slug)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("negocio code=%d, esperaba 200", rec.Code)
+	}
+	var out struct {
+		Recursos []map[string]interface{} `json:"recursos"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || len(out.Recursos) != 1 {
+		t.Fatalf("recursos=%s, esperaba 1", rec.Body.String())
+	}
+	r := out.Recursos[0]
+	if r["instructor_id"] != "emp1" || r["price"] != "25000" {
+		t.Fatalf("recurso=%v, esperaba instructor/price", r)
+	}
+	if d, _ := r["duration_minutes"].(float64); d != 90 {
+		t.Fatalf("duration=%v, esperaba 90", r["duration_minutes"])
+	}
+}
+
+// Primer hueco: responde fecha/hora y salta la hora bloqueada por el instructor.
+func TestPrimerHueco(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-hueco")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Clase Yoga", "tipo": "clase", "capacidad": 5,
+		"duration_minutes": 60, "price": "0", "instructor_id": "emp1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hueco := func(q string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/slots/primer-hueco?"+q, nil)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	code, out := hueco("servicio_id=svc1&emp_id=emp1")
+	if code != http.StatusOK || out["fecha"] == nil || out["hora"] == nil {
+		t.Fatalf("hueco servicio code=%d out=%v", code, out)
+	}
+	// Ana ocupada 10:00-10:30 en 1-a-1: la sesión de 60 de las 10:00 no sale.
+	body, _ := json.Marshal(map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573006666661",
+	})
+	breq := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	breq.Header.Set("Content-Type", "application/json")
+	authClienteUnico(t, breq)
+	brec := httptest.NewRecorder()
+	bookHandler(brec, breq, slug)
+	if brec.Code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", brec.Code)
+	}
+	code2, out2 := hueco("recurso_id=rec1&cupos=1")
+	if code2 != http.StatusOK {
+		t.Fatalf("hueco espacio code=%d, esperaba 200", code2)
+	}
+	if out2["fecha"] == mañanaStr() && out2["hora"] == "10:00" {
+		t.Fatalf("hueco=%v, las 10:00 debían saltarse (instructora ocupada)", out2)
+	}
+}
+
+// Borrar espacio: 409 con citas futuras activas, 200 al liberar.
+func TestDeleteRecursoConCitasFuturas(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-delrec")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Cancha", "tipo": "cancha", "capacidad": 4,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573007777771",
+	})
+	breq := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	breq.Header.Set("Content-Type", "application/json")
+	authClienteUnico(t, breq)
+	brec := httptest.NewRecorder()
+	bookHandler(brec, breq, slug)
+	if brec.Code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", brec.Code)
+	}
+	duenoUID := clienteUIDTest(t, "duenodelrec@test.com")
+	duenoTok := tokenClienteTest(t, "duenodelrec@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	borrar := func() int {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/recursos/rec1", nil)
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code
+	}
+	if c := borrar(); c != http.StatusConflict {
+		t.Fatalf("con citas code=%d, esperaba 409", c)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573007777771")
+	creq := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+ids[0], nil)
+	creq.Header.Set("Authorization", "Bearer "+duenoTok)
+	crec := httptest.NewRecorder()
+	apiRouter(crec, creq)
+	if crec.Code != http.StatusOK {
+		t.Fatalf("cancel code=%d, esperaba 200", crec.Code)
+	}
+	if c := borrar(); c != http.StatusOK {
+		t.Fatalf("libre code=%d, esperaba 200", c)
+	}
+}
+
+// Servicios CRUD del dueño: actualiza precio/duración y elimina.
+func TestUpdateDeleteServicio(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-svc")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenosvc@test.com")
+	duenoTok := tokenClienteTest(t, "duenosvc@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec
+	}
+	put := call(http.MethodPut, "/api/v1/b/"+slug+"/servicios/svc1", `{"duration_minutes":45,"price":"15000"}`)
+	if put.Code != http.StatusOK {
+		t.Fatalf("update code=%d body=%s, esperaba 200", put.Code, put.Body.String())
+	}
+	doc, _ := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc("svc1").Get(ctx)
+	if doc.Data()["price"] != "15000" {
+		t.Fatalf("price=%v, esperaba 15000", doc.Data()["price"])
+	}
+	sinAuth := httptest.NewRequest(http.MethodPut, "/api/v1/b/"+slug+"/servicios/svc1", bytes.NewReader([]byte(`{"price":"1"}`)))
+	sinAuth.Header.Set("Content-Type", "application/json")
+	sinRec := httptest.NewRecorder()
+	apiRouter(sinRec, sinAuth)
+	if sinRec.Code != http.StatusUnauthorized {
+		t.Fatalf("sin token code=%d, esperaba 401", sinRec.Code)
+	}
+	del := call(http.MethodDelete, "/api/v1/b/"+slug+"/servicios/svc1", ``)
+	if del.Code != http.StatusOK {
+		t.Fatalf("delete code=%d body=%s, esperaba 200", del.Code, del.Body.String())
+	}
+}
+
+// Reglas puras (sin emulador): horarios, marca y zona horaria.
+func TestReglasHorarioYMarca(t *testing.T) {
+	h := &HorarioSemanal{Lunes: DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "13:00"}}}}
+	if d := employeeDayHorario(h, time.Monday); d == nil || !d.Activo || len(d.Turnos) != 1 {
+		t.Fatalf("lunes=%v, esperaba turno activo", d)
+	}
+	if d := employeeDayHorario(h, time.Tuesday); d == nil || d.Activo {
+		t.Fatalf("martes=%v, día inactivo debe venir apagado", d)
+	}
+	if d := employeeDayHorario(nil, time.Monday); d != nil {
+		t.Fatalf("sin horario=%v, debe ser nil", d)
+	}
+	for _, c := range []string{"", "#16A34A", "#abcdef"} {
+		if !esColorMarcaValido(c) {
+			t.Fatalf("color %q debía ser válido", c)
+		}
+	}
+	for _, c := range []string{"rojo", "#12345", "1234567", "#GGGGGG"} {
+		if esColorMarcaValido(c) {
+			t.Fatalf("color %q debía ser inválido", c)
+		}
+	}
+	m := sanearMarca(Marca{Color: "  #123456  ", Eslogan: strings.Repeat("x", 100), Instagram: "@juan"})
+	if m.Color != "#123456" {
+		t.Fatalf("color=%q", m.Color)
+	}
+	if len([]rune(m.Eslogan)) != 80 {
+		t.Fatalf("eslogan len=%d, esperaba 80", len([]rune(m.Eslogan)))
+	}
+	if m.Instagram != "@juan" {
+		t.Fatalf("instagram=%q", m.Instagram)
+	}
+	if m2 := sanearMarca(Marca{Color: "no-es-color"}); m2.Color != "" {
+		t.Fatalf("color inválido=%q, debía limpiarse", m2.Color)
+	}
+	if loc := bogotaLocation(); loc.String() != "America/Bogota" && loc.String() != "BOT" {
+		t.Fatalf("zona=%q", loc.String())
+	}
+}
+
+// Borrar profesional: 409 con citas futuras, 200 al liberar (cascada).
+func TestDeleteEmpleadoConYSinCitas(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-delemp")
+	seedTienda(t, ctx, slug)
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "+573008888881",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", code)
+	}
+	duenoUID := clienteUIDTest(t, "duenodelemp@test.com")
+	duenoTok := tokenClienteTest(t, "duenodelemp@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	borrar := func() int {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/empleados/emp1", nil)
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code
+	}
+	if c := borrar(); c != http.StatusConflict {
+		t.Fatalf("con citas code=%d, esperaba 409", c)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573008888881")
+	creq := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+ids[0], nil)
+	creq.Header.Set("Authorization", "Bearer "+duenoTok)
+	crec := httptest.NewRecorder()
+	apiRouter(crec, creq)
+	if crec.Code != http.StatusOK {
+		t.Fatalf("cancel code=%d, esperaba 200", crec.Code)
+	}
+	if c := borrar(); c != http.StatusOK {
+		t.Fatalf("libre code=%d, esperaba 200", c)
+	}
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc("emp1").Get(ctx); err == nil {
+		t.Fatalf("el empleado sigue existiendo")
+	}
+}
+
+// Primer hueco por profesional y día cerrado sin oferta.
+func TestPrimerHuecoEmpleadoYDiaCerrado(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-huecoemp")
+	seedTienda(t, ctx, slug)
+	hueco := func(q string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/slots/primer-hueco?"+q, nil)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	code, out := hueco("servicio_id=svc1&emp_id=emp1")
+	if code != http.StatusOK || out["fecha"] == nil || out["hora"] == nil {
+		t.Fatalf("hueco emp code=%d out=%v", code, out)
+	}
+	codeAny, outAny := hueco("servicio_id=svc1&emp_id=any")
+	if codeAny != http.StatusOK || outAny["hora"] == nil {
+		t.Fatalf("hueco any code=%d out=%v", codeAny, outAny)
+	}
+	// Empleado con semana cerrada: 404 sin huecos.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc("emp1").Set(ctx, map[string]interface{}{
+		"horario": map[string]interface{}{
+			"lunes": map[string]interface{}{"activo": false}, "martes": map[string]interface{}{"activo": false},
+			"miercoles": map[string]interface{}{"activo": false}, "jueves": map[string]interface{}{"activo": false},
+			"viernes": map[string]interface{}{"activo": false}, "sabado": map[string]interface{}{"activo": false},
+			"domingo": map[string]interface{}{"activo": false},
+		},
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	negocioCache.Invalidate(slug)
+	codeCerr, _ := hueco("servicio_id=svc1&emp_id=emp1")
+	if codeCerr != http.StatusNotFound {
+		t.Fatalf("día cerrado code=%d, esperaba 404", codeCerr)
+	}
+}
+
+// Middleware: CORS, cabeceras de seguridad y límite de peticiones.
+func TestMiddlewareSeguridadYLimite(t *testing.T) {
+	ok := func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusTeapot) }
+	// Preflight CORS con origen permitido.
+	pre := httptest.NewRequest(http.MethodOptions, "/", nil)
+	pre.Header.Set("Origin", "https://turnobot-web.web.app")
+	prerec := httptest.NewRecorder()
+	corsMiddleware(ok)(prerec, pre)
+	if prerec.Code != http.StatusOK {
+		t.Fatalf("preflight code=%d, esperaba 200", prerec.Code)
+	}
+	if prerec.Header().Get("Access-Control-Allow-Origin") != "https://turnobot-web.web.app" {
+		t.Fatalf("sin eco de origen permitido")
+	}
+	// Origen ajeno: pasa pero sin eco.
+	otro := httptest.NewRequest(http.MethodGet, "/", nil)
+	otro.Header.Set("Origin", "https://malo.example")
+	otrorec := httptest.NewRecorder()
+	corsMiddleware(ok)(otrorec, otro)
+	if otrorec.Code != http.StatusTeapot || otrorec.Header().Get("Access-Control-Allow-Origin") != "" {
+		t.Fatalf("origen ajeno code=%d eco=%q", otrorec.Code, otrorec.Header().Get("Access-Control-Allow-Origin"))
+	}
+	// Cabeceras de seguridad presentes.
+	sec := httptest.NewRequest(http.MethodGet, "/", nil)
+	secrec := httptest.NewRecorder()
+	securityHeadersMiddleware(ok)(secrec, sec)
+	for _, h := range []string{"X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy"} {
+		if secrec.Header().Get(h) == "" {
+			t.Fatalf("falta cabecera %s", h)
+		}
+	}
+	// Límite: 2 pasan, la 3a se frena con 429.
+	rl := &rateLimiter{visitors: map[string]*visitor{}, limit: 2, window: time.Minute}
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.RemoteAddr = "9.9.9.9:1234"
+		rec := httptest.NewRecorder()
+		rateLimitMiddleware(rl, ok)(rec, req)
+		if rec.Code != http.StatusTeapot {
+			t.Fatalf("petición %d code=%d, esperaba 418", i+1, rec.Code)
+		}
+	}
+	req3 := httptest.NewRequest(http.MethodGet, "/", nil)
+	req3.RemoteAddr = "9.9.9.9:1234"
+	rec3 := httptest.NewRecorder()
+	rateLimitMiddleware(rl, ok)(rec3, req3)
+	if rec3.Code != http.StatusTooManyRequests {
+		t.Fatalf("exceso code=%d, esperaba 429", rec3.Code)
+	}
+}
+
+// Registro de token push del dueño: auth y validaciones.
+func TestPushTokenRegistro(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-push")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenopush@test.com")
+	duenoTok := tokenClienteTest(t, "duenopush@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	call := func(tok, body string) int {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/register-push-token", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		if tok != "" {
+			req.Header.Set("Authorization", "Bearer "+tok)
+		}
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code
+	}
+	if c := call("", `{"token":"abc"}`); c != http.StatusUnauthorized {
+		t.Fatalf("sin token code=%d, esperaba 401", c)
+	}
+	if c := call(duenoTok, `{"token":""}`); c != http.StatusBadRequest {
+		t.Fatalf("vacío code=%d, esperaba 400", c)
+	}
+	if c := call(duenoTok, `{"token":"`+strings.Repeat("x", 600)+`"}`); c != http.StatusBadRequest {
+		t.Fatalf("largo code=%d, esperaba 400", c)
+	}
+	if c := call(duenoTok, `{"token":"fcm-test-123"}`); c != http.StatusOK {
+		t.Fatalf("válido code=%d, esperaba 200", c)
+	}
+}
+
+// Mover sobre horario ocupado se rechaza; a hueco libre pasa.
+func TestMoverSlotOcupadoYLibre(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-mover")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenomover@test.com")
+	duenoTok := tokenClienteTest(t, "duenomover@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	book := func(phone, hora string) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"servicioId": "svc1", "empleadoId": "emp1",
+			"fecha": mañanaStr(), "hora": hora,
+			"clienteNombre": "X", "clienteTelefono": phone,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("book %s code=%d, esperaba 201", hora, rec.Code)
+		}
+	}
+	book("+573001010101", "10:00")
+	book("+573001010102", "10:30")
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573001010101")
+	mover := func(hora string) int {
+		body, _ := json.Marshal(map[string]string{"fecha": mañanaStr(), "hora": hora})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+ids[0]+"/reschedule", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code
+	}
+	if c := mover("10:30"); c != http.StatusConflict {
+		t.Fatalf("mover ocupado code=%d, esperaba 409", c)
+	}
+	if c := mover("11:00"); c != http.StatusOK {
+		t.Fatalf("mover libre code=%d, esperaba 200", c)
+	}
+}

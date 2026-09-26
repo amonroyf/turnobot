@@ -395,6 +395,8 @@ export default function BookingApp() {
 
   const hayRecursos = (negocio?.recursos || []).length > 0;
   const recursoElegido = negocio?.recursos?.find(r => r.id === booking.recursoId);
+  // Instructor responsable del espacio (opcional): "con Ana" en tarjetas y resúmenes.
+  const instructorDe = (r) => (negocio?.empleados || []).find(e => e.id === r?.instructor_id)?.name || '';
   // En modo espacio no hay servicio: el nombre se deriva del espacio.
   const servicioNombre = servicioElegido?.name || (recursoElegido ? `Reserva de ${recursoElegido.name}` : '');
   const pasos = modo === 'espacio' ? PASOS_ESPACIO : PASOS;
@@ -1253,7 +1255,7 @@ export default function BookingApp() {
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block font-bold truncate text-sm">{r.name}</span>
                                   <span className="block text-[11px] font-semibold opacity-70 capitalize">
-                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}
+                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}
                                   </span>
                                   {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                                 </span>
@@ -1263,7 +1265,7 @@ export default function BookingApp() {
                         </div>
                         {recursoElegido && (
                           <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-                            ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)})
+                            ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)}{instructorDe(recursoElegido) ? ` · con ${instructorDe(recursoElegido)}` : ''})
                             {(recursoElegido.capacidad || 1) > 1
                               ? ` (para ${recursoElegido.capacidad} personas — cada una reserva la suya).`
                               : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
@@ -1540,7 +1542,7 @@ export default function BookingApp() {
                           <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
                         )}
                         {recursoElegido && (
-                          <p>📍 Espacio: <strong>{recursoElegido.name}</strong>{modoEspacio && recursoElegido?.duration_minutes ? ` · ⏱️ ${duracionAmable(recursoElegido.duration_minutes)}` : ''}</p>
+                          <p>📍 Espacio: <strong>{recursoElegido.name}</strong>{modoEspacio && recursoElegido?.duration_minutes ? ` · ⏱️ ${duracionAmable(recursoElegido.duration_minutes)}` : ''}{instructorDe(recursoElegido) ? ` · con ${instructorDe(recursoElegido)}` : ''}</p>
                         )}
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
@@ -1682,7 +1684,7 @@ export default function BookingApp() {
                     <div className="text-left bg-gray-50 rounded-xl p-4 space-y-2 text-sm text-gray-700 border border-gray-100">
                       <p>📋 <strong>{modoEspacio ? 'Reserva' : 'Servicio'}:</strong> {servicioNombre}</p>
                       <p>👤 <strong>Profesional:</strong> {empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : '')}</p>
-                      {recursoElegido && <p>📍 <strong>Espacio:</strong> {recursoElegido.name}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</p>}
+                      {recursoElegido && <p>📍 <strong>Espacio:</strong> {recursoElegido.name}{instructorDe(recursoElegido) ? ` con ${instructorDe(recursoElegido)}` : ''}{Number(booking.cupos) > 1 ? ` (${booking.cupos} personas)` : ''}</p>}
                       {(booking.participantes || []).filter(Boolean).length > 0 && (
                         <p>🧑‍🤝‍🧑 <strong>Van:</strong> {booking.participantes.filter(Boolean).join(', ')}</p>
                       )}

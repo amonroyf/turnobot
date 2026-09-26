@@ -48,7 +48,7 @@ func markNoShowHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	// AUTORIZACIÓN: dueño o empleado asignado.
 	isOwner := isOwnerRequest(r, slug)
-	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	isEmployee := !isOwner && isEquipoRequest(r, slug, b)
 	if !isOwner && !isEmployee {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
 		return

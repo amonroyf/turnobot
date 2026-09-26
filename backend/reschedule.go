@@ -83,7 +83,7 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 
 	// AUTORIZACIÓN: dueño, empleado asignado, o cliente (por phone match).
 	isOwner := isOwnerRequest(r, slug)
-	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	isEmployee := !isOwner && isEquipoRequest(r, slug, b)
 	isClient := !isOwner && !isEmployee && isClientRequest(r, b.UserPhone, b.ClientUID)
 	if !isOwner && !isEmployee && !isClient {
 		w.Header().Set("Content-Type", "application/json")

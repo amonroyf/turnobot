@@ -59,6 +59,9 @@ service cloud.firestore {
              (!('price' in request.resource.data) ||
               (request.resource.data.price is string &&
                request.resource.data.price.size() <= 20)) &&
+             (!('instructor_id' in request.resource.data) ||
+              (request.resource.data.instructor_id is string &&
+               request.resource.data.instructor_id.size() <= 100)) &&
              (!('descripcion' in request.resource.data) ||
               (request.resource.data.descripcion is string &&
                request.resource.data.descripcion.size() <= 500)) &&

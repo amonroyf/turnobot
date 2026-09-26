@@ -1,6 +1,18 @@
 # Changelog — Turnobot
 
-## 2026-09-26 (auditoría: cobrado se revierte + carrera de cupos)
+## 2026-09-26 (cobertura: reglas al 54% + limpieza)
+
+- Backend 42% → 54.1% con 13 tests nuevos: primer hueco, borrar recurso/empleado con guards, servicios CRUD, negocio público, middleware/CORS/rate-limit, push-token, mover con choque, validadores puros.
+- Limpieza: fuera código muerto (`isSlotAvailable`, `isAssignedEmployeeRequest`, `incrementCliente`).
+- Frontend: suite vitest nueva (`test:unit`, 27 tests de fechas y marca). E2E Playwright intactos sin correr (tocan prod).
+- Desplegado: backend `turnobot-00145-sch`.## 2026-09-26 (instructor opcional por espacio + bloqueo total)
+
+- `Recurso` suma `instructor_id` (opcional, validado contra el equipo): la clase muestra "con Ana", aparece en su portal y se sustituye sin tocar horario/cupos/precio. La cancha alquilada sigue sin instructor.
+- Bloqueo cruzado: la sesión ocupa la agenda 1-a-1 del instructor y sus citas 1-a-1 bloquean la sesión (ambas direcciones, cero choques).
+- El equipo opera sus clases: ver, pagar, no-show, cancelar, mover y deshacer (solo propia agenda o espacios que dicta; 403 ajena).
+- Rules aceptan `instructor_id`. Panel: select al crear + sustitución en lista. Reserva y registro muestran "con Ana".
+- Tests de bloqueo bidireccional, portal+pago, sustitución y validación. Suite verde.
+- Desplegado: backend `turnobot-00144-r45` + rules + frontend.## 2026-09-26 (auditoría: cobrado se revierte + carrera de cupos)
 
 - Cancelar o marcar no-show de una cita PAGADA revierte `paid_total`/`paid_visits`; deshacer los repone. Sin esto el CRM decía que entró plata de citas inexistentes.
 - Tests `TestPagoCancelUndoLedger` (pago→cancel→undo) y `TestRecursoCupoConcurrente` (4 paralelas por 2 cupos: 2 entran, 2 chocan). Suite verde.

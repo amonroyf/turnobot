@@ -232,7 +232,7 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '' });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '' });
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -246,6 +246,19 @@ function AdminPanel() {
       invalidarCache();
     } catch (err) {
       await avisar('No se pudo guardar. Intenta de nuevo.', 'error');
+    }
+    setGuardandoRecurso(false);
+  };
+  // Sustitución de instructor (Mindbody-style): cambia quién dicta sin tocar
+  // horario, cupos ni precio. Las futuras sesiones aparecen en su portal.
+  const cambiarInstructorRecurso = async (recurso, instructorId) => {
+    setGuardandoRecurso(true);
+    try {
+      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), { instructor_id: instructorId || '' });
+      invalidarCache();
+      await avisar(instructorId ? 'Instructor actualizado.' : 'Espacio sin instructor.', 'exito');
+    } catch (err) {
+      await avisar('No se pudo guardar el instructor. Intenta de nuevo.', 'error');
     }
     setGuardandoRecurso(false);
   };
@@ -590,6 +603,7 @@ function AdminPanel() {
           capacidad: Number(nuevoRecurso.capacidad) || 1,
           duration_minutes: Number(nuevoRecurso.duration_minutes) || 60,
           price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
+          instructor_id: nuevoRecurso.instructor_id || '',
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
         }),
       });
@@ -598,7 +612,7 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '' });
+      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '' });
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
@@ -1708,6 +1722,21 @@ function AdminPanel() {
                         <p className="text-xs font-semibold text-gray-700 mt-0.5">
                           ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}
                         </p>
+                        <label className="flex items-center gap-2 mt-1.5">
+                          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Instructor</span>
+                          <select
+                            value={r.instructor_id || ''}
+                            onChange={(e) => cambiarInstructorRecurso(r, e.target.value)}
+                            disabled={guardandoRecurso}
+                            aria-label={`Instructor de ${r.name}`}
+                            className="text-xs font-bold border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:border-black focus:outline-none disabled:opacity-50 max-w-[160px]"
+                          >
+                            <option value="">Sin instructor</option>
+                            {profesionales.map((p) => (
+                              <option key={p.id} value={p.id}>👤 {p.name}</option>
+                            ))}
+                          </select>
+                        </label>
                         {r.descripcion && (
                           <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
                         )}
@@ -1795,6 +1824,20 @@ function AdminPanel() {
                     </select>
                   </label>
                 </div>
+                <label className="block">
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Instructor responsable (opcional)</span>
+                  <select
+                    value={nuevoRecurso.instructor_id}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, instructor_id: e.target.value })}
+                    aria-label="Instructor responsable del espacio nuevo"
+                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  >
+                    <option value="">Sin instructor (el local asigna)</option>
+                    {profesionales.map((p) => (
+                      <option key={p.id} value={p.id}>👤 {p.name}</option>
+                    ))}
+                  </select>
+                </label>
                 <div className="grid grid-cols-3 gap-3">
                   <label className="block">
                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>

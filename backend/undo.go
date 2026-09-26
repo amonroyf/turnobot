@@ -38,7 +38,7 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 
 	// AUTORIZACIÓN: dueño o empleado asignado.
 	isOwner := isOwnerRequest(r, slug)
-	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	isEmployee := !isOwner && isEquipoRequest(r, slug, b)
 	if !isOwner && !isEmployee {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
 		return
@@ -221,17 +221,4 @@ func marcaReciente(v interface{}, ventana time.Duration) bool {
 		return time.Since(t) <= ventana
 	}
 	return false
-}
-
-// incrementCliente suma de vuelta una visita y el gasto del servicio al
-// directorio de clientes (usado al deshacer cancelación/no-show).
-func incrementCliente(ctx context.Context, slug, phone string, price int) {
-	if slug == "" || phone == "" {
-		return
-	}
-	ref := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, phone))
-	_, err := ref.Set(ctx, clienteCRMData(slug, phone, 1, price), firestore.MergeAll)
-	if err != nil {
-		log.Printf("Aviso: no se pudo restaurar al cliente %s en %s: %v", phone, slug, err)
-	}
 }

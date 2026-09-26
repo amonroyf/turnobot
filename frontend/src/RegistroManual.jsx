@@ -52,6 +52,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const hoy = fechaHoyEnZona(negocio?.timezone);
   const servicioElegido = negocio?.servicios?.find(s => s.id === servicioId);
   const recursoElegido = negocio?.recursos?.find(r => r.id === recursoId);
+  const instructorDe = (r) => (negocio?.empleados || []).find(e => e.id === r?.instructor_id)?.name || '';
   const empleadoElegido = negocio?.empleados?.find(e => e.id === (empFijo || empleadoId));
   const empleadosElegibles = (negocio?.empleados || []).filter(
     (e) => !servicioId || !e.servicios_ids || e.servicios_ids.includes(servicioId)
@@ -363,7 +364,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
                   </span>
                   <span className="leading-tight text-left min-w-0">
                     <span className="block font-bold truncate text-sm">{r.name}</span>
-                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}</span>
+                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}</span>
                     {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                   </span>
                 </button>

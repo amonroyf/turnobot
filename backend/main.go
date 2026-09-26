@@ -263,6 +263,9 @@ type Recurso struct {
 	Capacidad   int             `firestore:"capacidad" json:"capacidad"`
 	Duration    int             `firestore:"duration_minutes" json:"duration_minutes,omitempty"`
 	Price       string          `firestore:"price" json:"price,omitempty"`
+	// InstructorID: empleado responsable (opcional). La clase/canchas con
+	// instructor aparecen en su portal; la cancha alquilada no lo necesita.
+	InstructorID string         `firestore:"instructor_id" json:"instructor_id,omitempty"`
 	Descripcion string          `firestore:"descripcion" json:"descripcion,omitempty"`
 	Horario     *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
 }
@@ -1804,7 +1807,7 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 
 	// AUTORIZACIÓN: dueño, empleado asignado, o cliente (por phone match).
 	isOwner := isOwnerRequest(r, slug)
-	isEmployee := !isOwner && isAssignedEmployeeRequest(r, slug, b.EmpID)
+	isEmployee := !isOwner && isEquipoRequest(r, slug, b)
 	isClient := !isOwner && !isEmployee && isClientRequest(r, b.UserPhone, b.ClientUID)
 	if !isOwner && !isEmployee && !isClient {
 		w.Header().Set("Content-Type", "application/json")
@@ -2102,21 +2105,6 @@ func bearerToken(header string) string {
 	return header[len(prefix):]
 }
 
-// isAssignedEmployeeRequest verifica si el request proviene del empleado
-// asignado a la cita (JWT de empleado con PIN). Retorna true si el token
-// de empleado es válido y el emp_id coincide con el asignado.
-func isAssignedEmployeeRequest(r *http.Request, slug, empID string) bool {
-	token := bearerToken(r.Header.Get("Authorization"))
-	if token == "" {
-		return false
-	}
-	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
-	if err != nil || tokenSlug != slug || tokenEmpID != empID {
-		return false
-	}
-	return true
-}
-
 // verificarCliente valida el ID token de Firebase del cliente (login Google
 // obligatorio para reservar). Retorna UID y email (lectura segura del claim).
 func verificarCliente(r *http.Request) (uid, email string, ok bool) {
@@ -2378,6 +2366,7 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		Descripcion     string          `json:"descripcion"`
 		DurationMinutes int             `json:"duration_minutes"`
 		Price           json.RawMessage `json:"price"`
+		InstructorID    string          `json:"instructor_id"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -2434,14 +2423,23 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	if precio < 0 {
 		precio = 0
 	}
-
+	// Instructor responsable (opcional): debe ser alguien del equipo.
 	ctx := r.Context()
+	instructorID := strings.TrimSpace(req.InstructorID)
+	if instructorID != "" {
+		if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("empleados").Doc(instructorID).Get(ctx); err != nil {
+			http.Error(w, "El instructor no pertenece a este negocio", http.StatusBadRequest)
+			return
+		}
+	}
+
 	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, map[string]interface{}{
 		"name":             name,
 		"tipo":             tipo,
 		"capacidad":        capacidad,
 		"duration_minutes": duracion,
 		"price":            strconv.Itoa(precio),
+		"instructor_id":    instructorID,
 		"descripcion":      descripcion,
 		"created_at":       time.Now(),
 	})
@@ -3218,6 +3216,104 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 
 // firestoreBookedIntervals devuelve los intervalos [inicio, fin) ya reservados
 // consultando la colección reservas usando índices compuestos hiper-rápidos.
+// instructorRecursos devuelve los IDs de espacios donde el empleado es
+// instructor responsable.
+func instructorRecursos(ctx context.Context, slug, empID string) []string {
+	if empID == "" {
+		return nil
+	}
+	docs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Documents(ctx).GetAll()
+	if err != nil {
+		return nil
+	}
+	var ids []string
+	for _, d := range docs {
+		var rec Recurso
+		d.DataTo(&rec)
+		if rec.InstructorID == empID {
+			ids = append(ids, d.Ref.ID)
+		}
+	}
+	return ids
+}
+
+// intervalosDeDocs convierte reservas a intervalos [inicio, fin), saltando
+// canceladas (el hueco vuelve a ofrecerse).
+func intervalosDeDocs(docs []*firestore.DocumentSnapshot) [][2]time.Time {
+	var intervals [][2]time.Time
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		d.DataTo(&b)
+		dur := time.Duration(b.DurationMinute) * time.Minute
+		if dur <= 0 {
+			dur = 60 * time.Minute
+		}
+		intervals = append(intervals, [2]time.Time{b.DateTime, b.DateTime.Add(dur)})
+	}
+	return intervals
+}
+
+// instructorBusyIntervals: ocupación del instructor FUERA del espacio evaluado
+// (sus citas 1-a-1 + sesiones de otros espacios que dicta). Para que la clase
+// no se ofrezca cuando su instructor está ocupado en otro lado.
+func instructorBusyIntervals(ctx context.Context, slug, instructorID, excludeRecursoID string, start, end time.Time) [][2]time.Time {
+	if instructorID == "" {
+		return nil
+	}
+	var out [][2]time.Time
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", instructorID).
+		Where("date_time", ">=", start).
+		Where("date_time", "<", end).
+		Documents(ctx).GetAll()
+	if err == nil {
+		out = append(out, intervalosDeDocs(docs)...)
+	} else {
+		log.Printf("Aviso: no se pudo cargar agenda del instructor %s: %v", instructorID, err)
+	}
+	for _, rid := range instructorRecursos(ctx, slug, instructorID) {
+		if rid == excludeRecursoID {
+			continue
+		}
+		docs2, err := firestoreClient.Collection("reservas").
+			Where("negocio_id", "==", slug).
+			Where("recurso_id", "==", rid).
+			Where("date_time", ">=", start).
+			Where("date_time", "<", end).
+			Documents(ctx).GetAll()
+		if err != nil {
+			continue
+		}
+		out = append(out, intervalosDeDocs(docs2)...)
+	}
+	return out
+}
+
+// isEquipoRequest: el request viene del empleado asignado (EmpID) o del
+// instructor responsable del espacio de la cita. Para operar clases grupales.
+func isEquipoRequest(r *http.Request, slug string, b Booking) bool {
+	token := bearerToken(r.Header.Get("Authorization"))
+	if token == "" {
+		return false
+	}
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID == "" {
+		return false
+	}
+	if b.EmpID != "" {
+		return tokenEmpID == b.EmpID
+	}
+	if b.RecursoID == "" {
+		return false
+	}
+	rec, ok := resolveRecurso(r.Context(), slug, b.RecursoID)
+	return ok && rec.InstructorID == tokenEmpID
+}
+
 func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, startDay, endDay time.Time) [][2]time.Time {
 	docs, err := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", negocioID).
@@ -3246,6 +3342,20 @@ func firestoreBookedIntervals(ctx context.Context, negocioID, empID string, star
 		start := b.DateTime
 		end := start.Add(dur)
 		intervals = append(intervals, [2]time.Time{start, end})
+	}
+	// Bloqueo cruzado: las sesiones que dicta como instructor también ocupan
+	// su agenda 1-a-1 (si da Yoga 9-10, no se ofrece corte 9:30).
+	for _, rid := range instructorRecursos(ctx, negocioID, empID) {
+		docs2, err := firestoreClient.Collection("reservas").
+			Where("negocio_id", "==", negocioID).
+			Where("recurso_id", "==", rid).
+			Where("date_time", ">=", startDay).
+			Where("date_time", "<", endDay).
+			Documents(ctx).GetAll()
+		if err != nil {
+			continue
+		}
+		intervals = append(intervals, intervalosDeDocs(docs2)...)
 	}
 	return intervals
 }
@@ -3336,12 +3446,30 @@ func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time
 	}
 
 	libres = map[string]int{}
+	// Bloqueo cruzado (viceversa): si el espacio tiene instructor y él está
+	// ocupado 1-a-1 en ese horario, la sesión no se ofrece (cero choques).
+	var instructorBusy [][2]time.Time
+	if rec.InstructorID != "" {
+		instructorBusy = instructorBusyIntervals(ctx, slug, rec.InstructorID, recursoID, bookStart, bookEnd)
+	}
 	for _, iv := range shiftIntervals {
 		for t := iv[0]; !t.Add(slotDuration).After(iv[1]); t = t.Add(slotDuration) {
 			if !t.After(earliest) || !t.Before(maxBookingTime) {
 				continue
 			}
 			candEnd := t.Add(slotDuration)
+			if len(instructorBusy) > 0 {
+				choca := false
+				for _, bp := range instructorBusy {
+					if t.Before(bp[1]) && bp[0].Before(candEnd) {
+						choca = true
+						break
+					}
+				}
+				if choca {
+					continue
+				}
+			}
 			// El candidato choca si solapa [inicio, fin) de otra reserva.
 			ocupados := 0
 			for _, d := range docs {
@@ -3489,37 +3617,6 @@ func hasBookingOnDateUID(ctx context.Context, negocioID, uid string, requested t
 		count++
 	}
 	return count >= negocioMaxBookings(ctx, negocioID)
-}
-
-// isSlotAvailable verifica si un slot horario exacto sigue libre en Google Calendar.
-// Retorna true si está disponible (o si hay mock/no-OAuth, para no bloquear el MVP).
-func isSlotAvailable(ctx context.Context, negocioID, empID string, slotStart time.Time) bool {
-	svc, emp, err := calendarServiceForEmployee(ctx, negocioID, empID)
-	if err != nil {
-		// Sin OAuth configurado: no podemos verificar, asumimos disponible (mock mode)
-		log.Printf("Aviso: %v. No se puede verificar disponibilidad, asumiendo libre.", err)
-		return true
-	}
-
-	slotEnd := slotStart.Add(1 * time.Hour)
-
-	req := &calendar.FreeBusyRequest{
-		TimeMin: slotStart.Format(time.RFC3339),
-		TimeMax: slotEnd.Format(time.RFC3339),
-		Items:   []*calendar.FreeBusyRequestItem{{Id: emp.CalendarID}},
-	}
-	result, err := svc.Freebusy.Query(req).Context(ctx).Do()
-	if err != nil {
-		log.Printf("Aviso: error verificando disponibilidad: %v. Asumiendo libre.", err)
-		return true
-	}
-
-	for _, cal := range result.Calendars {
-		if len(cal.Busy) > 0 {
-			return false // Hay al menos un evento ocupando este slot
-		}
-	}
-	return true
 }
 
 // createCalendarEvent crea un evento en Google Calendar y devuelve su ID.
@@ -3977,6 +4074,45 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 		})
 	}
 
+	// Clases que dicta como instructor: aparecen en su portal aunque la cita
+	// no lleve su EmpID (el local asigna). Ordenadas con el resto abajo.
+	for _, rid := range instructorRecursos(ctx, slug, empID) {
+		docs2, err := firestoreClient.Collection("reservas").
+			Where("negocio_id", "==", slug).
+			Where("recurso_id", "==", rid).
+			Documents(ctx).GetAll()
+		if err != nil {
+			continue
+		}
+		for _, d := range docs2 {
+			var b Booking
+			d.DataTo(&b)
+			if b.DateTime.Before(now.AddDate(0, 0, -1)) {
+				continue
+			}
+			citas = append(citas, empCitaJSON{
+				ID:        d.Ref.ID,
+				Servicio:  b.ServiceName,
+				Cliente:   b.ClientName,
+				Telefono:  b.UserPhone,
+				Precio:    b.Price,
+				Duracion:  b.DurationMinute,
+				Fecha:     b.DateTime.In(loc).Format("2006-01-02"),
+				Hora:      b.DateTime.In(loc).Format("15:04"),
+				Recurso:   b.RecursoName,
+				Van:       b.Participantes,
+				Iso:       b.DateTime.In(loc).Format(time.RFC3339),
+				Notes:     b.Notes,
+				NoShow:    b.NoShow,
+				Cancelled: d.Data()["cancelled"] == true,
+				Pagado:    b.Pagado,
+				CancelledAt: isoDeMarca(d.Data()["cancelled_at"], loc),
+				NoShowAt:    isoDeMarca(d.Data()["no_show_at"], loc),
+			})
+		}
+	}
+	sort.Slice(citas, func(i, j int) bool { return citas[i].Iso < citas[j].Iso })
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(citas)
 }
@@ -4021,7 +4157,17 @@ func employeePagoHandler(w http.ResponseWriter, r *http.Request, slug, empID, ci
 		if err := snap.DataTo(&b); err != nil {
 			return err
 		}
-		if b.NegocioID != slug || b.EmpID != empID {
+		if b.NegocioID != slug {
+			return errPagoAjeno
+		}
+		// Agenda propia: su EmpID o instructor del espacio de la cita.
+		esPropia := b.EmpID == empID
+		if !esPropia && b.EmpID == "" && b.RecursoID != "" {
+			if rec, ok := resolveRecurso(ctx, slug, b.RecursoID); ok && rec.InstructorID == empID {
+				esPropia = true
+			}
+		}
+		if !esPropia {
 			return errPagoAjeno
 		}
 		if snap.Data()["cancelled"] == true || b.NoShow {
