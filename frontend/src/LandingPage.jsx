@@ -300,7 +300,13 @@ function TiposNegocioSection() {
         <div className="grid md:grid-cols-2 gap-6">
           {modos.map((m, i) => (
             <FadeIn key={i} delay={i * 150}>
-              <div className="bg-gray-50 border border-gray-100 rounded-3xl p-8 h-full flex flex-col">
+              <div className="bg-gray-50 border border-gray-100 rounded-3xl p-8 h-full flex flex-col relative overflow-hidden">
+                {i === 0 && (
+                  <div className="absolute top-0 right-0 bg-gray-900 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">Ideal profesionales</div>
+                )}
+                {i === 1 && (
+                  <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-xl uppercase tracking-wider">Ideal instructores</div>
+                )}
                 <div className="text-4xl mb-4" aria-hidden="true">{m.icon}</div>
                 <p className="text-xs font-black text-green-600 uppercase tracking-widest mb-2">{m.tag}</p>
                 <h3 className="text-xl font-black text-gray-900 mb-3">{m.title}</h3>
@@ -550,27 +556,32 @@ function FAQSection() {
 
 function CTASection() {
   return (
-    <section className="bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white py-20 sm:py-28">
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+    <section className="bg-gray-50 py-20 sm:py-28">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
-          <h2 className="text-3xl sm:text-4xl font-black mb-6">
-            ¿Listo para no perder más clientes?
-          </h2>
-          <p className="text-lg text-gray-400 mb-10 max-w-2xl mx-auto">
-            Crea tu página de reservas hoy. Sin tarjeta, sin enredos.
-          </p>
-          <CTAPrincipal />
-          <div className="mt-8 max-w-sm mx-auto bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-4 text-left">
-            <img src="/alejandro-monroy.png" alt="Alejandro Monroy, creador de TurnoBot" className="w-14 h-14 rounded-full object-cover border-2 border-green-500 shrink-0" />
-            <div className="min-w-0">
-              <p className="text-sm font-black text-white">Alejandro Monroy</p>
-              <p className="text-xs text-gray-400">Creador de TurnoBot · te ayudo a montarlo</p>
-              <a href="https://wa.me/573229124517?text=Hola%20Alejandro%2C%20tengo%20una%20pregunta%20sobre%20TurnoBot" target="_blank" rel="noreferrer" className="text-xs font-bold text-green-400 hover:text-green-300 mt-1 inline-block">
-                💬 +57 322 912 4517 · Lun–Sáb 9am–6pm
-              </a>
+          <div className="bg-gradient-to-br from-gray-900 to-black rounded-[2.5rem] p-10 sm:p-16 text-center text-white shadow-2xl relative overflow-hidden">
+            <div className="absolute inset-0 bg-green-500/10 rounded-full blur-3xl opacity-50 transform translate-y-1/2" aria-hidden="true"></div>
+            <div className="relative z-10">
+              <h2 className="text-3xl sm:text-4xl font-black mb-6">
+                Tu negocio merece verse así de profesional.
+              </h2>
+              <p className="text-lg text-gray-400 mb-10 max-w-xl mx-auto">
+                Crea tu página, configura tus servicios o clases y comparte tu enlace por WhatsApp en menos de 10 minutos.
+              </p>
+              <CTAPrincipal texto="Crear mi página ahora →" />
+              <div className="mt-8 max-w-sm mx-auto bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center gap-4 text-left">
+                <img src="/alejandro-monroy.png" alt="Alejandro Monroy, creador de TurnoBot" className="w-14 h-14 rounded-full object-cover border-2 border-green-500 shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-white">Alejandro Monroy</p>
+                  <p className="text-xs text-gray-400">Creador de TurnoBot · te ayudo a montarlo</p>
+                  <a href="https://wa.me/573229124517?text=Hola%20Alejandro%2C%20tengo%20una%20pregunta%20sobre%20TurnoBot" target="_blank" rel="noreferrer" className="text-xs font-bold text-green-400 hover:text-green-300 mt-1 inline-block">
+                    💬 +57 322 912 4517 · Lun–Sáb 9am–6pm
+                  </a>
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 mt-4">Sin tarjeta · Sin contrato · Cancela cuando quieras</p>
             </div>
           </div>
-          <p className="text-xs text-gray-500 mt-4">Sin tarjeta · Sin contrato · Cancela cuando quieras</p>
         </FadeIn>
       </div>
     </section>
