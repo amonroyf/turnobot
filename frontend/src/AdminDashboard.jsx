@@ -235,7 +235,7 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', instructor_id: '', horario: horarioViernes14a16() });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', horario: horarioViernes14a16() });
   const [usarHorarioPropio, setUsarHorarioPropio] = useState(true);
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
@@ -250,19 +250,6 @@ function AdminPanel() {
       invalidarCache();
     } catch (err) {
       await avisar('No se pudo guardar. Intenta de nuevo.', 'error');
-    }
-    setGuardandoRecurso(false);
-  };
-  // Sustitución de instructor (Mindbody-style): cambia quién dicta sin tocar
-  // horario, cupos ni precio. Las futuras sesiones aparecen en su portal.
-  const cambiarInstructorRecurso = async (recurso, instructorId) => {
-    setGuardandoRecurso(true);
-    try {
-      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), { instructor_id: instructorId || '' });
-      invalidarCache();
-      await avisar(instructorId ? 'Instructor actualizado.' : 'Espacio sin instructor.', 'exito');
-    } catch (err) {
-      await avisar('No se pudo guardar el instructor. Intenta de nuevo.', 'error');
     }
     setGuardandoRecurso(false);
   };
@@ -599,10 +586,6 @@ function AdminPanel() {
       await avisar('Ponle un nombre al espacio (ej. Clase Funcional).', 'error');
       return;
     }
-    if (!nuevoRecurso.instructor_id) {
-      await avisar('Debes asignar un instructor obligatoriamente.', 'error');
-      return;
-    }
 
     let duracionCalculada = 60;
     const horarioUsar = usarHorarioPropio ? nuevoRecurso.horario : horarioDesdeJornada(jornadaLocal);
@@ -633,7 +616,6 @@ function AdminPanel() {
           capacidad: Number(nuevoRecurso.capacidad) || 1,
           duration_minutes: duracionCalculada,
           price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
-          instructor_id: nuevoRecurso.instructor_id || '',
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
           horario: usarHorarioPropio ? nuevoRecurso.horario : null,
         }),
@@ -643,7 +625,7 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', price: '', instructor_id: '', horario: horarioViernes14a16() });
+      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', price: '', horario: horarioViernes14a16() });
       setUsarHorarioPropio(true);
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
@@ -1754,21 +1736,6 @@ function AdminPanel() {
                         <p className="text-xs font-semibold text-gray-700 mt-0.5">
                           ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}
                         </p>
-                        <label className="flex items-center gap-2 mt-1.5">
-                          <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Instructor</span>
-                          <select
-                            value={r.instructor_id || ''}
-                            onChange={(e) => cambiarInstructorRecurso(r, e.target.value)}
-                            disabled={guardandoRecurso}
-                            aria-label={`Instructor de ${r.name}`}
-                            className="text-xs font-bold border border-gray-200 rounded-lg px-2 py-1.5 bg-gray-50 focus:border-black focus:outline-none disabled:opacity-50 max-w-[160px]"
-                          >
-                            <option value="">Sin instructor</option>
-                            {profesionales.map((p) => (
-                              <option key={p.id} value={p.id}>👤 {p.name}</option>
-                            ))}
-                          </select>
-                        </label>
                         {r.descripcion && (
                           <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
                         )}
@@ -1856,22 +1823,7 @@ function AdminPanel() {
                     </select>
                   </label>
                 </div>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Instructor responsable (Obligatorio)</span>
-                  <select
-                    required
-                    value={nuevoRecurso.instructor_id}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, instructor_id: e.target.value })}
-                    aria-label="Instructor responsable del espacio nuevo"
-                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                  >
-                    <option value="">Selecciona un instructor</option>
-                    {profesionales.map((p) => (
-                      <option key={p.id} value={p.id}>👤 {p.name}</option>
-                    ))}
-                  </select>
-                </label>
-<div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3">
                    <label className="block">
                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
                      <input
@@ -1942,7 +1894,7 @@ function AdminPanel() {
                 {/* Resumen previo: qué quedará configurado, sin sorpresas. */}
                 {nuevoRecurso.name && (
                   <p className="text-[11px] font-medium text-gray-600 bg-blue-50 border border-blue-100 rounded-xl p-2.5">
-                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {usarHorarioPropio && nuevoRecurso.horario ? resumenSemana(nuevoRecurso.horario) : `horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'})`} · {formatDinero(nuevoRecurso.price || '0')}{nuevoRecurso.instructor_id ? ` · con ${profesionales.find((p) => p.id === nuevoRecurso.instructor_id)?.name || ''}` : ''} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
+                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {usarHorarioPropio && nuevoRecurso.horario ? resumenSemana(nuevoRecurso.horario) : `horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'})`} · {formatDinero(nuevoRecurso.price || '0')} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
                   </p>
                 )}
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>

@@ -669,8 +669,10 @@ export default function BookingApp() {
     // y el backend revalida con 409). Con espacio y sin profesional, el local
     // asigna (empleado vacío, permitido por el backend).
     let empleadoFinal = booking.empleadoId;
-    if (booking.empleadoId === EMP_ANY) {
-      empleadoFinal = booking.recursoId ? '' : (slotsPorHora[booking.hora] || empleadosElegibles[0]?.id || '');
+    if (modoEspacio) {
+      empleadoFinal = recursoElegido?.instructor_id || '';
+    } else if (booking.empleadoId === EMP_ANY) {
+      empleadoFinal = slotsPorHora[booking.hora] || empleadosElegibles[0]?.id || '';
     }
     if (!empleadoFinal && !booking.recursoId) {
       setError("Elige un profesional para confirmar.");

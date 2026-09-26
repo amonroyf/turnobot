@@ -156,7 +156,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       const headers = { 'Content-Type': 'application/json', ...(await getHeaders?.()) };
       const payload = {
         servicioId: modoEspacio ? '' : servicioId,
-        empleadoId: modoEspacio ? '' : (empFijo || empleadoId),
+        empleadoId: modoEspacio ? (recursoElegido?.instructor_id || '') : (empFijo || empleadoId),
         recursoId: recursoId || '',
         cupos: 1,
         fecha, hora,
