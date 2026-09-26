@@ -693,6 +693,34 @@ function AdminPanel() {
 
   const [noShowMarking, setNoShowMarking] = useState('');
   const [undoingId, setUndoingId] = useState('');
+  const [marcandoPago, setMarcandoPago] = useState('');
+
+  // Caja en puerta: el dueño marca quién ya pagó (reversible por si se
+  // toca sin querer). Escritura directa permitida por reglas (solo dueño).
+  const handleTogglePagado = async (citaId) => {
+    const r = reservas.find((item) => item.id === citaId);
+    if (!r) return;
+    const ok = await confirmar(r.pagado ? {
+      titulo: `¿Quitar el pago de ${r.client_name}?`,
+      detalle: 'Volverá a aparecer como sin pagar.',
+      confirmarTexto: 'Sí, quitar pago',
+      variante: 'info',
+    } : {
+      titulo: `¿Registrar pago de ${r.client_name}?`,
+      detalle: r.price > 0 ? `Se registrará el cobro de ${formatDinero(r.price)}.` : 'Se marcará la reserva como pagada.',
+      confirmarTexto: 'Sí, marcar pagado',
+      variante: 'exito',
+    });
+    if (!ok) return;
+    setMarcandoPago(citaId);
+    try {
+      await updateDoc(doc(db, 'reservas', citaId), { pagado: !r.pagado });
+      setReservas(prev => prev.map(item => item.id === citaId ? { ...item, pagado: !r.pagado } : item));
+    } catch (err) {
+      await avisar('No se pudo guardar el pago. Intenta de nuevo.', 'error');
+    }
+    setMarcandoPago('');
+  };
 
   const handleMarcarNoShow = async (citaId) => {
     const r = reservas.find((item) => item.id === citaId);
@@ -885,6 +913,7 @@ function AdminPanel() {
                     {m.client_name}
                     {m.cancelled && <span className="ml-2 text-[9px] font-black bg-red-200 text-red-800 px-1.5 py-0.5 rounded uppercase">Cancelada</span>}
                     {m.no_show && <span className="ml-2 text-[9px] font-black bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase">No llegó</span>}
+                    {!m.cancelled && !m.no_show && m.pagado && <span className="ml-2 text-[9px] font-black bg-green-200 text-green-800 px-1.5 py-0.5 rounded uppercase">Pagó</span>}
                   </p>
                   <p className="text-[11px] text-gray-500 font-medium">📞 {formatearTelefono(m.user_phone)}</p>
                 </div>
@@ -896,6 +925,21 @@ function AdminPanel() {
                     >
                       📲
                     </a>
+                    {m.pagado ? (
+                      <button
+                        onClick={() => handleTogglePagado(m.id)} disabled={marcandoPago === m.id} aria-label={`Quitar pago de ${m.client_name}`}
+                        className="min-h-[40px] px-2.5 flex items-center text-[11px] font-black bg-green-100 text-green-800 rounded-lg border border-green-200 active:scale-95 disabled:opacity-50"
+                      >
+                        {marcandoPago === m.id ? '…' : '✅ Pagó'}
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleTogglePagado(m.id)} disabled={marcandoPago === m.id} aria-label={`Marcar pagado a ${m.client_name}`}
+                        className="min-h-[40px] px-2.5 text-[11px] text-green-700 font-bold border border-green-200 bg-green-50 hover:bg-green-100 rounded-lg active:scale-95 disabled:opacity-50"
+                      >
+                        {marcandoPago === m.id ? '…' : '✅ Pagó'}
+                      </button>
+                    )}
                     <button
                       onClick={() => handleMarcarNoShow(m.id)} disabled={noShowMarking === m.id} aria-label={`Marcar no llegó a ${m.client_name}`}
                       className="min-h-[40px] px-2.5 text-[11px] text-gray-600 font-bold border border-transparent hover:border-amber-200 hover:bg-amber-50 rounded-lg active:scale-95 disabled:opacity-50"
@@ -1019,11 +1063,15 @@ function AdminPanel() {
             </div>
 
             <div className="flex flex-col items-end gap-2 shrink-0">
-              {r.price > 0 && (
+              {r.pagado ? (
+                <button onClick={() => handleTogglePagado(r.id)} disabled={marcandoPago === r.id} title="Pagado (toca para quitar)" aria-label={`Quitar pago de ${r.client_name}`} className="text-xs font-black text-green-800 bg-green-100 px-2 py-1 rounded-lg flex items-center gap-1 border border-green-200 active:scale-95 disabled:opacity-50">
+                  ✅ Pagado
+                </button>
+              ) : r.price > 0 ? (
                 <span className="text-xs font-black text-gray-900 bg-gray-100 px-2 py-1 rounded-lg">
                   {formatDinero(r.price)}
                 </span>
-              )}
+              ) : null}
               {!isPast && !isNoShow && !isCancelled && (
                 <a
                   href={`https://wa.me/${r.user_phone}`} target="_blank" rel="noreferrer"
@@ -1038,6 +1086,15 @@ function AdminPanel() {
           {/* Acciones */}
           {!isNoShow && !isCancelled && (
             <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80 gap-2">
+              {!r.pagado && (
+                <button
+                  onClick={() => handleTogglePagado(r.id)}
+                  disabled={marcandoPago === r.id}
+                  className="min-h-[44px] text-[11px] text-green-700 font-semibold active:scale-95 transition-all px-3 py-1.5 rounded-lg border border-green-200 bg-green-50 hover:bg-green-100 disabled:opacity-50"
+                >
+                  {marcandoPago === r.id ? '...' : '✅ Pagó'}
+                </button>
+              )}
               {(isPast || (r.date_time?.seconds * 1000 <= ahora)) && (
                 <button
                   onClick={() => handleMarcarNoShow(r.id)}
