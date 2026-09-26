@@ -1449,7 +1449,7 @@ export default function BookingApp() {
                       <div className="space-y-4">
                         {slotsManana.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Mañana</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">En la mañana</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsManana.map(hora => (
                                 <button
@@ -1473,7 +1473,7 @@ export default function BookingApp() {
 
                         {slotsTarde.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Tarde</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">En la tarde</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsTarde.map(hora => (
                                 <button
@@ -1497,7 +1497,7 @@ export default function BookingApp() {
 
                         {slotsNoche.length > 0 && (
                           <div>
-                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Noche</p>
+                            <p className="text-[11px] font-bold text-gray-500 mb-2 uppercase tracking-wider">En la noche</p>
                             <div className="grid grid-cols-3 gap-2">
                               {slotsNoche.map(hora => (
                                 <button
