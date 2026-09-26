@@ -34,6 +34,7 @@ function PortalEmpleado() {
   const [cancelando, setCancelando] = useState('');
   const [noShowMarking, setNoShowMarking] = useState('');
   const [undoingId, setUndoingId] = useState('');
+  const [marcandoPago, setMarcandoPago] = useState('');
   // Autonomía: mover citas, mi horario, mi clave.
   const [moviendo, setMoviendo] = useState(null);
   const [moverFecha, setMoverFecha] = useState('');
@@ -204,8 +205,43 @@ function PortalEmpleado() {
     setNoShowMarking('');
   };
 
-  const handleUndo = async (citaId) => {
-    const ok = await confirmar({
+  // Caja en puerta (solo tu agenda): marca quién ya pagó. El backend mueve
+  // el contador cobrado-real del CRM. Reversible por toques accidentales.
+  const handleMarcarPagado = async (citaId) => {
+    const c = citas.find(item => item.id === citaId);
+    if (!c) return;
+    const ok = await confirmar(c.pagado ? {
+      titulo: `¿Quitar el pago de ${c.cliente}?`,
+      detalle: 'Volverá a aparecer como sin pagar.',
+      confirmarTexto: 'Sí, quitar pago',
+      variante: 'info',
+    } : {
+      titulo: `¿Registrar pago de ${c.cliente}?`,
+      detalle: c.precio > 0 ? `Se registrará el cobro de $${Number(c.precio).toLocaleString('es-CO')}.` : 'Se marcará la cita como pagada.',
+      confirmarTexto: 'Sí, marcar pagado',
+      variante: 'exito',
+    });
+    if (!ok) return;
+    setMarcandoPago(citaId);
+    try {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/citas/${citaId}/pago`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pagado: !c.pagado }),
+      });
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        setCitas(prev => prev.map(item => item.id === citaId ? { ...item, pagado: data?.pagado ?? !c.pagado } : item));
+      } else {
+        await avisar(data?.message || 'No se pudo guardar el pago.', 'error');
+      }
+    } catch {
+      await avisar('No se pudo guardar el pago.', 'error');
+    }
+    setMarcandoPago('');
+  };
+
+  const handleUndo = async (citaId) => {    const ok = await confirmar({
       titulo: '¿Devolver esta cita a activa?',
       detalle: 'Volverá a aparecer en tu agenda.',
       confirmarTexto: 'Devolver a activa',
@@ -343,6 +379,7 @@ function PortalEmpleado() {
   const citasActivas = citas.filter(c => !c.cancelled && !c.no_show);
   const misIngresos = citasActivas.reduce((s, c) => s + (Number(c.precio) || 0), 0);
   const misNoShow = citas.filter(c => c.no_show).length;
+  const hoyCobrado = citasActivas.filter(c => c.pagado && c.fecha === hoy).reduce((s, c) => s + (Number(c.precio) || 0), 0);
   const miPerfil = negocio?.empleados?.find(e => e.id === empId);
 
   // Agrupación de espacios (igual que Admin): mismo espacio-hora = una
@@ -363,7 +400,7 @@ function PortalEmpleado() {
     return (
       <div className="space-y-2">
         {sueltas.map(c => (
-          <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+          <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} onPago={handleMarcarPagado} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} marcandoPago={marcandoPago} />
         ))}
         {[...gruposMap.entries()].map(([key, miembros]) => {
           const activas = miembros.filter(m => !m.cancelled && !m.no_show);
@@ -378,7 +415,7 @@ function PortalEmpleado() {
               </div>
               <div className="space-y-2 p-2">
                 {miembros.map(c => (
-                  <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} />
+                  <CitaCard key={c.id} c={c} zona={zonaNegocio} ahora={ahora} onCancel={handleCancelar} onNoShow={handleMarcarNoShow} onUndo={handleUndo} onMove={abrirMover} onPago={handleMarcarPagado} cancelando={cancelando} noShowMarking={noShowMarking} undoingId={undoingId} marcandoPago={marcandoPago} />
                 ))}
               </div>
             </div>
@@ -503,7 +540,7 @@ function PortalEmpleado() {
       <main className="p-4 space-y-6">
         {/* Mis números */}
         {!loading && citas.length > 0 && (
-          <div className="grid grid-cols-3 gap-2" aria-label="Mis números">
+          <div className="grid grid-cols-2 gap-2" aria-label="Mis números">
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
               <p className="text-xl font-black text-gray-900">{citasActivas.length}</p>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Activas</p>
@@ -511,6 +548,10 @@ function PortalEmpleado() {
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
               <p className="text-xl font-black text-gray-900">${misIngresos.toLocaleString('es-CO')}</p>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Suman</p>
+            </div>
+            <div className="bg-white border border-green-200 rounded-2xl p-3 text-center">
+              <p className="text-xl font-black text-green-700">${hoyCobrado.toLocaleString('es-CO')}</p>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hoy cobré</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
               <p className="text-xl font-black text-gray-900">{misNoShow}</p>
@@ -747,7 +788,7 @@ function PortalEmpleado() {
   );
 }
 
-function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelando, noShowMarking, undoingId }) {
+function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, onPago, cancelando, noShowMarking, undoingId, marcandoPago }) {
   const isoMs = c.iso ? new Date(c.iso).getTime() : 0;
   const isPast = isoMs < ahora;
   const isCancelled = c.cancelled === true;
@@ -757,6 +798,10 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelan
   // desde las 7pm en Colombia y ocultaba el botón indebidamente.
   const isToday = c.fecha === new Date(ahora).toLocaleDateString('sv-SE', { timeZone: zona });
   const sePuedeMover = !isCancelled && !isNoShow && isoMs >= ahora;
+  // Ventana de deshacer: hoy O acción hace <24h (igual que el backend).
+  const marcaAccion = c.cancelled_at || c.no_show_at;
+  const accionReciente = !!marcaAccion && (ahora - new Date(marcaAccion).getTime() < 24 * 3600 * 1000);
+  const sePuedeDeshacer = (isCancelled || isNoShow) && (isToday || accionReciente);
   const waNumero = (c.telefono || '').replace(/\D/g, '');
 
   return (
@@ -768,6 +813,7 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelan
             <p className="font-bold text-gray-800 text-sm">👤 {c.cliente}</p>
             {isCancelled && <span className="text-[10px] font-black bg-red-700 text-white px-2 py-0.5 rounded uppercase">Cancelada</span>}
             {isNoShow && <span className="text-[10px] font-black bg-amber-600 text-white px-2 py-0.5 rounded uppercase">No llegó</span>}
+            {!isCancelled && !isNoShow && c.pagado && <button onClick={() => onPago(c.id, true)} disabled={marcandoPago === c.id} title="Pagado (toca para quitar)" className="text-[10px] font-black bg-green-600 text-white px-2 py-0.5 rounded uppercase active:scale-95 disabled:opacity-50">{marcandoPago === c.id ? '…' : '✅ Pagó'}</button>}
           </div>
           {c.telefono && (
             <p className="text-xs text-gray-600 font-medium mt-1">
@@ -798,7 +844,17 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelan
       </div>
       {/* Acciones */}
       {!isCancelled && !isNoShow && (
-        <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2">
+        <div className="flex justify-end pt-3 mt-3 border-t border-gray-100 gap-2 flex-wrap">
+          {!c.pagado && (
+            <button
+              onClick={() => onPago(c.id, false)}
+              disabled={marcandoPago === c.id}
+              title="Marcar que el cliente ya pagó"
+              className="min-h-[44px] text-xs text-green-700 font-bold active:scale-95 transition-all px-4 py-2 rounded-xl border border-green-200 bg-green-50 hover:bg-green-100 disabled:opacity-50"
+            >
+              {marcandoPago === c.id ? '…' : '✅ Pagó'}
+            </button>
+          )}
           {isPast && (
             <button
               onClick={() => onNoShow(c.id)}
@@ -828,8 +884,8 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, cancelan
           </button>
         </div>
       )}
-      {/* Deshacer (solo citas de hoy: el sistema no permite revivir días pasados) */}
-      {(isCancelled || isNoShow) && isToday && (
+      {/* Deshacer (hoy o acción <24h: el sistema no revive lo viejo) */}
+      {sePuedeDeshacer && (
         <div className="flex justify-end pt-3 mt-3 border-t border-gray-100">
           <button
             onClick={() => onUndo(c.id)}

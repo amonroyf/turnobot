@@ -1087,6 +1087,157 @@ func TestEmpleadoAutonomoHorarioYPin(t *testing.T) {
 	}
 }
 
+// El empleado marca/desmarca Pagó solo en su agenda: mueve el contador
+// cobrado-real del CRM; la cita ajena da 403.
+func TestEmpleadoMarcaPagado(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-emppago")
+	seedTienda(t, ctx, slug)
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "+573001111111",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", code)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573001111111")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d, esperaba 1", len(ids))
+	}
+	tok := signEmployeeToken(slug, "emp1")
+	pago := func(emp, body, token string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost,
+			"/api/v1/b/"+slug+"/employee/"+emp+"/citas/"+ids[0]+"/pago",
+			bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec
+	}
+
+	// Sin token -> 401.
+	if r := pago("emp1", `{"pagado":true}`, ""); r.Code != http.StatusUnauthorized {
+		t.Fatalf("sin token code=%d, esperaba 401", r.Code)
+	}
+	// Payload inválido -> 400.
+	if r := pago("emp1", `{}`, tok); r.Code != http.StatusBadRequest {
+		t.Fatalf("sin pagado code=%d, esperaba 400", r.Code)
+	}
+	// Agenda ajena -> 403.
+	tok2 := signEmployeeToken(slug, "emp2")
+	if r := pago("emp2", `{"pagado":true}`, tok2); r.Code != http.StatusForbidden {
+		t.Fatalf("ajeno code=%d, esperaba 403", r.Code)
+	}
+	// Marcar -> 200 + flag + CRM cobrado.
+	marca := pago("emp1", `{"pagado":true}`, tok)
+	if marca.Code != http.StatusOK {
+		t.Fatalf("marcar code=%d body=%s, esperaba 200", marca.Code, marca.Body.String())
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(marca.Body.Bytes(), &out); err != nil || out["pagado"] != true {
+		t.Fatalf("respuesta=%s, esperaba pagado:true", marca.Body.String())
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if !b.Pagado {
+		t.Fatalf("reserva sin flag pagado")
+	}
+	cli, _ := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, "+573001111111")).Get(ctx)
+	if p, _ := cli.Data()["paid_total"].(int64); p != 10000 {
+		t.Fatalf("paid_total=%v, esperaba 10000", cli.Data()["paid_total"])
+	}
+	// Idempotente.
+	if r := pago("emp1", `{"pagado":true}`, tok); r.Code != http.StatusOK {
+		t.Fatalf("re-marcar code=%d, esperaba 200", r.Code)
+	}
+	// Desmarcar -> 200 + contador en 0.
+	if r := pago("emp1", `{"pagado":false}`, tok); r.Code != http.StatusOK {
+		t.Fatalf("desmarcar code=%d, esperaba 200", r.Code)
+	}
+	cli2, _ := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, "+573001111111")).Get(ctx)
+	if p, _ := cli2.Data()["paid_total"].(int64); p != 0 {
+		t.Fatalf("paid_total=%v, esperaba 0", cli2.Data()["paid_total"])
+	}
+}
+
+// El empleado deshace la cancelación de SU agenda aunque la cita no sea de
+// hoy (ventana <24h de la acción); la ajena se rechaza.
+func TestEmpleadoUndoPropiaAgenda(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-empundo")
+	seedTienda(t, ctx, slug)
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "+573002222222",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", code)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573002222222")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d, esperaba 1", len(ids))
+	}
+	tok := signEmployeeToken(slug, "emp1")
+	conToken := func(emp, method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		_ = emp
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec
+	}
+	// Cancela su propia cita (mañana, no hoy).
+	del := conToken("emp1", http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+ids[0], ``)
+	if del.Code != http.StatusOK {
+		t.Fatalf("cancel code=%d body=%s, esperaba 200", del.Code, del.Body.String())
+	}
+	// La lista expone la marca de acción para la ventana de deshacer.
+	lreq := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/employee/emp1/citas", nil)
+	lreq.Header.Set("Authorization", "Bearer "+tok)
+	lrec := httptest.NewRecorder()
+	apiRouter(lrec, lreq)
+	if lrec.Code != http.StatusOK {
+		t.Fatalf("citas code=%d, esperaba 200", lrec.Code)
+	}
+	var lista []map[string]interface{}
+	if err := json.Unmarshal(lrec.Body.Bytes(), &lista); err != nil || len(lista) != 1 {
+		t.Fatalf("lista=%s, esperaba 1 cita", lrec.Body.String())
+	}
+	if lista[0]["cancelled"] != true || lista[0]["cancelled_at"] == nil || lista[0]["cancelled_at"] == "" {
+		t.Fatalf("cita=%v, esperaba cancelled + cancelled_at", lista[0])
+	}
+	// Deshace aunque no sea hoy.
+	undo := conToken("emp1", http.MethodPost, "/api/v1/b/"+slug+"/citas/"+ids[0]+"/undo", `{}`)
+	if undo.Code != http.StatusOK {
+		t.Fatalf("undo code=%d body=%s, esperaba 200", undo.Code, undo.Body.String())
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	if doc.Data()["cancelled"] == true {
+		t.Fatalf("sigue cancelada después del undo")
+	}
+	// Ajeno no puede deshacerla.
+	tok2 := signEmployeeToken(slug, "emp2")
+	areq := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+ids[0]+"/undo", bytes.NewReader([]byte(`{}`)))
+	areq.Header.Set("Content-Type", "application/json")
+	areq.Header.Set("Authorization", "Bearer "+tok2)
+	arec := httptest.NewRecorder()
+	apiRouter(arec, areq)
+	if arec.Code != http.StatusUnauthorized && arec.Code != http.StatusForbidden {
+		t.Fatalf("ajeno code=%d, esperaba 401/403", arec.Code)
+	}
+}
+
 func TestClienteLoginObligatorioYUID(t *testing.T) {
 	testFirestoreClient(t)
 	testAuthClient(t)

@@ -29,6 +29,8 @@ import (
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // ---------------------------------------------------------------------------
@@ -341,6 +343,8 @@ type Booking struct {
 	CalendarEvt    string    `firestore:"calendar_event_id,omitempty"`
 	CreatedAt      time.Time `firestore:"created_at"`
 	NoShow         bool      `firestore:"no_show" json:"no_show"`
+	// Pagado: el dueño o el empleado registraron el cobro en puerta.
+	Pagado         bool      `firestore:"pagado,omitempty" json:"pagado,omitempty"`
 	// Notes es la descripción de lo que necesita el cliente.
 	Notes string `firestore:"notes,omitempty" json:"notes,omitempty"`
 	// ClientPushToken es el token FCM del dispositivo del cliente para el
@@ -559,6 +563,13 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 	// Citas del empleado: GET /api/v1/b/{slug}/employee/{empId}/citas
 	if len(parts) == 4 && parts[1] == "employee" && parts[3] == "citas" && r.Method == http.MethodGet {
 		employeeCitasHandler(w, r, slug, parts[2])
+		return
+	}
+
+	// Pago en puerta por el empleado: POST /api/v1/b/{slug}/employee/{empId}/citas/{citaID}/pago
+	// Solo su propia agenda (403 si la cita es de otro profesional).
+	if len(parts) == 6 && parts[1] == "employee" && parts[3] == "citas" && parts[5] == "pago" && r.Method == http.MethodPost {
+		employeePagoHandler(w, r, slug, parts[2], parts[4])
 		return
 	}
 
@@ -3920,6 +3931,10 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 		Notes     string `json:"notes,omitempty"`
 		NoShow    bool   `json:"no_show"`
 		Cancelled bool   `json:"cancelled"`
+		Pagado    bool   `json:"pagado,omitempty"`
+		// Marcas de acción (para ventana de deshacer <24h en el portal).
+		CancelledAt string `json:"cancelled_at,omitempty"`
+		NoShowAt    string `json:"no_show_at,omitempty"`
 	}
 
 	now := time.Now()
@@ -3945,11 +3960,114 @@ func employeeCitasHandler(w http.ResponseWriter, r *http.Request, slug, empID st
 			Notes:     b.Notes,
 			NoShow:    b.NoShow,
 			Cancelled: d.Data()["cancelled"] == true,
+			Pagado:    b.Pagado,
+			CancelledAt: isoDeMarca(d.Data()["cancelled_at"], loc),
+			NoShowAt:    isoDeMarca(d.Data()["no_show_at"], loc),
 		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(citas)
+}
+
+var errPagoAjeno = errors.New("la cita no es de tu agenda")
+var errPagoBloqueado = errors.New("la cita está cancelada o marcada como no llegó")
+
+// isoDeMarca formatea una marca de tiempo de Firestore a ISO ("" si ausente).
+func isoDeMarca(v interface{}, loc *time.Location) string {
+	if t, ok := v.(time.Time); ok && !t.IsZero() {
+		return t.In(loc).Format(time.RFC3339)
+	}
+	return ""
+}
+
+// POST /api/v1/b/{slug}/employee/{empId}/citas/{citaID}/pago -> el empleado
+// marca/desmarca Pagó en SU propia agenda. Mueve el contador cobrado-real
+// del CRM igual que el panel del dueño. Body: {"pagado": true/false}.
+func employeePagoHandler(w http.ResponseWriter, r *http.Request, slug, empID, citaID string) {
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	tokenSlug, tokenEmpID, err := verifyEmployeeToken(token)
+	if err != nil || tokenSlug != slug || tokenEmpID != empID {
+		http.Error(w, "No autorizado", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Pagado *bool `json:"pagado"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Pagado == nil {
+		http.Error(w, "Payload inválido (pagado: true/false)", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	docRef := firestoreClient.Collection("reservas").Doc(citaID)
+	var cobrado bool
+	err = firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+		snap, err := tx.Get(docRef)
+		if err != nil {
+			return err
+		}
+		var b Booking
+		if err := snap.DataTo(&b); err != nil {
+			return err
+		}
+		if b.NegocioID != slug || b.EmpID != empID {
+			return errPagoAjeno
+		}
+		if snap.Data()["cancelled"] == true || b.NoShow {
+			return errPagoBloqueado
+		}
+		if b.Pagado == *req.Pagado {
+			cobrado = b.Pagado
+			return nil // idempotente
+		}
+		if err := tx.Update(docRef, []firestore.Update{{Path: "pagado", Value: *req.Pagado}}); err != nil {
+			return err
+		}
+		deltaPrecio, deltaVisitas := b.Price, 1
+		if !*req.Pagado {
+			deltaPrecio, deltaVisitas = -deltaPrecio, -1
+		}
+		cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
+		if err := tx.Set(cliRef, map[string]interface{}{
+			"negocio_id":  slug,
+			"paid_total":  firestore.Increment(deltaPrecio),
+			"paid_visits": firestore.Increment(deltaVisitas),
+			"updated_at":  time.Now(),
+		}, firestore.MergeAll); err != nil {
+			return err
+		}
+		cobrado = *req.Pagado
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errPagoAjeno) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false, "error": "solo_propia_agenda",
+				"message": "Solo puedes marcar pagos de tu propia agenda.",
+			})
+			return
+		}
+		if errors.Is(err, errPagoBloqueado) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false, "error": "cita_cerrada",
+				"message": "No se puede marcar pago en una cita cancelada o no llegada.",
+			})
+			return
+		}
+		if status.Code(err) == codes.NotFound {
+			http.Error(w, "Cita no encontrada", http.StatusNotFound)
+			return
+		}
+		log.Printf("Error marcando pago %s en %s: %v", citaID, slug, err)
+		http.Error(w, "No se pudo guardar el pago", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "pagado": cobrado})
 }
 
 // esHHMM valida formato "HH:MM" con rangos sanos.

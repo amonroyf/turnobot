@@ -1,6 +1,16 @@
 # Changelog — Turnobot
 
-## 2026-09-26 (espacios con precio y duración propios)
+## 2026-09-26 (deshacer con ventana 24h visible)
+
+- El portal del empleado ocultaba "Devolver a activa" si la cita no era de hoy, aunque el backend permite <24h de la acción: `GET employee/{id}/citas` expone `cancelled_at`/`no_show_at` y ambos paneles muestran el botón hoy o con acción reciente.
+- Test `TestEmpleadoUndoPropiaAgenda` (cancela mañana, deshace, ajeno 401/403). Suite verde.
+- Desplegado: backend `turnobot-00142-wvl` + frontend.## 2026-09-26 (empleado marca Pagó + cobrado propio)
+
+- `POST /employee/{id}/citas/{citaID}/pago`: el empleado marca/desmarca Pagó solo en su agenda (403 ajena, 409 cancelada/no-show, idempotente). Mueve `paid_total`/`paid_visits` del CRM en la misma transacción.
+- `GET employee/{id}/citas` expone `pagado`; `Booking` suma el campo.
+- Portal: badge ✅ Pagó reversible, botón en cada cita activa y baldosa "Hoy cobré" en Mis números.
+- Test `TestEmpleadoMarcaPagado` (401/400/403/200/idempotencia/desmarque). Suite verde.
+- Desplegado: backend `turnobot-00141-tf8` + frontend.## 2026-09-26 (espacios con precio y duración propios)
 
 - `Recurso` suma `duration_minutes` (15-480, default 60) y `price` (string de dígitos, default "0"): una clase de 90 min a $25.000 deja de ser 60 min a $0. Docs viejos heredan 60/$0 sin migración.
 - `POST /recursos` valida y guarda ambos; `slots`, `primer-hueco` y `/book` (modo espacio sin servicio) usan la duración propia; la reserva guarda duración/precio reales (suman en ingresos, CRM y respuesta `price`). Rejilla por duración: una clase de 90 min da 09:00, 10:30, 12:00…

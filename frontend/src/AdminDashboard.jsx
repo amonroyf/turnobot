@@ -17,6 +17,7 @@ import {
   addDoc,
   doc,
   updateDoc,
+  increment,
 } from 'firebase/firestore';
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
@@ -716,6 +717,32 @@ function AdminPanel() {
     try {
       await updateDoc(doc(db, 'reservas', citaId), { pagado: !r.pagado });
       setReservas(prev => prev.map(item => item.id === citaId ? { ...item, pagado: !r.pagado } : item));
+      // Cobrado-real del CRM: solo lo efectivamente pagado (no lo agendado).
+      // El dueño puede escribir clientes por reglas; si falla no bloquea el pago.
+      try {
+        const qCli = query(
+          collection(db, 'clientes'),
+          where('owner_uid', '==', user.uid),
+          where('cliente_phone', '==', r.user_phone),
+        );
+        const qs = await getDocs(qCli);
+        if (!qs.empty) {
+          const deltaPrecio = r.pagado ? -(Number(r.price) || 0) : (Number(r.price) || 0);
+          const deltaVisitas = r.pagado ? -1 : 1;
+          await updateDoc(qs.docs[0].ref, {
+            paid_total: increment(deltaPrecio),
+            paid_visits: increment(deltaVisitas),
+          });
+          const docId = qs.docs[0].id;
+          setClientes(prev => prev.map(c => c.id === docId ? {
+            ...c,
+            paid_total: Math.max(0, (c.paid_total || 0) + deltaPrecio),
+            paid_visits: Math.max(0, (c.paid_visits || 0) + deltaVisitas),
+          } : c));
+        }
+      } catch {
+        // Silencioso: el pago ya quedó guardado.
+      }
     } catch (err) {
       await avisar('No se pudo guardar el pago. Intenta de nuevo.', 'error');
     }
@@ -796,7 +823,8 @@ function AdminPanel() {
       'Nombre del Cliente',
       'Telefono / WhatsApp',
       'Numero de Visitas',
-      'Total Gastado (LTV)',
+      'Total Agendado (LTV)',
+      'Total Cobrado',
       'No-shows',
       'Fecha de Ultima Cita',
     ];
@@ -806,6 +834,7 @@ function AdminPanel() {
       `"${(c.cliente_phone || '').replace(/"/g, '""')}"`,
       c.visits || 0,
       c.total_spent || 0,
+      c.paid_total || 0,
       Math.max(0, c.no_shows || 0),
       `"${(fechaUltimaVisita(c) || 'N/A').replace(/"/g, '""')}"`,
     ]);
@@ -1002,6 +1031,12 @@ function AdminPanel() {
     const profesional = profesionales.find((p) => p.id === r.emp_id);
     const horaStr = timeMs ? horaEnZona(timeMs, zonaNegocio) : '--:--';
     const isToday = timeMs ? diaKeyEnZona(timeMs, zonaNegocio) === diaKeyEnZona(ahora, zonaNegocio) : false;
+    // Ventana de deshacer: hoy O acción hace <24h (igual que el backend).
+    // Las marcas llegan como Timestamp de Firestore ({seconds}).
+    const marcaSeg = (m) => m?.seconds ?? (m instanceof Date ? Math.floor(m.getTime() / 1000) : null);
+    const segAccion = marcaSeg(r.cancelled_at) ?? marcaSeg(r.no_show_at);
+    const accionReciente = segAccion != null && (ahora / 1000 - segAccion < 24 * 3600);
+    const sePuedeDeshacer = (isCancelled || isNoShow) && (isToday || accionReciente);
 
     // Estilo de tarjeta según estado
     let cardStyle = 'bg-white border-gray-200 shadow-sm hover:shadow-md';
@@ -1112,8 +1147,8 @@ function AdminPanel() {
               </button>
             </div>
           )}
-          {/* Deshacer (solo citas de hoy canceladas/no-show) */}
-          {(isCancelled || isNoShow) && isToday && (
+          {/* Deshacer (hoy o acción <24h) */}
+          {sePuedeDeshacer && (
             <div className="flex justify-end pt-3 mt-3 border-t border-gray-100/80">
               <button
                 onClick={() => handleUndo(r.id)}
@@ -1269,6 +1304,24 @@ function AdminPanel() {
                </div>
             ) : (
               <div className="space-y-8">
+                {/* CIERRE DE CAJA DEL DÍA (usa el flag ✅ Pagó) */}
+                {(() => {
+                  const hoy = citasHoy.filter(r => !r.cancelled && !r.no_show);
+                  if (hoy.length === 0) return null;
+                  const cobrado = hoy.filter(r => r.pagado).reduce((s, r) => s + (Number(r.price) || 0), 0);
+                  const pendiente = hoy.filter(r => !r.pagado).reduce((s, r) => s + (Number(r.price) || 0), 0);
+                  const sinPagar = hoy.filter(r => !r.pagado).length;
+                  return (
+                    <div className="bg-gray-900 text-white rounded-2xl p-4 flex items-center gap-4 shadow-md">
+                      <span className="text-2xl" aria-hidden="true">💰</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cierre de hoy</p>
+                        <p className="text-lg font-black leading-tight">{formatDinero(cobrado)} <span className="text-xs font-bold text-gray-400">cobrado</span></p>
+                        <p className="text-xs font-semibold text-gray-300">{sinPagar === 0 ? 'Todo cobrado ✅' : `${formatDinero(pendiente)} pendiente (${sinPagar} por cobrar)`}</p>
+                      </div>
+                    </div>
+                  );
+                })()}
                 {/* SECCIÓN HOY */}
                 {(() => {
                   const filtradas = citasHoy.filter(r => {
@@ -1474,14 +1527,17 @@ function AdminPanel() {
                               </a>
                             </div>
 
-                            {/* Info Financiera: lo que este cliente ha gastado en total */}
+                            {/* Info Financiera: cobrado real vs agendado */}
                             <div className="text-right shrink-0 flex flex-col items-end">
                               <p className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">
-                                Total gastado
+                                Cobrado
                               </p>
                               <span className="block text-base font-black text-green-700 bg-green-50 px-3 py-1.5 rounded-xl border border-green-100">
-                                {formatDinero(Math.max(0, c.total_spent || 0))}
+                                {formatDinero(Math.max(0, c.paid_total || 0))}
                               </span>
+                              <p className="text-[10px] text-gray-400 font-medium mt-1">
+                                Agendado: {formatDinero(Math.max(0, c.total_spent || 0))}
+                              </p>
                             </div>
                           </div>
                         </div>
