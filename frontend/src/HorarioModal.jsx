@@ -49,6 +49,21 @@ export function horarioDesdeJornada(jornada) {
   };
 }
 
+// Preset del toggle "Horario propio" al crear un espacio nuevo: SOLO los
+// viernes de 14:00 a 16:00. Los demás días quedan cerrados. Función (no
+// constante) porque el modal muta el objeto al editarlo.
+export function horarioViernes14a16() {
+  return {
+    lunes:     { activo: false, turnos: [] },
+    martes:    { activo: false, turnos: [] },
+    miercoles: { activo: false, turnos: [] },
+    jueves:    { activo: false, turnos: [] },
+    viernes:   { activo: true, turnos: [{ inicio: '14:00', fin: '16:00' }] },
+    sabado:    { activo: false, turnos: [] },
+    domingo:   { activo: false, turnos: [] },
+  };
+}
+
 export function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito, onClose }) {
   const { avisar } = useDialogo();
   const [horario, setHorario] = useState(() => {

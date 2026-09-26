@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
-import { HorarioModal, horarioDesdeJornada, resumenSemana } from './HorarioModal.jsx';
+import { HorarioModal, horarioDesdeJornada, horarioViernes14a16, resumenSemana } from './HorarioModal.jsx';
 import RegistroManual from './RegistroManual.jsx';
 import { COLORES_MARCA, colorMarca, textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 
@@ -235,8 +235,8 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '', horario: null });
-  const [usarHorarioPropio, setUsarHorarioPropio] = useState(false);
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', instructor_id: '', horario: horarioViernes14a16() });
+  const [usarHorarioPropio, setUsarHorarioPropio] = useState(true);
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -599,6 +599,29 @@ function AdminPanel() {
       await avisar('Ponle un nombre al espacio (ej. Clase Funcional).', 'error');
       return;
     }
+    if (!nuevoRecurso.instructor_id) {
+      await avisar('Debes asignar un instructor obligatoriamente.', 'error');
+      return;
+    }
+
+    let duracionCalculada = 60;
+    const horarioUsar = usarHorarioPropio ? nuevoRecurso.horario : horarioDesdeJornada(jornadaLocal);
+    if (horarioUsar) {
+      const dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+      for (const dia of dias) {
+        if (horarioUsar[dia]?.activo && horarioUsar[dia].turnos?.length > 0) {
+          const turno = horarioUsar[dia].turnos[0];
+          const [hIni, mIni] = turno.inicio.split(':').map(Number);
+          const [hFin, mFin] = turno.fin.split(':').map(Number);
+          const minTotal = (hFin * 60 + mFin) - (hIni * 60 + mIni);
+          if (minTotal > 0) {
+            duracionCalculada = minTotal;
+            break;
+          }
+        }
+      }
+    }
+
     try {
       const token = await user.getIdToken();
       const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/recursos`, {
@@ -608,7 +631,7 @@ function AdminPanel() {
           name: nombre,
           tipo: nuevoRecurso.tipo,
           capacidad: Number(nuevoRecurso.capacidad) || 1,
-          duration_minutes: Number(nuevoRecurso.duration_minutes) || 60,
+          duration_minutes: duracionCalculada,
           price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
           instructor_id: nuevoRecurso.instructor_id || '',
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
@@ -620,8 +643,8 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '', horario: null });
-      setUsarHorarioPropio(false);
+      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', price: '', instructor_id: '', horario: horarioViernes14a16() });
+      setUsarHorarioPropio(true);
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
@@ -1834,51 +1857,42 @@ function AdminPanel() {
                   </label>
                 </div>
                 <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Instructor responsable (opcional)</span>
+                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Instructor responsable (Obligatorio)</span>
                   <select
+                    required
                     value={nuevoRecurso.instructor_id}
                     onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, instructor_id: e.target.value })}
                     aria-label="Instructor responsable del espacio nuevo"
                     className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   >
-                    <option value="">Sin instructor (el local asigna)</option>
+                    <option value="">Selecciona un instructor</option>
                     {profesionales.map((p) => (
                       <option key={p.id} value={p.id}>👤 {p.name}</option>
                     ))}
                   </select>
                 </label>
-                <div className="grid grid-cols-3 gap-3">
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
-                    <input
-                      type="number" min={1} max={100} inputMode="numeric"
-                      value={nuevoRecurso.capacidad}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
-                      aria-label="Cupos por horario del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
-                    <input
-                      type="number" required min={15} max={480} placeholder="60" inputMode="numeric"
-                      value={nuevoRecurso.duration_minutes}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, duration_minutes: e.target.value })}
-                      aria-label="Duración en minutos del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
-                    <input
-                      type="number" required min={0} placeholder="25000" inputMode="numeric"
-                      value={nuevoRecurso.price}
-                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, price: e.target.value })}
-                      aria-label="Precio del espacio nuevo"
-                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                    />
-                  </label>
-                </div>
+<div className="grid grid-cols-2 gap-3">
+                   <label className="block">
+                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
+                     <input
+                       type="number" min={1} max={100} inputMode="numeric"
+                       value={nuevoRecurso.capacidad}
+                       onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
+                       aria-label="Cupos por horario del espacio nuevo"
+                       className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                     />
+                   </label>
+                   <label className="block">
+                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
+                     <input
+                       type="number" required min={0} placeholder="25000" inputMode="numeric"
+                       value={nuevoRecurso.price}
+                       onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, price: e.target.value })}
+                       aria-label="Precio del espacio nuevo"
+                       className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                     />
+                   </label>
+                 </div>
                 <label className="block">
                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
                   <textarea
@@ -1906,9 +1920,10 @@ function AdminPanel() {
                       type="button"
                       onClick={() => {
                         if (!usarHorarioPropio) {
-                          // Primera activación: precargar la jornada del local.
+                          // Primera activación: precargar SOLO viernes 14:00-16:00
+                          // (el dueño ajusta si necesita otra franja).
                           if (!nuevoRecurso.horario) {
-                            setNuevoRecurso((prev) => ({ ...prev, horario: horarioDesdeJornada(jornadaLocal) }));
+                            setNuevoRecurso((prev) => ({ ...prev, horario: horarioViernes14a16() }));
                           }
                           setHorarioNuevoModal(true);
                         } else {
@@ -1927,7 +1942,7 @@ function AdminPanel() {
                 {/* Resumen previo: qué quedará configurado, sin sorpresas. */}
                 {nuevoRecurso.name && (
                   <p className="text-[11px] font-medium text-gray-600 bg-blue-50 border border-blue-100 rounded-xl p-2.5">
-                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {usarHorarioPropio && nuevoRecurso.horario ? resumenSemana(nuevoRecurso.horario) : `horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'})`} · {nuevoRecurso.duration_minutes || 60} min · {formatDinero(nuevoRecurso.price || '0')}{nuevoRecurso.instructor_id ? ` · con ${profesionales.find((p) => p.id === nuevoRecurso.instructor_id)?.name || ''}` : ''} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
+                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {usarHorarioPropio && nuevoRecurso.horario ? resumenSemana(nuevoRecurso.horario) : `horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'})`} · {formatDinero(nuevoRecurso.price || '0')}{nuevoRecurso.instructor_id ? ` · con ${profesionales.find((p) => p.id === nuevoRecurso.instructor_id)?.name || ''}` : ''} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
                   </p>
                 )}
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
@@ -2457,9 +2472,23 @@ function AdminPanel() {
           titulo="Horario del espacio"
           nombre={nuevoRecurso.name || 'espacio nuevo'}
           bajada="Días y turnos en que se podrá reservar. Precargado con el horario del local: ajusta lo que necesites."
-          horarioInicial={nuevoRecurso.horario || horarioDesdeJornada(jornadaLocal)}
+          horarioInicial={nuevoRecurso.horario || horarioViernes14a16()}
           onGuardar={async (horario) => {
-            setNuevoRecurso((prev) => ({ ...prev, horario }));
+            let nuevaDuracion = nuevoRecurso.duration_minutes;
+            const dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+            for (const dia of dias) {
+              if (horario[dia]?.activo && horario[dia].turnos?.length > 0) {
+                const turno = horario[dia].turnos[0];
+                const [hIni, mIni] = turno.inicio.split(':').map(Number);
+                const [hFin, mFin] = turno.fin.split(':').map(Number);
+                const minTotal = (hFin * 60 + mFin) - (hIni * 60 + mIni);
+                if (minTotal > 0) {
+                  nuevaDuracion = minTotal;
+                  break;
+                }
+              }
+            }
+            setNuevoRecurso((prev) => ({ ...prev, horario, duration_minutes: nuevaDuracion }));
             setUsarHorarioPropio(true);
           }}
           exito="Horario listo. Se guarda junto con el espacio."

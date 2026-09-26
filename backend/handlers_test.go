@@ -2678,3 +2678,93 @@ func TestCrearRecursoConHorario(t *testing.T) {
 		t.Fatal("horario no debió escribirse si no vino en el payload")
 	}
 }
+
+// Escenario del dueño: "para una clase específica uso Horario propio y defino
+// que esta clase solo se dicta los viernes de 14:00 a 16:00". Se crea la
+// clase por POST /recursos con ese horario y se verifica que la rejilla solo
+// ofrece slots del viernes 14:00-16:00 (y que reservar fuera de esa franja
+// se rechaza en transacción).
+func TestClaseSoloViernes1400a1600(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-viernes")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenoviernes@test.com")
+	duenoTok := tokenClienteTest(t, "duenoviernes@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Crear la clase con horario propio: solo viernes 14:00-16:00.
+	payload := `{"name":"Clase Viernes","tipo":"clase","capacidad":5,"duration_minutes":60,"price":20000,
+		"horario":{"lunes":{"activo":false,"turnos":[]},"martes":{"activo":false,"turnos":[]},
+		"miercoles":{"activo":false,"turnos":[]},"jueves":{"activo":false,"turnos":[]},
+		"viernes":{"activo":true,"turnos":[{"inicio":"14:00","fin":"16:00"}]},
+		"sabado":{"activo":false,"turnos":[]},"domingo":{"activo":false,"turnos":[]}}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+duenoTok)
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("crear clase code=%d, esperaba 201", rec.Code)
+	}
+	var creada struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &creada); err != nil || creada.ID == "" {
+		t.Fatalf("respuesta sin id: %s", rec.Body.String())
+	}
+
+	// 2. El próximo viernes de la semana que viene: la clase ofrece 14:00 y 15:00.
+	viernes := proximoDia(t, time.Friday)
+	slots, _, err := disponibilidadRecurso(ctx, slug, creada.ID, viernes, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slots) != 2 || slots[0] != "14:00" || slots[1] != "15:00" {
+		t.Fatalf("slots viernes=%v, esperaba [14:00 15:00]", slots)
+	}
+
+	// 3. El sábado siguiente NO ofrece nada (día cerrado en el horario propio).
+	sabado := proximoDia(t, time.Saturday)
+	slotsSab, _, err := disponibilidadRecurso(ctx, slug, creada.ID, sabado, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slotsSab) != 0 {
+		t.Fatalf("slots sábado=%v, esperaba vacío", slotsSab)
+	}
+
+	// 4. La transacción de /book también respeta el horario propio: un
+	// intento de reserva el sábado se rechaza (409 slot_taken).
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": creada.ID,
+		"fecha":     sabado.Format("2006-01-02"), "hora": "14:00",
+		"clienteNombre": "Fuera", "clienteTelefono": "+573004440008",
+	}); c != http.StatusConflict {
+		t.Fatalf("reserva sábado code=%d, esperaba 409", c)
+	}
+}
+
+// proximoDia devuelve la fecha (en Bogotá) del próximo día de semana dado,
+// siempre al menos 2 días en el futuro para respetar la antelación mínima.
+func proximoDia(t *testing.T, dia time.Weekday) time.Time {
+	t.Helper()
+	loc, err := time.LoadLocation("America/Bogota")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().In(loc)
+	for i := 2; i <= 9; i++ {
+		d := now.AddDate(0, 0, i)
+		if d.Weekday() == dia {
+			return d
+		}
+	}
+	t.Fatal("no se encontró el día buscado en los próximos 9 días")
+	return time.Time{}
+}

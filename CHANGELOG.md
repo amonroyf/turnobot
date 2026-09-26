@@ -1,5 +1,11 @@
 # Changelog — Turnobot
 
+## 2026-09-26 (crear espacio: instructor obligatorio + preset viernes 14-16)
+
+- El instructor es obligatorio al crear un espacio/clase: validación en `handleAddRecurso` ("Debes asignar un instructor obligatoriamente") + `<select required>` con placeholder "Selecciona un instructor" (antes "opcional").
+- El toggle "Horario propio" al crear precarga SOLO viernes 14:00–16:00 (`horarioViernes14a16()`), no la jornada del local; el dueño ajusta o guarda directo. El modal de espacios YA existentes sigue precargando la jornada del local (`horarioDesdeJornada`).
+- Tests: preset en `horario.test.js` (resumen "Atiende: Vie 14:00–16:00.", días cerrados, inmutabilidad entre llamadas). 35/35 unit.
+
 ## 2026-09-26 (espacios: integridad P0 + flujo simple de creación)
 
 **Integridad (P0, invariantes):**
