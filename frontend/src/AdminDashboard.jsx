@@ -230,7 +230,7 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '' });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '' });
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -586,6 +586,8 @@ function AdminPanel() {
           name: nombre,
           tipo: nuevoRecurso.tipo,
           capacidad: Number(nuevoRecurso.capacidad) || 1,
+          duration_minutes: Number(nuevoRecurso.duration_minutes) || 60,
+          price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
         }),
       });
@@ -594,7 +596,7 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '' });
+      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '' });
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
@@ -1824,8 +1826,8 @@ function AdminPanel() {
 
             {/* ESPACIOS RESERVABLES (canchas, boxes...) */}
             <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, boxes y espacios</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Si tu negocio reserva espacios (no solo personas), créalos aquí y los clientes los elegirán al agendar.</p>
+              <h2 className="text-base font-bold text-gray-900 mb-1">Canchas, clases y espacios</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Define precio, duración y cupos: una clase grupal o una cancha se reservan directo, sin elegir profesional.</p>
               <ul className="space-y-3 mb-4">
                 {recursos.length === 0 && (
                   <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
@@ -1840,6 +1842,9 @@ function AdminPanel() {
                         <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
                         <p className="text-xs font-medium text-gray-500 capitalize">
                           {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
+                        </p>
+                        <p className="text-xs font-semibold text-gray-700 mt-0.5">
+                          ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}
                         </p>
                         {r.descripcion && (
                           <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
@@ -1884,43 +1889,67 @@ function AdminPanel() {
                 ))}
               </ul>
               <form onSubmit={handleAddRecurso} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar un espacio</h3>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del espacio</span>
-                  <input
-                    type="text" required placeholder="Ej. Cancha 1, Box 2…" value={nuevoRecurso.name}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, name: e.target.value })}
-                    aria-label="Nombre del espacio nuevo"
-                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                  />
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo</span>
-                  <select
-                    value={nuevoRecurso.tipo}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, tipo: e.target.value })}
-                    aria-label="Tipo de espacio"
-                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                  >
-                    <option value="cancha">⚽ Cancha</option>
-                    <option value="box">🔧 Box / elevador</option>
-                    <option value="consultorio">🩺 Consultorio</option>
-                    <option value="sala">🎶 Sala</option>
-                    <option value="camilla">💆 Camilla</option>
-                    <option value="clase">🧘 Clase grupal</option>
-                    <option value="otro">📍 Otro</option>
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos por horario (1 = exclusivo)</span>
-                  <input
-                    type="number" min={1} max={100} inputMode="numeric"
-                    value={nuevoRecurso.capacidad}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
-                    aria-label="Cupos por horario del espacio nuevo"
-                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                  />
-                </label>
+                <h3 className="text-sm font-bold text-gray-800">Agregar clase o espacio</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre</span>
+                    <input
+                      type="text" required placeholder="Ej. Yoga, Cancha 1…" value={nuevoRecurso.name}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, name: e.target.value })}
+                      aria-label="Nombre del espacio nuevo"
+                      className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Tipo</span>
+                    <select
+                      value={nuevoRecurso.tipo}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, tipo: e.target.value })}
+                      aria-label="Tipo de espacio"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    >
+                      <option value="clase">🧘 Clase grupal</option>
+                      <option value="cancha">⚽ Cancha</option>
+                      <option value="box">🔧 Box / elevador</option>
+                      <option value="consultorio">🩺 Consultorio</option>
+                      <option value="sala">🎶 Sala</option>
+                      <option value="camilla">💆 Camilla</option>
+                      <option value="otro">📍 Otro</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
+                    <input
+                      type="number" min={1} max={100} inputMode="numeric"
+                      value={nuevoRecurso.capacidad}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, capacidad: e.target.value })}
+                      aria-label="Cupos por horario del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Duración (min)</span>
+                    <input
+                      type="number" required min={15} max={480} placeholder="60" inputMode="numeric"
+                      value={nuevoRecurso.duration_minutes}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, duration_minutes: e.target.value })}
+                      aria-label="Duración en minutos del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Precio ($)</span>
+                    <input
+                      type="number" required min={0} placeholder="25000" inputMode="numeric"
+                      value={nuevoRecurso.price}
+                      onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, price: e.target.value })}
+                      aria-label="Precio del espacio nuevo"
+                      className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm text-center focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                    />
+                  </label>
+                </div>
                 <label className="block">
                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
                   <textarea
@@ -1931,7 +1960,7 @@ function AdminPanel() {
                     className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
                   />
                 </label>
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio</button>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
               </form>
             </div>
 

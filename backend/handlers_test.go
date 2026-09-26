@@ -980,6 +980,59 @@ func TestBookRecursoSinServicio(t *testing.T) {
 	}
 }
 
+// El espacio con precio/duración propios los hereda la reserva (modo
+// espacio sin servicio): la cita deja de ser 60 min a $0.
+func TestRecursoPrecioDuracionHereda(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-recpd")
+	seedTienda(t, ctx, slug)
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Clase Crossfit", "tipo": "clase", "capacidad": 15,
+		"duration_minutes": 90, "price": "25000",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha": mañanaStr(), "hora": "10:30",
+		"clienteNombre": "X", "clienteTelefono": "+573005555551",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	authClienteTest(t, req)
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573005555551")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d, esperaba 1", len(ids))
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if b.ServiceName != "Reserva de Clase Crossfit" {
+		t.Fatalf("service=%q", b.ServiceName)
+	}
+	if b.DurationMinute != 90 {
+		t.Fatalf("duracion=%d, esperaba 90", b.DurationMinute)
+	}
+	if b.Price != 25000 {
+		t.Fatalf("price=%d, esperaba 25000", b.Price)
+	}
+	var out map[string]interface{}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := out["price"].(float64); p != 25000 {
+		t.Fatalf("price respuesta=%v, esperaba 25000", out["price"])
+	}
+}
+
 
 func TestEmpleadoAutonomoHorarioYPin(t *testing.T) {
 	testFirestoreClient(t)

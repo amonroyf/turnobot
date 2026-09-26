@@ -52,6 +52,13 @@ service cloud.firestore {
               (request.resource.data.capacidad is number &&
                request.resource.data.capacidad >= 1 &&
                request.resource.data.capacidad <= 100)) &&
+             (!('duration_minutes' in request.resource.data) ||
+              (request.resource.data.duration_minutes is number &&
+               request.resource.data.duration_minutes >= 15 &&
+               request.resource.data.duration_minutes <= 480)) &&
+             (!('price' in request.resource.data) ||
+              (request.resource.data.price is string &&
+               request.resource.data.price.size() <= 20)) &&
              (!('descripcion' in request.resource.data) ||
               (request.resource.data.descripcion is string &&
                request.resource.data.descripcion.size() <= 500)) &&

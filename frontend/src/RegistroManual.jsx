@@ -138,8 +138,8 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     setBuscandoHueco(false);
   };
 
-  // Duración del turno para la nota (servicio elegido; espacio: 60 fijos).
-  const duracionTurno = !modoEspacio ? (servicioElegido?.duration_minutes || 60) : 60;
+  // Duración del turno (servicio elegido; espacio: la propia del espacio).
+  const duracionTurno = !modoEspacio ? (servicioElegido?.duration_minutes || 60) : (Number(recursoElegido?.duration_minutes) || 60);
 
   const confirmar = async (e) => {
     e.preventDefault();
@@ -362,8 +362,8 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
                     {iconoEspacio(r.tipo)}
                   </span>
                   <span className="leading-tight text-left min-w-0">
-                    <span className="block truncate">{r.name}</span>
-                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''}</span>
+                    <span className="block font-bold truncate text-sm">{r.name}</span>
+                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}</span>
                     {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                   </span>
                 </button>
@@ -372,7 +372,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
           </div>
           {recursoElegido && (
             <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-              ✅ Espacio: <strong>{recursoElegido.name}</strong>
+              ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)})
               {(recursoElegido.capacidad || 1) > 1
                 ? ` (para ${recursoElegido.capacidad} personas — cada una con su reserva).`
                 : '. Sigue a elegir el día 👇.'}

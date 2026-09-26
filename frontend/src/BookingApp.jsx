@@ -728,6 +728,10 @@ export default function BookingApp() {
     }
   };
 
+  const duracionReserva = modoEspacio
+    ? (Number(recursoElegido?.duration_minutes) || 60)
+    : (Number(servicioElegido?.duration_minutes) || 60);
+
   const descargarMiICS = () => {
     descargarICS({
       slug,
@@ -735,7 +739,7 @@ export default function BookingApp() {
       profesional: empleadoElegido?.name || '',
       fecha: booking.fecha,
       hora: booking.hora,
-      duracionMin: servicioElegido?.duration_minutes || 60,
+      duracionMin: duracionReserva,
       direccion: negocio?.direccion || '',
       timezone: negocio?.timezone || 'America/Bogota',
       notas: booking.clienteNotas || '',
@@ -1220,8 +1224,10 @@ export default function BookingApp() {
                                   {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🔧' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : r.tipo === 'camilla' ? '💆' : r.tipo === 'clase' ? '🧘' : '📍'}
                                 </span>
                                 <span className="leading-tight text-left min-w-0">
-                                  <span className="block truncate">{r.name}</span>
-                                  <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''}</span>
+                                  <span className="block font-bold truncate text-sm">{r.name}</span>
+                                  <span className="block text-[11px] font-semibold opacity-70 capitalize">
+                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}
+                                  </span>
                                   {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                                 </span>
                               </button>
@@ -1230,7 +1236,7 @@ export default function BookingApp() {
                         </div>
                         {recursoElegido && (
                           <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-                            ✅ Espacio: <strong>{recursoElegido.name}</strong>
+                            ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)})
                             {(recursoElegido.capacidad || 1) > 1
                               ? ` (para ${recursoElegido.capacidad} personas — cada una reserva la suya).`
                               : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
@@ -1502,10 +1508,12 @@ export default function BookingApp() {
                       <h2 className="font-bold text-gray-800 text-sm">{modoEspacio ? '4. Tus datos para confirmar' : '5. Tus datos para confirmar'}</h2>
 
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>📋 {modoEspacio ? 'Reserva' : 'Servicio'}: <strong>{servicioNombre}</strong>{servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : ''}</p>
-                        <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
+                        <p>📋 {modoEspacio ? 'Espacio/Clase' : 'Servicio'}: <strong>{servicioNombre}</strong>{modoEspacio ? (Number(recursoElegido?.price) > 0 ? ` (${formatDinero(recursoElegido.price)})` : '') : (servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : '')}</p>
+                        {!modoEspacio && (
+                          <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
+                        )}
                         {recursoElegido && (
-                          <p>📍 Espacio: <strong>{recursoElegido.name}</strong></p>
+                          <p>📍 Espacio: <strong>{recursoElegido.name}</strong>{modoEspacio && recursoElegido?.duration_minutes ? ` · ⏱️ ${duracionAmable(recursoElegido.duration_minutes)}` : ''}</p>
                         )}
                         <p>📅 Fecha: <strong>{formatearFechaLarga(booking.fecha)}</strong> a las <strong>{booking.hora}</strong></p>
                         {negocio?.direccion && (
@@ -1667,7 +1675,7 @@ export default function BookingApp() {
                           profesional: empleadoElegido?.name || '',
                           fecha: booking.fecha,
                           hora: booking.hora,
-                          duracionMin: servicioElegido?.duration_minutes || 60,
+                          duracionMin: duracionReserva,
                           direccion: negocio?.direccion || '',
                           timezone: negocio?.timezone || 'America/Bogota',
                           notas: booking.clienteNotas || ''

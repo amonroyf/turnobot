@@ -1,6 +1,13 @@
 # Changelog — Turnobot
 
-## 2026-09-21 (recordatorios: filtro en base de datos)
+## 2026-09-26 (espacios con precio y duración propios)
+
+- `Recurso` suma `duration_minutes` (15-480, default 60) y `price` (string de dígitos, default "0"): una clase de 90 min a $25.000 deja de ser 60 min a $0. Docs viejos heredan 60/$0 sin migración.
+- `POST /recursos` valida y guarda ambos; `slots`, `primer-hueco` y `/book` (modo espacio sin servicio) usan la duración propia; la reserva guarda duración/precio reales (suman en ingresos, CRM y respuesta `price`). Rejilla por duración: una clase de 90 min da 09:00, 10:30, 12:00…
+- Rules: `politicasRecursoValidas` acepta `duration_minutes` y `price`.
+- Frontend: crear espacio pide duración+precio y la lista los muestra; reserva y registro manual muestran precio/duración en tarjetas, confirmación y ICS/Calendar.
+- Test `TestRecursoPrecioDuracionHereda` (201 + duración/precio heredados + precio en respuesta). Suite verde.
+- Desplegado: backend `turnobot-00140-q55` + rules + frontend.## 2026-09-21 (recordatorios: filtro en base de datos)
 
 - El cron filtra `reminder_sent == false` en Firestore (antes traía 72h y filtraba en memoria). Índice compuesto nuevo (en creación al desplegar).
 - Desplegado: backend + índices.

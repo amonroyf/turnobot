@@ -250,14 +250,17 @@ type Employee struct {
 }
 
 // Recurso reservable de un negocio (cancha, box, camilla, consultorio,
-// silla...). Espacio simple: capacidad = cupos por intervalo (1 = exclusivo),
-// descripcion = info libre del admin (reglas, dotación, ubicación).
-// Horario propio opcional (si no, jornada del negocio).
+// silla...). Espacio con precio y duración propios: capacidad = cupos por
+// intervalo (1 = exclusivo), descripcion = info libre del admin (reglas,
+// dotación, ubicación). Horario propio opcional (si no, jornada del negocio).
+// Sin precio/duración (docs viejos) se hereda 60 min y $0.
 type Recurso struct {
 	ID          string          `json:"id"`
 	Name        string          `firestore:"name" json:"name"`
 	Tipo        string          `firestore:"tipo" json:"tipo"`
 	Capacidad   int             `firestore:"capacidad" json:"capacidad"`
+	Duration    int             `firestore:"duration_minutes" json:"duration_minutes,omitempty"`
+	Price       string          `firestore:"price" json:"price,omitempty"`
 	Descripcion string          `firestore:"descripcion" json:"descripcion,omitempty"`
 	Horario     *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
 }
@@ -721,6 +724,13 @@ func getSlotsHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				cupos = n
 			}
 		}
+		// Sin servicio, la rejilla usa la duración propia del espacio
+		// (el override ?duracion= de mover citas tiene prioridad).
+		if servicioID == "" && r.URL.Query().Get("duracion") == "" {
+			if rec, ok := resolveRecurso(r.Context(), slug, recursoID); ok && rec.Duration >= 15 && rec.Duration <= 480 {
+				duration = rec.Duration
+			}
+		}
 		slots, libres, err := disponibilidadRecurso(r.Context(), slug, recursoID, parsedDate, duration, cupos)
 		if err != nil {
 			http.Error(w, "Recurso no encontrado", http.StatusBadRequest)
@@ -843,6 +853,11 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 		if !ok {
 			http.Error(w, "Recurso no encontrado", http.StatusBadRequest)
 			return
+		}
+		// Sin servicio, el escaneo usa la duración propia del espacio
+		// (el override ?duracion= de mover citas tiene prioridad).
+		if servicioID == "" && r.URL.Query().Get("duracion") == "" && rec.Duration >= 15 && rec.Duration <= 480 {
+			duration = rec.Duration
 		}
 		cupos := 1
 		if q := r.URL.Query().Get("cupos"); q != "" {
@@ -1252,8 +1267,8 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 
 	// Resolver el nombre y la duración real del servicio a partir de su ID.
 	// Un servicio inexistente se rechaza: evita reservas basura con precio 0.
-	// Sin servicio pero con recurso (modo "reservar espacio"): reserva genérica
-	// del espacio, 60 min, precio 0.
+	// Sin servicio pero con recurso (modo "reservar espacio"): la cita hereda
+	// la duración y el precio propios del espacio (ver abajo).
 	serviceName := ""
 	duration := 60
 	precioServicio := 0
@@ -1291,10 +1306,14 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			return
 		}
 		// Modo "reservar espacio" sin servicio: nombre genérico del espacio
-		// (60 min, precio 0). El espacio es simple: sin servicio ni
-		// profesional atados.
+		// con SU duración y SU precio (una clase de 90 min a $25.000 deja
+		// de ser 60 min a $0). Docs viejos sin campos heredan 60 min y $0.
 		if serviceName == "" {
 			serviceName = "Reserva de " + recurso.Name
+			if recurso.Duration >= 15 && recurso.Duration <= 480 {
+				duration = recurso.Duration
+			}
+			precioServicio = parsePriceVal(recurso.Price)
 		}
 		// Una persona por reserva: el cupo se llena con reservas individuales
 		// (evita acaparar y desperdiciar puestos; cada quien con su nombre,
@@ -2331,10 +2350,12 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		return
 	}
 	var req struct {
-		Name        string `json:"name"`
-		Tipo        string `json:"tipo"`
-		Capacidad   int    `json:"capacidad"`
-		Descripcion string `json:"descripcion"`
+		Name            string          `json:"name"`
+		Tipo            string          `json:"tipo"`
+		Capacidad       int             `json:"capacidad"`
+		Descripcion     string          `json:"descripcion"`
+		DurationMinutes int             `json:"duration_minutes"`
+		Price           json.RawMessage `json:"price"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -2364,14 +2385,43 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	if r := []rune(descripcion); len(r) > 500 {
 		descripcion = string(r[:500])
 	}
+	// Precio y duración propios del espacio (una cancha cuesta X, el cupo
+	// de una clase cuesta Y). Sin duración se hereda 60 min; fuera de
+	// 15-480 se rechaza (la rejilla no opera fuera de ese rango).
+	duracion := req.DurationMinutes
+	if duracion == 0 {
+		duracion = 60
+	} else if duracion < 15 || duracion > 480 {
+		http.Error(w, "La duración debe estar entre 15 y 480 minutos", http.StatusBadRequest)
+		return
+	}
+	// El precio llega como número (panel nuevo) o string (legado): se
+	// normaliza a string de dígitos como en servicios.
+	precio := 0
+	if len(req.Price) > 0 {
+		var s string
+		if err := json.Unmarshal(req.Price, &s); err == nil {
+			precio = parsePriceVal(s)
+		} else {
+			var n float64
+			if err := json.Unmarshal(req.Price, &n); err == nil && n > 0 {
+				precio = int(n)
+			}
+		}
+	}
+	if precio < 0 {
+		precio = 0
+	}
 
 	ctx := r.Context()
 	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, map[string]interface{}{
-		"name":        name,
-		"tipo":        tipo,
-		"capacidad":   capacidad,
-		"descripcion": descripcion,
-		"created_at":  time.Now(),
+		"name":             name,
+		"tipo":             tipo,
+		"capacidad":        capacidad,
+		"duration_minutes": duracion,
+		"price":            strconv.Itoa(precio),
+		"descripcion":      descripcion,
+		"created_at":       time.Now(),
 	})
 	if err != nil {
 		log.Printf("Error creando recurso en %s: %v", slug, err)
