@@ -275,7 +275,27 @@ export default function BookingApp() {
         if (!res.ok) throw new Error('Negocio no encontrado');
         return res.json();
       })
-      .then(data => setNegocio(data))
+      .then(data => {
+        setNegocio(data);
+        // Deep link: ?s=servicioId o ?r=recursoId salta directo al flujo
+        // (para pegar en Instagram/WhatsApp). IDs inválidos se ignoran.
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const sId = params.get('s');
+          const rId = params.get('r');
+          if (rId && data.recursos?.find(r => r.id === rId)) {
+            setModo('espacio');
+            setBooking(prev => ({ ...prev, recursoId: rId, cupos: 1, servicioId: '', empleadoId: '' }));
+            setStep(2);
+          } else if (sId && data.servicios?.find(s => s.id === sId)) {
+            setModo('servicio');
+            setBooking(prev => ({ ...prev, servicioId: sId }));
+            setStep(2);
+          }
+        } catch {
+          // Sin URLSearchParams: se ignora y sigue el flujo normal.
+        }
+      })
       .catch(err => {
         console.error("Error cargando negocio", err);
         setError("No pudimos cargar el negocio. Verifica el enlace.");

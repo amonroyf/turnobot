@@ -1731,9 +1731,26 @@ function AdminPanel() {
                           <p className="font-bold text-gray-900">{s.name}</p>
                           <p className="text-xs font-medium text-gray-500">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
                         </div>
-                        <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
-                          {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
-                        </button>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={async () => {
+                              const url = `${window.location.origin}/shop/${negocio.id}?s=${s.id}`;
+                              try {
+                                await navigator.clipboard.writeText(url);
+                                await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
+                              } catch {
+                                await avisar(`Copia este enlace:\n\n${url}`, 'info');
+                              }
+                            }}
+                            aria-label={`Copiar enlace directo de ${s.name}`}
+                            className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                          >
+                            🔗 Link
+                          </button>
+                          <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
+                            {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
+                          </button>
+                        </div>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
                               <span className="text-[11px] font-bold text-gray-400 uppercase">Lo hacen:</span>
@@ -1908,6 +1925,21 @@ function AdminPanel() {
                         )}
                       </div>
                       <div className="flex gap-1 shrink-0">
+                        <button
+                          onClick={async () => {
+                            const url = `${window.location.origin}/shop/${negocio.id}?r=${r.id}`;
+                            try {
+                              await navigator.clipboard.writeText(url);
+                              await avisar('Enlace directo copiado. Pégalo en Instagram o WhatsApp.', 'exito');
+                            } catch {
+                              await avisar(`Copia este enlace:\n\n${url}`, 'info');
+                            }
+                          }}
+                          aria-label={`Copiar enlace directo de ${r.name}`}
+                          className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                        >
+                          🔗 Link
+                        </button>
                         <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
                         <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
                           {eliminando === r.id ? 'Borrando…' : 'Borrar'}
