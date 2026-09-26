@@ -321,13 +321,20 @@ export default function BookingApp() {
     setLoginLoading(false);
   };
 
-  // Actualizar <meta name="theme-color"> dinámicamente según la marca.
+  // Marca + título por negocio: la pestaña muestra el nombre del local.
+  // (Las vistas previas de WhatsApp usan las meta OG del servidor, no esto.)
   useEffect(() => {
+    if (negocio?.name) {
+      document.title = `${negocio.name} — Reserva en línea | TurnoBot Colombia`;
+    }
     const color = negocio?.marca?.color;
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', color || '#000000');
-    return () => { if (meta) meta.setAttribute('content', '#000000'); };
-  }, [negocio?.marca?.color]);
+    return () => {
+      if (meta) meta.setAttribute('content', '#000000');
+      document.title = 'TurnoBot Colombia — Agenda online para citas y cupos';
+    };
+  }, [negocio?.name, negocio?.marca?.color]);
 
   // Pre-rellenar nombre/teléfono del cliente recurrente (sin borrar lo que
   // ya esté escribiendo). Solo rellena campos vacíos.
@@ -1764,6 +1771,23 @@ export default function BookingApp() {
             )}
           </>
         )}
+
+        {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
+        <div className="mt-12 pt-6 pb-2 border-t border-gray-200/60 text-center">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all group"
+          >
+            <span className="w-5 h-5 bg-black text-white rounded-md flex items-center justify-center text-[10px] font-black group-hover:shadow-md transition-shadow">
+              T
+            </span>
+            <span className="text-[11px] font-bold text-gray-500">
+              Impulsado por <span className="text-gray-900">TurnoBot</span>
+            </span>
+          </a>
+        </div>
       </main>
 
       {/* BOTTOM NAVIGATION BAR (centrada en desktop al ancho del contenido) */}
