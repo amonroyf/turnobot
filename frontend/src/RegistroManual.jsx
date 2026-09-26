@@ -26,6 +26,10 @@ const iconoEspacio = (tipo) => (
   : tipo === 'sala' ? '🎶' : tipo === 'camilla' ? '💆' : tipo === 'clase' ? '🧘' : '📍'
 );
 
+// "Cualquiera disponible": valor especial de empleadoId que une la
+// disponibilidad de todos los profesionales que ofrecen el servicio.
+const EMP_ANY = '__any__';
+
 export default function RegistroManual({ slug, API_URL, negocio, getHeaders, empFijo, onRegistrada }) {
   const hayRecursos = (negocio?.recursos || []).length > 0;
   const [modo, setModo] = useState(hayRecursos ? null : 'servicio');
@@ -34,6 +38,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const [recursoId, setRecursoId] = useState('');
   const [fecha, setFecha] = useState('');
   const [slots, setSlots] = useState([]);
+  const [slotsPorHora, setSlotsPorHora] = useState({});
   const [hora, setHora] = useState('');
   const [nombre, setNombre] = useState('');
   const [telefono, setTelefono] = useState('');
@@ -47,13 +52,16 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   const enviandoRef = useRef(false);
 
   const modoEspacio = modo === 'espacio';
+  const esModoAny = empleadoId === EMP_ANY;
   // Hoy en la zona del negocio (no del dispositivo: si el reloj del equipo
   // está mal, igual se bloquea el día correcto).
   const hoy = fechaHoyEnZona(negocio?.timezone);
   const servicioElegido = negocio?.servicios?.find(s => s.id === servicioId);
   const recursoElegido = negocio?.recursos?.find(r => r.id === recursoId);
   const instructorDe = (r) => (negocio?.empleados || []).find(e => e.id === r?.instructor_id)?.name || '';
-  const empleadoElegido = negocio?.empleados?.find(e => e.id === (empFijo || empleadoId));
+  const empleadoElegido = esModoAny
+    ? (hora && slotsPorHora[hora] ? negocio?.empleados?.find(e => e.id === slotsPorHora[hora]) : null)
+    : negocio?.empleados?.find(e => e.id === (empFijo || empleadoId));
   const empleadosElegibles = (negocio?.empleados || []).filter(
     (e) => !servicioId || !e.servicios_ids || e.servicios_ids.includes(servicioId)
   );
@@ -76,7 +84,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
   // Reconocimiento > recuerdo: resumen vivo de lo elegido.
   const textoResumen = [
     servicioElegido?.name || (recursoElegido ? (modoEspacio ? `Reserva de ${recursoElegido.name}` : recursoElegido.name) : null),
-    empleadoElegido && !modoEspacio ? `con ${empleadoElegido.name}` : null,
+    empleadoElegido && !modoEspacio ? `con ${empleadoElegido.name}` : esModoAny && !modoEspacio ? 'con quien esté disponible' : null,
     fecha ? `${formatearFechaLarga(fecha)}${hora ? ` a las ${hora}` : ''}` : null,
   ].filter(Boolean).join(' · ');
 
@@ -84,6 +92,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     setSlots([]);
     setHora('');
     setPrimerHueco(null);
+    setSlotsPorHora({});
     if (!f || !listoParaDias) return;
     setLoading(true);
     setError('');
@@ -91,12 +100,21 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       let url;
       if (modoEspacio) {
         url = `${API_URL}/api/v1/b/${slug}/slots?recurso_id=${recursoId}&fecha=${f}&cupos=1`;
+      } else if (empleadoId === EMP_ANY) {
+        url = `${API_URL}/api/v1/b/${slug}/slots?emp_id=any&servicio_id=${servicioId}&fecha=${f}`;
       } else {
         url = `${API_URL}/api/v1/b/${slug}/slots?emp_id=${empFijo || empleadoId}&servicio_id=${servicioId}&fecha=${f}`;
       }
       const res = await fetch(url);
       const data = await res.json().catch(() => null);
-      setSlots(Array.isArray(data) ? data : (data?.slots || []));
+      if (Array.isArray(data)) {
+        setSlots(data);
+      } else {
+        setSlots(Array.isArray(data?.slots) ? data.slots : []);
+        if (data?.asignado_por_hora) {
+          setSlotsPorHora(data.asignado_por_hora);
+        }
+      }
     } catch {
       setError('No pudimos cargar horarios.');
       setSlots([]);
@@ -119,6 +137,8 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       let url;
       if (modoEspacio) {
         url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?recurso_id=${recursoId}&cupos=1`;
+      } else if (empleadoId === EMP_ANY) {
+        url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${servicioId}&emp_id=any`;
       } else {
         url = `${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${servicioId}&emp_id=${empFijo || empleadoId}`;
       }
@@ -152,11 +172,15 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     enviandoRef.current = true;
     setLoading(true);
     setError('');
+    // En modo "cualquiera", resolver al profesional asignado al slot.
+    const empleadoFinal = esModoAny
+      ? (hora && slotsPorHora[hora] ? slotsPorHora[hora] : '')
+      : (empFijo || empleadoId);
     try {
       const headers = { 'Content-Type': 'application/json', ...(await getHeaders?.()) };
       const payload = {
         servicioId: modoEspacio ? '' : servicioId,
-        empleadoId: modoEspacio ? (recursoElegido?.instructor_id || '') : (empFijo || empleadoId),
+        empleadoId: modoEspacio ? (recursoElegido?.instructor_id || '') : empleadoFinal,
         recursoId: recursoId || '',
         cupos: 1,
         fecha, hora,
@@ -196,6 +220,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     setRecursoId('');
     setFecha('');
     setSlots([]);
+    setSlotsPorHora({});
     setHora('');
     setNombre('');
     setTelefono('');
@@ -326,14 +351,63 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       {!modoEspacio && !empFijo && (
         <label className="block">
           <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">2. Profesional</span>
-          <select value={empleadoId} onChange={(e) => { setEmpleadoId(e.target.value); setFecha(''); setSlots([]); setHora(''); }} required className={inputCls} aria-label="Profesional">
-            <option value="">Elige…</option>
-            {empleadosElegibles.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
+          {empleadosElegibles.length > 1 ? (
+            <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Profesional">
+              {/* Cualquiera disponible: une la disponibilidad de todos */}
+              <button
+                type="button"
+                role="radio"
+                aria-checked={empleadoId === EMP_ANY}
+                onClick={() => { setEmpleadoId(EMP_ANY); setFecha(''); setSlots([]); setHora(''); setSlotsPorHora({}); }}
+                className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs col-span-2 ${
+                  empleadoId === EMP_ANY ? 'border-black bg-black text-white' : 'bg-white border-dashed border-gray-300 text-gray-800 active:bg-gray-100'
+                }`}
+              >
+                <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
+                  empleadoId === EMP_ANY ? 'bg-gray-800 text-white border-gray-700' : 'bg-amber-100 text-amber-800 border-amber-200'
+                }`}>
+                  ⚡
+                </span>
+                <span className="leading-tight text-left">Cualquiera disponible
+                  <span className="block text-[11px] font-semibold opacity-70">Lo más rápido</span>
+                </span>
+              </button>
+              {empleadosElegibles.map((e) => {
+                const activo = empleadoId === e.id;
+                return (
+                  <button
+                    key={e.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={activo}
+                    onClick={() => { setEmpleadoId(e.id); setFecha(''); setSlots([]); setHora(''); setSlotsPorHora({}); }}
+                    className={`p-3 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${
+                      activo ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                    }`}
+                  >
+                    <span className={`w-9 h-9 rounded-full flex items-center justify-center font-black shrink-0 border ${
+                      activo ? 'bg-gray-800 text-white border-gray-700' : 'bg-gray-100 text-gray-700 border-gray-200'
+                    }`}>
+                      {e.name.charAt(0)}
+                    </span>
+                    <span className="leading-tight truncate">{e.name}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <select value={empleadoId} onChange={(e) => { setEmpleadoId(e.target.value); setFecha(''); setSlots([]); setHora(''); setSlotsPorHora({}); }} required className={inputCls} aria-label="Profesional">
+              <option value="">Elige…</option>
+              {empleadosElegibles.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          )}
         </label>
       )}
       {!modoEspacio && empFijo && empleadoElegido && (
         <p className="text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">👤 En tu agenda ({empleadoElegido.name})</p>
+      )}
+      {esModoAny && (
+        <p className="mb-2 text-[11px] text-gray-500 font-semibold">⚡ Te asignaremos al primer profesional libre en la hora que elijas.</p>
       )}
 
       {/* Espacio: tarjetas como la reserva del cliente */}
@@ -398,6 +472,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
           {primerHueco && (
             <p aria-live="polite" className="text-xs font-semibold text-blue-900 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2 mb-2">
               Primer hueco: {formatearFechaLarga(primerHueco.fecha)} a las {primerHueco.hora} — ya lo seleccionamos abajo 👇
+              {esModoAny && primerHueco.emp_name && ` · 👤 Te atenderá ${primerHueco.emp_name}`}
             </p>
           )}
           <div className="flex gap-2 mb-2" role="group" aria-label="Atajos de día">
@@ -445,10 +520,15 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         )
       )}
 
-      {/* Cliente */}
-      {!!hora && (
-        <>
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">4. Cliente</span>
+       {/* Cliente */}
+       {!!hora && (
+         <>
+           {esModoAny && empleadoElegido && (
+             <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 font-semibold text-center">
+               👤 Te atenderá <strong>{empleadoElegido.name}</strong> (primer disponible a las {hora})
+             </div>
+           )}
+           <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider">4. Cliente</span>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <label className="block">
               <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del cliente</span>
