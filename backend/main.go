@@ -965,14 +965,23 @@ func getPrimerHuecoHandler(w http.ResponseWriter, r *http.Request, slug string) 
 
 // errSinCupo indica que el recurso no tiene cupo suficiente en ese horario.
 var errSinCupo = errors.New("recurso sin cupo suficiente")
+// errInstructorOcupado indica que el instructor responsable del espacio
+// quedó doble-agendado (verificado DENTRO de la transacción).
+var errInstructorOcupado = errors.New("instructor ocupado en ese horario")
 
 // verificarCuposTx suma los cupos ocupados que solapan el intervalo dentro de
 // la transacción (cierra la carrera de dos reservas simultáneas al mismo cupo).
+// La consulta arranca al INICIO del día del evento: una reserva puede haber
+// empezado horas antes y extenderse dentro del candidato (duraciones de
+// espacio hasta 480 min; la ventana -2h dejaba pasar esas y sobrevendía).
 func verificarCuposTx(tx *firestore.Transaction, slug string, rec Recurso, cuposPedidos int, eventDateTime, eventEnd time.Time) error {
+	loc := shopLocation(context.Background(), slug)
+	y, m, d := eventDateTime.In(loc).Date()
+	inicioDia := time.Date(y, m, d, 0, 0, 0, 0, loc)
 	q := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).
 		Where("recurso_id", "==", rec.ID).
-		Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+		Where("date_time", ">=", inicioDia).
 		Where("date_time", "<", eventEnd)
 	docs, err := tx.Documents(q).GetAll()
 	if err != nil {
@@ -1008,14 +1017,21 @@ func verificarCuposTx(tx *firestore.Transaction, slug string, rec Recurso, cupos
 // verificarSolapeTx revisa dentro de la transacción que el nuevo intervalo no
 // choque con reservas activas del mismo empleado o recurso (campo dinámico).
 // Valor vacío = no se verifica esa dimensión.
+// verificarSolapeTx verifica que no haya reserva activa que solape el
+// intervalo [inicio, fin) dentro de la transacción. La consulta arranca al
+// INICIO del día del evento (igual que verificarCuposTx): una cita de 4h que
+// empezó antes quedaba fuera de la ventana -2h y el solape pasaba desapercibido.
 func verificarSolapeTx(tx *firestore.Transaction, slug, campo, valor string, eventDateTime, eventEnd time.Time) error {
 	if valor == "" {
 		return nil
 	}
+	loc := shopLocation(context.Background(), slug)
+	y, m, d := eventDateTime.In(loc).Date()
+	inicioDia := time.Date(y, m, d, 0, 0, 0, 0, loc)
 	q := firestoreClient.Collection("reservas").
 		Where("negocio_id", "==", slug).
 		Where(campo, "==", valor).
-		Where("date_time", ">=", eventDateTime.Add(-2*time.Hour)).
+		Where("date_time", ">=", inicioDia).
 		Where("date_time", "<", eventEnd)
 	docs, err := tx.Documents(q).GetAll()
 	if err != nil {
@@ -1505,15 +1521,19 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	bookTxn := func() error {
 		newRef := firestoreClient.Collection("reservas").NewDoc()
 		return firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
-			// Ventana de búsqueda ampliada 2h hacia atrás para atrapar citas
-			// largas previas que solapen con la nueva.
 			// Profesional: exclusividad (un choque = conflicto).
 			// Recurso: cupos (ocupados + pedidos vs capacidad efectiva).
+			// Instructor del recurso: bloqueo cruzado 1-a-1 (antes solo se
+			// pre-chequeaba fuera de la tx; dos reservas simultáneas podían
+			// pasarlo ambas y dejar al instructor doble-agendado).
 			if err := verificarSolapeTx(tx, slug, "emp_id", req.EmpleadoID, eventDateTime, eventEnd); err != nil {
 				return err
 			}
 			if req.RecursoID != "" {
 				if err := verificarCuposTx(tx, slug, recurso, cuposPedidos, eventDateTime, eventEnd); err != nil {
+					return err
+				}
+				if err := verificarInstructorTx(tx, slug, recurso.InstructorID, recurso.ID, eventDateTime, eventEnd); err != nil {
 					return err
 				}
 			}
@@ -1595,12 +1615,13 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 
 	// Reintentos con backoff para contención transaccional ("Transaction lock
-	// timeout" bajo picos concurrentes sobre el mismo slot). errSlotConflict y
-	// errServicioNoOfrecido son deterministas: no se reintentan.
+	// timeout" bajo picos concurrentes sobre el mismo slot). errSlotConflict,
+	// errServicioNoOfrecido, errSinCupo y errInstructorOcupado son
+	// deterministas: no se reintentan.
 	var txnErr error
 	for attempt := 0; attempt < 3; attempt++ {
 		txnErr = bookTxn()
-		if txnErr == nil || errors.Is(txnErr, errSlotConflict) || errors.Is(txnErr, errServicioNoOfrecido) || errors.Is(txnErr, errSinCupo) {
+		if txnErr == nil || errors.Is(txnErr, errSlotConflict) || errors.Is(txnErr, errServicioNoOfrecido) || errors.Is(txnErr, errSinCupo) || errors.Is(txnErr, errInstructorOcupado) {
 			break
 		}
 		log.Printf("Reintentando transacción de reserva en %s (intento %d/3): %v", slug, attempt+1, txnErr)
@@ -1631,6 +1652,21 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 				"success": false,
 				"error":   "sin_cupo",
 				"message": "Ya no quedan cupos en ese horario. Elige otro.",
+			})
+			return
+		}
+		if errors.Is(txnErr, errInstructorOcupado) {
+			// Compensar: liberar el evento de Calendar creado fuera de la tx.
+			if eventID != "" && eventID != "mock_event_123" {
+				deleteCalendarEvent(ctx, slug, req.EmpleadoID, eventID)
+			}
+			log.Printf("Instructor ocupado en transacción: %s %s rec %s en %s", req.Fecha, req.Hora, req.RecursoID, slug)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "instructor_ocupado",
+				"message": "El instructor de esta clase ya tiene algo agendado a esa hora. Elige otro horario.",
 			})
 			return
 		}
@@ -2353,7 +2389,9 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 
 // POST /api/v1/b/{slug}/recursos -> crea un espacio (solo dueño).
 // Sanea y acota todo en el servidor: nombre 1-100, capacidad 1-100, tipo
-// válido, descripción libre máx 500 (info del espacio, sin atados).
+// válido, descripción libre máx 500 (info del espacio, sin atados), duración
+// 15-480, precio >= 0, instructor del equipo y horario semanal válido
+// (flujo simple: el dueño lo define TODO en una sola pantalla y un guardado).
 func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	if !isOwnerRequest(r, slug) {
 		http.Error(w, "No autorizado", http.StatusUnauthorized)
@@ -2367,6 +2405,7 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		DurationMinutes int             `json:"duration_minutes"`
 		Price           json.RawMessage `json:"price"`
 		InstructorID    string          `json:"instructor_id"`
+		Horario         *HorarioSemanal `json:"horario"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -2432,8 +2471,25 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			return
 		}
 	}
+	// Horario propio (opcional, flujo simple): misma validación que el de
+	// empleados (turnos HH:MM saneados, sin solapes, máx 4 por día). Si no
+	// viene, el espacio usa la jornada del negocio.
+	var horario *HorarioSemanal
+	if req.Horario != nil {
+		if err := validarHorarioSemanal(*req.Horario); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "horario_invalido",
+				"message": "Horario inválido: " + err.Error(),
+			})
+			return
+		}
+		horario = req.Horario
+	}
 
-	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, map[string]interface{}{
+	docData := map[string]interface{}{
 		"name":             name,
 		"tipo":             tipo,
 		"capacidad":        capacidad,
@@ -2442,7 +2498,11 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		"instructor_id":    instructorID,
 		"descripcion":      descripcion,
 		"created_at":       time.Now(),
-	})
+	}
+	if horario != nil {
+		docData["horario"] = horario
+	}
+	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, docData)
 	if err != nil {
 		log.Printf("Error creando recurso en %s: %v", slug, err)
 		http.Error(w, "Error al guardar el espacio", http.StatusInternalServerError)
@@ -3291,6 +3351,78 @@ func instructorBusyIntervals(ctx context.Context, slug, instructorID, excludeRec
 		out = append(out, intervalosDeDocs(docs2)...)
 	}
 	return out
+}
+
+// verificarInstructorTx es la versión transaccional del bloqueo cruzado del
+// instructor: la sesión ocupa su agenda 1-a-1 (sus citas directas y sus
+// sesiones de OTROS espacios que dicta). Se llama DENTRO de la transacción de
+// /book: el pre-check de disponibilidadRecurso es solo de lectura y dos
+// reservas simultáneas podían pasarlo ambas (instructor doble-agendado).
+func verificarInstructorTx(tx *firestore.Transaction, slug, instructorID, excludeRecursoID string, eventDateTime, eventEnd time.Time) error {
+	if instructorID == "" {
+		return nil
+	}
+	choca := func(docs []*firestore.DocumentSnapshot) bool {
+		for _, d := range docs {
+			if d.Data()["cancelled"] == true {
+				continue
+			}
+			var b Booking
+			if err := d.DataTo(&b); err != nil {
+				continue
+			}
+			dur := time.Duration(b.DurationMinute) * time.Minute
+			if dur <= 0 {
+				dur = 60 * time.Minute
+			}
+			if eventDateTime.Before(b.DateTime.Add(dur)) && b.DateTime.Before(eventEnd) {
+				return true
+			}
+		}
+		return false
+	}
+	// 1. Citas directas del instructor (su agenda 1-a-1).
+	qEmp := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", instructorID).
+		Where("date_time", ">=", eventDateTime.Add(-24*time.Hour)).
+		Where("date_time", "<", eventEnd)
+	docs, err := tx.Documents(qEmp).GetAll()
+	if err != nil {
+		return err
+	}
+	if choca(docs) {
+		return errInstructorOcupado
+	}
+	// 2. Sesiones de otros espacios que dicta (excluye el espacio evaluado:
+	// sus propias reservas ya se contaron en verificarCuposTx).
+	docsRec, err := tx.Documents(firestoreClient.Collection("negocios").
+		Doc(slug).Collection("recursos")).GetAll()
+	if err != nil {
+		return err
+	}
+	for _, rd := range docsRec {
+		var rec Recurso
+		if err := rd.DataTo(&rec); err != nil || rec.InstructorID != instructorID {
+			continue
+		}
+		if rd.Ref.ID == excludeRecursoID {
+			continue
+		}
+		qOtro := firestoreClient.Collection("reservas").
+			Where("negocio_id", "==", slug).
+			Where("recurso_id", "==", rd.Ref.ID).
+			Where("date_time", ">=", eventDateTime.Add(-24*time.Hour)).
+			Where("date_time", "<", eventEnd)
+		docsOtro, err := tx.Documents(qOtro).GetAll()
+		if err != nil {
+			return err
+		}
+		if choca(docsOtro) {
+			return errInstructorOcupado
+		}
+	}
+	return nil
 }
 
 // isEquipoRequest: el request viene del empleado asignado (EmpID) o del

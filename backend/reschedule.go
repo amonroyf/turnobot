@@ -12,6 +12,11 @@ import (
 	"cloud.google.com/go/firestore"
 )
 
+// errSlotOcupadoMover distingue, dentro de la tx de reschedule, el choque de
+// agenda del profesional del error genérico de transacción (para responder
+// 409 slot_taken en vez de 500).
+var errSlotOcupadoMover = errors.New("slot ocupado al mover la cita")
+
 // rescheduleRequest mueve una cita activa a otro día/hora.
 // POST /api/v1/b/{slug}/citas/{citaID}/reschedule {"fecha":"YYYY-MM-DD","hora":"HH:MM"}
 // Puede invocarlo: el dueño, el empleado asignado o el cliente (phone match).
@@ -253,6 +258,27 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		return
 	}
 
+	// Resolución del recurso ANTES de la transacción (solo lectura; las
+	// verificaciones duras se repiten dentro de la tx de abajo). Necesario
+	// para re-chequear cupos e instructor con la misma lógica que /book:
+	// el pre-check de arriba es de lectura y dos movimientos concurrentes
+	// podían pasarlo ambos y sobrellenar la sesión.
+	var recursoMover Recurso
+	if b.RecursoID != "" {
+		var ok bool
+		recursoMover, ok = resolveRecurso(ctx, slug, b.RecursoID)
+		if !ok {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "recurso_no_encontrado",
+				"message": "El espacio de esta cita ya no existe. Cancela la reserva y crea una nueva.",
+			})
+			return
+		}
+	}
+
 	// Mover en Calendar: crear el nuevo primero; si falla, no se toca nada.
 	// El viejo se borra solo si el nuevo quedó creado (sin huérfanos).
 	// Sin profesional no hay calendario: se conserva el id vacío.
@@ -271,6 +297,7 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 	}
 	viejoEvento := b.CalendarEvt
 
+	nuevoEnd := nuevo.Add(time.Duration(dur) * time.Minute)
 	err = firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
 		snap, err := tx.Get(docRef)
 		if err != nil {
@@ -278,6 +305,27 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		}
 		if snap.Data()["cancelled"] == true {
 			return errYaAplicado
+		}
+		// Re-chequeo duro dentro de la tx (igual que /book): los pre-checks
+		// de arriba son de lectura y una reserva concurrente al mismo hueco
+		// podía confirmarse entre el check y el commit → sobreventa.
+		if err := verificarSolapeTx(tx, slug, "emp_id", b.EmpID, nuevo, nuevoEnd); err != nil {
+			if errors.Is(err, errSlotConflict) {
+				return errSlotOcupadoMover
+			}
+			return err
+		}
+		if b.RecursoID != "" {
+			cuposMoverTx := b.Cupos
+			if cuposMoverTx < 1 {
+				cuposMoverTx = 1
+			}
+			if err := verificarCuposTx(tx, slug, recursoMover, cuposMoverTx, nuevo, nuevoEnd); err != nil {
+				return err
+			}
+			if err := verificarInstructorTx(tx, slug, recursoMover.InstructorID, recursoMover.ID, nuevo, nuevoEnd); err != nil {
+				return err
+			}
 		}
 		return tx.Update(docRef, []firestore.Update{
 			{Path: "date_time", Value: nuevo},
@@ -294,6 +342,38 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 				"success": false,
 				"error":   "cita_cancelada",
 				"message": "La cita fue cancelada mientras la movías. Recarga e intenta de nuevo.",
+			})
+			return
+		}
+		if errors.Is(err, errSlotOcupadoMover) || errors.Is(err, errSinCupo) {
+			// Compensar: borrar el evento nuevo ya creado (la cita no se movió).
+			if nuevoEvento != "" && nuevoEvento != "mock_event_123" {
+				deleteCalendarEvent(ctx, slug, b.EmpID, nuevoEvento)
+			}
+			code := http.StatusConflict
+			errorCode, mensaje := "slot_taken", "Ese horario ya fue reservado por alguien más. Elige otro."
+			if errors.Is(err, errSinCupo) {
+				errorCode, mensaje = "sin_cupo", "Ya no quedan cupos en ese horario. Elige otro."
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(code)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   errorCode,
+				"message": mensaje,
+			})
+			return
+		}
+		if errors.Is(err, errInstructorOcupado) {
+			if nuevoEvento != "" && nuevoEvento != "mock_event_123" {
+				deleteCalendarEvent(ctx, slug, b.EmpID, nuevoEvento)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "instructor_ocupado",
+				"message": "El instructor de esta clase ya tiene algo agendado a esa hora. Elige otro horario.",
 			})
 			return
 		}

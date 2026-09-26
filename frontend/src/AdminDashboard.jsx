@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
-import { HorarioModal } from './HorarioModal.jsx';
+import { HorarioModal, horarioDesdeJornada, resumenSemana } from './HorarioModal.jsx';
 import RegistroManual from './RegistroManual.jsx';
 import { COLORES_MARCA, colorMarca, textoSobreMarca, inicialMarca, fondoMarca } from './marca.js';
 
@@ -42,13 +42,16 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   );
 }
 
-export function HorarioRecursoModal({ negocioId, recurso, onClose }) {
+export function HorarioRecursoModal({ negocioId, recurso, jornada, onClose }) {
+  // Si el espacio aún no tiene horario, se precarga la jornada del local
+  // (no defaults duros): guardar sin editar nunca encoge la disponibilidad.
+  const inicial = recurso.horario || horarioDesdeJornada(jornada);
   return (
     <HorarioModal
       titulo="Horario del espacio"
       nombre={recurso.name}
-      bajada="Días y turnos en que se puede reservar. Déjalo vacío para usar la jornada del negocio."
-      horarioInicial={recurso.horario}
+      bajada="Días y turnos en que se puede reservar. Desmarca los días que no aplica."
+      horarioInicial={inicial}
       onGuardar={async (horario) => {
         const recRef = doc(db, `negocios/${negocioId}/recursos`, recurso.id);
         await updateDoc(recRef, { horario });
@@ -232,7 +235,8 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '' });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '', horario: null });
+  const [usarHorarioPropio, setUsarHorarioPropio] = useState(false);
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -265,6 +269,9 @@ function AdminPanel() {
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
   const [horarioRecursoModal, setHorarioRecursoModal] = useState(null);
+  const [horarioNuevoModal, setHorarioNuevoModal] = useState(false);
+  // Jornada del local (para precargar el horario de un espacio nuevo).
+  const jornadaLocal = { open_time: negocio?.open_time || '', close_time: negocio?.close_time || '' };
   const [serviciosModal, setServiciosModal] = useState(null);
   const [pinModal, setPinModal] = useState(null);
   const [whatsApp, setWhatsApp] = useState('');
@@ -605,6 +612,7 @@ function AdminPanel() {
           price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
           instructor_id: nuevoRecurso.instructor_id || '',
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
+          horario: usarHorarioPropio ? nuevoRecurso.horario : null,
         }),
       });
       if (!res.ok) {
@@ -612,7 +620,8 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '' });
+      setNuevoRecurso({ name: '', tipo: 'cancha', capacidad: 1, descripcion: '', duration_minutes: 60, price: '', instructor_id: '', horario: null });
+      setUsarHorarioPropio(false);
       invalidarCache();
       await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
     } catch (err) {
@@ -1880,6 +1889,47 @@ function AdminPanel() {
                     className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
                   />
                 </label>
+                {/* Horario en el mismo form (flujo simple: todo en 1 guardado).
+                    Default: jornada del local. El toggle abre el mismo modal
+                    validado que ya usan empleados y espacios existentes. */}
+                <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-gray-800">🕒 Horario</p>
+                      <p className="text-[11px] font-medium text-gray-500 mt-0.5">
+                        {usarHorarioPropio && nuevoRecurso.horario
+                          ? resumenSemana(nuevoRecurso.horario)
+                          : `Usa el horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'}).`}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!usarHorarioPropio) {
+                          // Primera activación: precargar la jornada del local.
+                          if (!nuevoRecurso.horario) {
+                            setNuevoRecurso((prev) => ({ ...prev, horario: horarioDesdeJornada(jornadaLocal) }));
+                          }
+                          setHorarioNuevoModal(true);
+                        } else {
+                          setUsarHorarioPropio(false);
+                        }
+                      }}
+                      role="switch"
+                      aria-checked={usarHorarioPropio}
+                      aria-label="Definir horario propio del espacio"
+                      className={`shrink-0 min-h-[44px] px-3 font-bold rounded-xl text-xs border transition-colors ${usarHorarioPropio ? 'bg-black text-white border-black' : 'bg-white text-gray-700 border-gray-200'}`}
+                    >
+                      {usarHorarioPropio ? 'Horario propio ✓' : 'Horario del local'}
+                    </button>
+                  </div>
+                </div>
+                {/* Resumen previo: qué quedará configurado, sin sorpresas. */}
+                {nuevoRecurso.name && (
+                  <p className="text-[11px] font-medium text-gray-600 bg-blue-50 border border-blue-100 rounded-xl p-2.5">
+                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {usarHorarioPropio && nuevoRecurso.horario ? resumenSemana(nuevoRecurso.horario) : `horario del local (${jornadaLocal.open_time || '9:00'}–${jornadaLocal.close_time || '18:00'})`} · {nuevoRecurso.duration_minutes || 60} min · {formatDinero(nuevoRecurso.price || '0')}{nuevoRecurso.instructor_id ? ` · con ${profesionales.find((p) => p.id === nuevoRecurso.instructor_id)?.name || ''}` : ''} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
+                  </p>
+                )}
                 <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
               </form>
               </>
@@ -2401,7 +2451,21 @@ function AdminPanel() {
       </nav>
 
       {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => { setHorarioModal(null); invalidarCache(); }} />}
-      {horarioRecursoModal && <HorarioRecursoModal negocioId={negocio.id} recurso={horarioRecursoModal} onClose={() => { setHorarioRecursoModal(null); invalidarCache(); }} />}
+      {horarioRecursoModal && <HorarioRecursoModal negocioId={negocio.id} recurso={horarioRecursoModal} jornada={jornadaLocal} onClose={() => { setHorarioRecursoModal(null); invalidarCache(); }} />}
+      {horarioNuevoModal && (
+        <HorarioModal
+          titulo="Horario del espacio"
+          nombre={nuevoRecurso.name || 'espacio nuevo'}
+          bajada="Días y turnos en que se podrá reservar. Precargado con el horario del local: ajusta lo que necesites."
+          horarioInicial={nuevoRecurso.horario || horarioDesdeJornada(jornadaLocal)}
+          onGuardar={async (horario) => {
+            setNuevoRecurso((prev) => ({ ...prev, horario }));
+            setUsarHorarioPropio(true);
+          }}
+          exito="Horario listo. Se guarda junto con el espacio."
+          onClose={() => setHorarioNuevoModal(false)}
+        />
+      )}
       {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
       {pinModal && <PinEmpleadoModal negocioId={negocio.id} empleado={pinModal} onClose={() => setPinModal(null)} />}
     </div>

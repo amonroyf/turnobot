@@ -2435,3 +2435,246 @@ func TestMoverSlotOcupadoYLibre(t *testing.T) {
 		t.Fatalf("mover libre code=%d, esperaba 200", c)
 	}
 }
+
+// ─── Regresión P0: integridad de espacios (instructor en tx, reschedule,
+// ventana de cupos) ───
+
+// bookRaw reserva con un cliente nuevo por llamado (login obligatorio; el
+// usuario único evita el tope diario por UID entre llamadas) y devuelve el código.
+func bookRaw(t *testing.T, slug string, payload map[string]interface{}) int {
+	t.Helper()
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	authClienteUnico(t, req)
+	rec := httptest.NewRecorder()
+	bookHandler(rec, req, slug)
+	return rec.Code
+}
+
+// seedInstructor crea un recurso tipo clase con instructor emp1.
+func seedInstructor(t *testing.T, ctx context.Context, slug, id string) {
+	t.Helper()
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(id).Set(ctx, map[string]interface{}{
+		"name": "Clase Yoga", "tipo": "clase", "capacidad": 5,
+		"duration_minutes": 60, "price": "0", "instructor_id": "emp1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+// P0-1: el bloqueo del instructor se verifica DENTRO de la transacción.
+// Una cita 1-a-1 de emp1 a las 10:00 y una sesión de su clase a las 10:00
+// no pueden confirmarse ambas, aunque el pre-check de lectura las viera libres.
+func TestInstructorBloqueoDentroTx(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-instr-tx")
+	seedTienda(t, ctx, slug)
+	seedInstructor(t, ctx, slug, "rec1")
+
+	// La cita directa de emp1 (agenda 1-a-1) a las 10:00.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Directo", "clienteTelefono": "+573004440001",
+	}); c != http.StatusCreated {
+		t.Fatalf("cita directa code=%d, esperaba 201", c)
+	}
+
+	// La sesión del espacio con el MISMO instructor a la MISMA hora → 409.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Sesion", "clienteTelefono": "+573004440002",
+	}); c != http.StatusConflict {
+		t.Fatalf("sesión con instructor ocupado code=%d, esperaba 409", c)
+	}
+
+	// Otra hora → 201.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "11:00",
+		"clienteNombre": "Sesion", "clienteTelefono": "+573004440002",
+	}); c != http.StatusCreated {
+		t.Fatalf("sesión en hora libre code=%d, esperaba 201", c)
+	}
+}
+
+// P0-3: la ventana de consulta de verificarCuposTx cubre el día completo.
+// Un espacio con duración propia de 240 min (reserva 09:00-13:00) sobre
+// capacidad 1 debe bloquear el candidato de 11:00, aunque empezó >2h antes
+// (la ventana -2h anterior lo dejaba pasar y sobrevendía el espacio).
+func TestCupoVentanaDiaCompleto(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-cupo-largo")
+	seedTienda(t, ctx, slug)
+	// Espacio exclusivo (cap 1) con duración propia de 240 min.
+	_, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("rec1").Set(ctx, map[string]interface{}{
+		"name": "Cancha larga", "tipo": "cancha", "capacidad": 1,
+		"duration_minutes": 240, "price": "0",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// La reserva hereda la duración del espacio: 09:00-13:00.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "09:00",
+		"clienteNombre": "Larga", "clienteTelefono": "+573004440003",
+	}); c != http.StatusCreated {
+		t.Fatalf("reserva larga code=%d, esperaba 201", c)
+	}
+
+	// 11:00 cae DENTRO de la reserva larga (09:00-13:00): debe chocar.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "11:00",
+		"clienteNombre": "Corto", "clienteTelefono": "+573004440004",
+	}); c != http.StatusConflict {
+		t.Fatalf("candidato dentro de reserva larga code=%d, esperaba 409", c)
+	}
+	// 13:00 (fin exacto de la reserva larga, [inicio,fin)) → libre.
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "rec1",
+		"fecha":     mañanaStr(), "hora": "13:00",
+		"clienteNombre": "Corto", "clienteTelefono": "+573004440004",
+	}); c != http.StatusCreated {
+		t.Fatalf("candidato tras fin code=%d, esperaba 201", c)
+	}
+}
+
+// P0-2: reschedule re-verifica cupos dentro de su transacción. Dos citas de
+// otro espacio movidas en paralelo al ÚLTIMO cupo de una sesión: solo una gana.
+func TestRescheduleConcurrenteUltimoCupo(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-mover-cupo")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenomovercupo@test.com")
+	duenoTok := tokenClienteTest(t, "duenomovercupo@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	seedRecursoCap(t, ctx, slug, "reclleno", 1)
+
+	// Sesión a las 15:00 (el destino, único cupo).
+	if c := bookRaw(t, slug, map[string]interface{}{
+		"recursoId": "reclleno",
+		"fecha":     mañanaStr(), "hora": "15:00",
+		"clienteNombre": "Ocupa", "clienteTelefono": "+573004440005",
+	}); c != http.StatusCreated {
+		t.Fatalf("sesión destino code=%d, esperaba 201", c)
+	}
+	// Dos citas de OTRO espacio (horas distintas para no chocar entre sí)
+	// a mover en paralelo a las 15:00.
+	seedRecursoCap(t, ctx, slug, "reccancha", 1)
+	ids := []string{}
+	horasOrigen := []string{"10:00", "11:00"}
+	for i, ph := range []string{"+573004440006", "+573004440007"} {
+		if c := bookRaw(t, slug, map[string]interface{}{
+			"recursoId": "reccancha",
+			"fecha":     mañanaStr(), "hora": horasOrigen[i],
+			"clienteNombre": "Mover" + ph, "clienteTelefono": ph,
+		}); c != http.StatusCreated {
+			t.Fatalf("cita origen %s code=%d, esperaba 201", ph, c)
+		}
+		found := reservaIDsPorTelefono(t, ctx, slug, ph)
+		if len(found) == 0 {
+			t.Fatalf("cita origen %s no quedó en reservas", ph)
+		}
+		ids = append(ids, found[len(found)-1])
+	}
+
+	type res struct{ code int }
+	ch := make(chan res, 2)
+	for _, id := range ids {
+		go func(id string) {
+			body, _ := json.Marshal(map[string]string{"fecha": mañanaStr(), "hora": "15:00"})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+id+"/reschedule", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+duenoTok)
+			rec := httptest.NewRecorder()
+			rescheduleCitaHandler(rec, req, slug, id)
+			ch <- res{rec.Code}
+		}(id)
+	}
+	ganaron, perdieron := 0, 0
+	for i := 0; i < 2; i++ {
+		r := <-ch
+		if r.code == http.StatusOK {
+			ganaron++
+		} else {
+			perdieron++
+		}
+	}
+	if ganaron != 1 || perdieron != 1 {
+		t.Fatalf("reschedule concurrente: ganaron=%d perdieron=%d, esperaba 1/1", ganaron, perdieron)
+	}
+}
+
+// Flujo simple: POST /recursos acepta horario semanal validado.
+func TestCrearRecursoConHorario(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-rechor")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenorechor@test.com")
+	duenoTok := tokenClienteTest(t, "duenorechor@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) (int, []byte) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec.Code, rec.Body.Bytes()
+	}
+	// Horario válido → 201 y el doc guarda el horario.
+	code, _ := crear(`{"name":"Zumba","tipo":"clase","capacidad":10,"duration_minutes":60,"price":15000,
+		"horario":{"lunes":{"activo":true,"turnos":[{"inicio":"10:00","fin":"12:00"}]},"martes":{"activo":false,"turnos":[]},
+		"miercoles":{"activo":false,"turnos":[]},"jueves":{"activo":false,"turnos":[]},"viernes":{"activo":false,"turnos":[]},
+		"sabado":{"activo":false,"turnos":[]},"domingo":{"activo":false,"turnos":[]}}}`)
+	if code != http.StatusCreated {
+		t.Fatalf("con horario code=%d, esperaba 201", code)
+	}
+	docs, _ := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Where("name", "==", "Zumba").Documents(ctx).GetAll()
+	if len(docs) != 1 {
+		t.Fatalf("Zumba creada=%d, esperaba 1", len(docs))
+	}
+	if docs[0].Data()["horario"] == nil {
+		t.Fatal("horario no guardado en el doc")
+	}
+	// Turno invertido → 400.
+	code, _ = crear(`{"name":"Mal","tipo":"clase","capacidad":5,
+		"horario":{"lunes":{"activo":true,"turnos":[{"inicio":"12:00","fin":"10:00"}]},"martes":{"activo":false,"turnos":[]},
+		"miercoles":{"activo":false,"turnos":[]},"jueves":{"activo":false,"turnos":[]},"viernes":{"activo":false,"turnos":[]},
+		"sabado":{"activo":false,"turnos":[]},"domingo":{"activo":false,"turnos":[]}}}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("horario inválido code=%d, esperaba 400", code)
+	}
+	// Sin horario → 201 (jornada del negocio) y doc SIN campo horario.
+	code, _ = crear(`{"name":"Simple","tipo":"cancha","capacidad":2}`)
+	if code != http.StatusCreated {
+		t.Fatalf("sin horario code=%d, esperaba 201", code)
+	}
+	docs, _ = firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Where("name", "==", "Simple").Documents(ctx).GetAll()
+	if len(docs) != 1 {
+		t.Fatal("Simple no creada")
+	}
+	if _, ok := docs[0].Data()["horario"]; ok {
+		t.Fatal("horario no debió escribirse si no vino en el payload")
+	}
+}

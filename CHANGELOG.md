@@ -1,5 +1,21 @@
 # Changelog — Turnobot
 
+## 2026-09-26 (espacios: integridad P0 + flujo simple de creación)
+
+**Integridad (P0, invariantes):**
+- Bloqueo del instructor dentro de la transacción: nuevo `verificarInstructorTx` se llama en la tx de `/book` (citas 1-a-1 del instructor + sesiones de otros espacios que dicta). Antes solo se pre-chequeaba fuera de la tx: dos reservas simultáneas podían pasarlo ambas y dejar al instructor doble-agendado. Respuesta 409 `instructor_ocupado` + compensación del evento Calendar.
+- `reschedule` re-verifica cupos + instructor dentro de su transacción (igual que `/book`): dos movimientos concurrentes al último cupo ya no sobrellenan la sesión. 409 `slot_taken`/`sin_cupo`/`instructor_ocupado` según el caso, con compensación del evento nuevo.
+- Ventana de consulta de `verificarCuposTx` y `verificarSolapeTx` arranca al inicio del día (antes -2h): una reserva de 4h que empezó antes ya no escapa del chequeo y sobrevende el espacio (duraciones de espacio hasta 480 min).
+- Tests: `TestInstructorBloqueoDentroTx`, `TestRescheduleConcurrenteUltimoCupo` (2 paralelas al último cupo → 1 gana), `TestCupoVentanaDiaCompleto` (reserva 240 min bloquea candidato interior).
+
+**Flujo simple (1 pantalla, 1 guardado):**
+- `POST /recursos` acepta `horario` semanal validado con la misma regla que empleados (`validarHorarioSemanal`; 400 `horario_invalido`). Sin horario sigue la jornada del negocio.
+- Panel: form de creación con toggle 🕒 "Horario del local / Horario propio" (el modal se precarga con la jornada real del local, no con defaults duros) y resumen previo ("Quedará así: Yoga · horario… · 90 min · $25.000 · con Ana · 12 cupos").
+- `HorarioRecursoModal` de espacios existentes también precarga la jornada del local cuando el espacio no tiene horario propio (adiós al encogimiento silencioso L-S 9-18).
+- Test `TestCrearRecursoConHorario` (201 guarda horario, turno invertido 400, sin horario no escribe el campo).
+
+**Verificado:** suite backend completa en verde con emuladores Firestore+Auth (`ok turnobot 4.85s`), `go vet` limpio, build de frontend OK, 27/27 unit frontend.
+
 ## 2026-09-26 (cobertura: reglas al 54% + limpieza)
 
 - Backend 42% → 54.1% con 13 tests nuevos: primer hueco, borrar recurso/empleado con guards, servicios CRUD, negocio público, middleware/CORS/rate-limit, push-token, mover con choque, validadores puros.

@@ -34,6 +34,21 @@ export function resumenSemana(horario) {
   return 'Atiende: ' + partes.join(', ') + '.';
 }
 
+// Horario inicial construido desde la jornada del local (open/close globales,
+// iguales todos los días): se usa para PRECARGAR el horario del local al
+// configurar un espacio, en vez de defaults inventados (9-18) que encogían
+// la disponibilidad en silencio si el dueño guardaba sin editar.
+export function horarioDesdeJornada(jornada) {
+  const turnosBase = jornada?.open_time && jornada?.close_time
+    ? [{ inicio: jornada.open_time, fin: jornada.close_time }]
+    : [];
+  const dia = () => ({ activo: turnosBase.length > 0, turnos: turnosBase.map((t) => ({ ...t })) });
+  return {
+    lunes: dia(), martes: dia(), miercoles: dia(), jueves: dia(),
+    viernes: dia(), sabado: dia(), domingo: dia(),
+  };
+}
+
 export function HorarioModal({ titulo, nombre, bajada, horarioInicial, onGuardar, exito, onClose }) {
   const { avisar } = useDialogo();
   const [horario, setHorario] = useState(() => {
