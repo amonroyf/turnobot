@@ -1238,6 +1238,112 @@ func TestEmpleadoUndoPropiaAgenda(t *testing.T) {
 	}
 }
 
+// Libro mayor de cobrado-real: pagar → cancelar revierte → deshacer repone.
+// Sin esto, el CRM diría que entró plata de citas que ya no existen.
+func TestPagoCancelUndoLedger(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-ledger")
+	seedTienda(t, ctx, slug)
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "+573003333333",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book code=%d, esperaba 201", code)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+573003333333")
+	if len(ids) != 1 {
+		t.Fatalf("reservas=%d, esperaba 1", len(ids))
+	}
+	tok := signEmployeeToken(slug, "emp1")
+	call := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+tok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		return rec
+	}
+	cobrado := func() int64 {
+		cli, _ := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, "+573003333333")).Get(ctx)
+		p, _ := cli.Data()["paid_total"].(int64)
+		return p
+	}
+	if r := call(http.MethodPost, "/api/v1/b/"+slug+"/employee/emp1/citas/"+ids[0]+"/pago", `{"pagado":true}`); r.Code != http.StatusOK {
+		t.Fatalf("pago code=%d, esperaba 200", r.Code)
+	}
+	if cobrado() != 10000 {
+		t.Fatalf("cobrado tras pago, esperaba 10000")
+	}
+	if r := call(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+ids[0], ``); r.Code != http.StatusOK {
+		t.Fatalf("cancel code=%d body=%s, esperaba 200", r.Code, r.Body.String())
+	}
+	if cobrado() != 0 {
+		t.Fatalf("cobrado tras cancel, esperaba 0")
+	}
+	if r := call(http.MethodPost, "/api/v1/b/"+slug+"/citas/"+ids[0]+"/undo", `{}`); r.Code != http.StatusOK {
+		t.Fatalf("undo code=%d body=%s, esperaba 200", r.Code, r.Body.String())
+	}
+	if cobrado() != 10000 {
+		t.Fatalf("cobrado tras undo, esperaba 10000")
+	}
+	doc, _ := firestoreClient.Collection("reservas").Doc(ids[0]).Get(ctx)
+	var b Booking
+	doc.DataTo(&b)
+	if !b.Pagado || doc.Data()["cancelled"] == true {
+		t.Fatalf("estado final inconsistente: pagado=%v cancelled=%v", b.Pagado, doc.Data()["cancelled"])
+	}
+}
+
+// Carrera por el último cupo: capacidad 2, cuatro reservas paralelas del
+// mismo horario → exactamente 2 entran y 2 chocan (sin overbooking).
+func TestRecursoCupoConcurrente(t *testing.T) {
+	testFirestoreClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-cupconc")
+	seedTienda(t, ctx, slug)
+	seedRecursoCap(t, ctx, slug, "rec1", 2)
+	_ = ctx
+	fecha := mañanaStr()
+	codes := make([]int, 4)
+	var wg sync.WaitGroup
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			body, _ := json.Marshal(map[string]interface{}{
+				"servicioId": "svc1", "recursoId": "rec1",
+				"fecha": fecha, "hora": "10:00",
+				"clienteNombre": "X", "clienteTelefono": fmt.Sprintf("+57300999010%d", i),
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			authClienteUnico(t, req)
+			rec := httptest.NewRecorder()
+			bookHandler(rec, req, slug)
+			codes[i] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+	ok, conflict := 0, 0
+	for _, c := range codes {
+		switch c {
+		case http.StatusCreated:
+			ok++
+		case http.StatusConflict:
+			conflict++
+		default:
+			t.Fatalf("code inesperado=%d", c)
+		}
+	}
+	if ok != 2 || conflict != 2 {
+		t.Fatalf("ok=%d conflict=%d, esperaba 2/2", ok, conflict)
+	}
+}
+
 func TestClienteLoginObligatorioYUID(t *testing.T) {
 	testFirestoreClient(t)
 	testAuthClient(t)

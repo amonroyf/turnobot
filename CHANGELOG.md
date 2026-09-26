@@ -1,6 +1,10 @@
 # Changelog — Turnobot
 
-## 2026-09-26 (deshacer con ventana 24h visible)
+## 2026-09-26 (auditoría: cobrado se revierte + carrera de cupos)
+
+- Cancelar o marcar no-show de una cita PAGADA revierte `paid_total`/`paid_visits`; deshacer los repone. Sin esto el CRM decía que entró plata de citas inexistentes.
+- Tests `TestPagoCancelUndoLedger` (pago→cancel→undo) y `TestRecursoCupoConcurrente` (4 paralelas por 2 cupos: 2 entran, 2 chocan). Suite verde.
+- Desplegado: backend `turnobot-00143-4kv` (frontend sin cambios).## 2026-09-26 (deshacer con ventana 24h visible)
 
 - El portal del empleado ocultaba "Devolver a activa" si la cita no era de hoy, aunque el backend permite <24h de la acción: `GET employee/{id}/citas` expone `cancelled_at`/`no_show_at` y ambos paneles muestran el botón hoy o con acción reciente.
 - Test `TestEmpleadoUndoPropiaAgenda` (cancela mañana, deshace, ajeno 401/403). Suite verde.

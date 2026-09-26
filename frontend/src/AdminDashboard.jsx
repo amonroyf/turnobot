@@ -984,6 +984,26 @@ function AdminPanel() {
                     </button>
                   </div>
                 )}
+                {(m.cancelled || m.no_show) && (() => {
+                  // Misma ventana que el backend: hoy o acción hace <24h.
+                  const seg = (x) => x?.seconds ?? null;
+                  const s = seg(m.cancelled_at) ?? seg(m.no_show_at);
+                  const reciente = s != null && (ahora / 1000 - s < 24 * 3600);
+                  const hoyGrupo = diaKeyEnZona(grupo.minMs, zonaNegocio) === diaKeyEnZona(ahora, zonaNegocio);
+                  if (!hoyGrupo && !reciente) return null;
+                  return (
+                    <div className="flex gap-1 shrink-0">
+                      <button
+                        onClick={() => handleUndo(m.id)}
+                        disabled={undoingId === m.id}
+                        aria-label={`Devolver a activa a ${m.client_name}`}
+                        className="min-h-[40px] px-2.5 text-[11px] text-blue-600 font-bold border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded-lg active:scale-95 disabled:opacity-50"
+                      >
+                        {undoingId === m.id ? '…' : '↩️ Deshacer'}
+                      </button>
+                    </div>
+                  );
+                })()}
               </li>
             ))}
           </ul>

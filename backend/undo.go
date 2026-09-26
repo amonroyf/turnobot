@@ -116,6 +116,16 @@ func undoCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID string
 		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, 1, b.Price), firestore.MergeAll); err != nil {
 			return err
 		}
+		// Si sigue marcada como pagada, el cobrado-real vuelve con ella.
+		if cur.Pagado {
+			if err := tx.Set(cliRef, map[string]interface{}{
+				"paid_total":  firestore.Increment(b.Price),
+				"paid_visits": firestore.Increment(1),
+				"updated_at":  time.Now(),
+			}, firestore.MergeAll); err != nil {
+				return err
+			}
+		}
 		if !stillCancelled {
 			// Revertir el contador de no-shows del cliente.
 			if err := tx.Set(cliRef, map[string]interface{}{

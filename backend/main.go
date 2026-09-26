@@ -1873,6 +1873,17 @@ func cancelCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID stri
 		if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, -1, -b.Price), firestore.MergeAll); err != nil {
 			return err
 		}
+		// Si estaba pagada, el cobrado-real también se revierte (si no, el
+		// CRM diría que entró plata de una cita que ya no existe).
+		if snap.Data()["pagado"] == true {
+			if err := tx.Set(cliRef, map[string]interface{}{
+				"paid_total":  firestore.Increment(-b.Price),
+				"paid_visits": firestore.Increment(-1),
+				"updated_at":  time.Now(),
+			}, firestore.MergeAll); err != nil {
+				return err
+			}
+		}
 		negRef := firestoreClient.Collection("negocios").Doc(slug)
 		return tx.Set(negRef, negocioStatsData(-1, -b.Price), firestore.MergeAll)
 	})
