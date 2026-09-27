@@ -280,10 +280,11 @@ func (r Recurso) capacidadEfectiva() int {
 
 // Service offered by a business.
 type Service struct {
-	ID       string `json:"id"`
-	Name     string `firestore:"name" json:"name"`
-	Duration int    `firestore:"duration_minutes" json:"duration_minutes"`
-	Price    string `firestore:"price" json:"price"`
+	ID          string `json:"id"`
+	Name        string `firestore:"name" json:"name"`
+	Duration    int    `firestore:"duration_minutes" json:"duration_minutes"`
+	Price       string `firestore:"price" json:"price"`
+	Descripcion string `firestore:"descripcion" json:"descripcion,omitempty"`
 }
 
 // BookingRequest is the payload sent by the web frontend.

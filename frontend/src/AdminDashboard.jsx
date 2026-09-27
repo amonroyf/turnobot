@@ -233,7 +233,7 @@ function AdminPanel() {
   const [guardandoPoliticas, setGuardandoPoliticas] = useState(false);
 
   const [cancelando, setCancelando] = useState('');
-  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '' });
+  const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '', descripcion: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
   const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', horario: horarioViernes14a16() });
   const [usarHorarioPropio, setUsarHorarioPropio] = useState(true);
@@ -526,8 +526,9 @@ function AdminPanel() {
         name: nuevoServicio.name,
         duration_minutes: Number(nuevoServicio.duration_minutes),
         price: nuevoServicio.price,
+        descripcion: (nuevoServicio.descripcion || '').trim().slice(0, 200),
       });
-      setNuevoServicio({ name: '', duration_minutes: 30, price: '' });
+      setNuevoServicio({ name: '', duration_minutes: 30, price: '', descripcion: '' });
       invalidarCache();
     } catch (err) {
       await avisar('No se pudo guardar el servicio. Intenta de nuevo.', 'error');
@@ -1635,10 +1636,11 @@ function AdminPanel() {
                   );
                   return (
                     <li key={s.id} className="p-3.5 bg-white border border-gray-200 shadow-2xs rounded-xl text-sm space-y-2">
-                      <div className="flex justify-between items-center gap-2">
+                      <div className="flex justify-between items-start gap-2">
                         <div className="min-w-0">
                           <p className="font-bold text-gray-900">{s.name}</p>
-                          <p className="text-xs font-medium text-gray-500">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
+                          {s.descripcion && <p className="text-[11px] font-medium text-gray-600 mt-0.5 leading-snug">{s.descripcion}</p>}
+                          <p className="text-xs font-semibold text-gray-500 mt-1">⏱️ {s.duration_minutes} min • {formatDinero(s.price)} en el local</p>
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <button
@@ -1654,21 +1656,21 @@ function AdminPanel() {
                             aria-label={`Copiar enlace directo de ${s.name}`}
                             className="min-h-[44px] px-3 bg-blue-50 border border-blue-200 text-blue-700 font-bold rounded-xl text-xs active:scale-95 transition-transform"
                           >
-                            🔗 Link
+                              Link
                           </button>
                           <button onClick={() => handleEliminarServicio(s)} disabled={eliminando === s.id} aria-label={`Eliminar servicio ${s.name}`} className="shrink-0 min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
-                            {eliminando === s.id ? 'Eliminando…' : 'Eliminar'}
+                            {eliminando === s.id ? 'Eliminando...' : 'Eliminar'}
                           </button>
                         </div>
                       </div>
                       <div className="pt-2 border-t border-gray-100 flex flex-wrap gap-1 items-center">
                               <span className="text-[11px] font-bold text-gray-400 uppercase">Lo hacen:</span>
                         {encargados.length === 0 ? (
-                          <span className="text-[11px] text-red-600 font-semibold">Nadie aún — asígnalo en “Qué servicios hace” del equipo</span>
+                          <span className="text-[11px] text-red-600 font-semibold">Nadie — asígnalo en "Qué servicios hace" del equipo</span>
                         ) : (
                           encargados.map((p) => (
                             <span key={p.id} className="text-[11px] font-bold bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md">
-                              👤 {p.name}
+                                {p.name}
                             </span>
                           ))
                         )}
@@ -1708,6 +1710,16 @@ function AdminPanel() {
                     />
                   </label>
                 </div>
+                <label className="block">
+                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Descripción del servicio (opcional)</span>
+                  <textarea
+                    rows={2} maxLength={200} placeholder="Ej. Incluye lavado, masaje capilar y peinado."
+                    value={nuevoServicio.descripcion}
+                    onChange={(e) => setNuevoServicio({ ...nuevoServicio, descripcion: e.target.value })}
+                    aria-label="Descripción del servicio"
+                    className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
                 <button type="submit" className="w-full py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   + Agregar Servicio
                 </button>

@@ -1161,22 +1161,29 @@ export default function BookingApp() {
                               setPrimerHueco(null);
                               setStep(1);
                             }}
-                            className={`min-h-[68px] p-4 rounded-2xl border-2 text-left flex items-center gap-3 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
+                            className={`min-h-[68px] p-4 rounded-2xl border-2 text-left flex items-start gap-3 transition-all active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2 ${
                               isActive ? 'border-black bg-black text-white shadow-md' : 'border-gray-200 bg-white hover:border-gray-400 active:bg-gray-100'
                             }`}
                           >
-                            <span aria-hidden="true" className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                            <span aria-hidden="true" className={`mt-0.5 w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 ${
                               isActive ? 'border-white' : 'border-gray-300'
                             }`}
                             >
                               {isActive && <span className="w-3 h-3 bg-white rounded-full"></span>}
                             </span>
+                            
                             <span className="flex-1 min-w-0">
                               <span className="font-bold text-sm block leading-snug">{s.name}</span>
-                              <span className={`text-xs font-medium block mt-0.5 ${isActive ? 'text-gray-200' : 'text-gray-500'}`}>
-                                ⏱️ {duracionAmable(s.duration_minutes)}
+                              {s.descripcion && (
+                                <span className={`block text-[11px] font-medium opacity-80 leading-snug mt-1 mb-1.5 ${isActive ? 'text-gray-200' : 'text-gray-500'}`}>
+                                  {s.descripcion}
+                                </span>
+                              )}
+                              <span className={`text-xs font-semibold block mt-0.5 ${isActive ? 'text-gray-300' : 'text-gray-500'}`}>
+                                  {duracionAmable(s.duration_minutes)}
                               </span>
                             </span>
+
                             <span className="text-right shrink-0">
                               <span className="font-black text-base block leading-none">{formatDinero(s.price)}</span>
                               <span className={`text-[10px] font-semibold block mt-1 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>en el local</span>
