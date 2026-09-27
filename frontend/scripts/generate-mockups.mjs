@@ -36,7 +36,6 @@ const captures = [
   { filename: 'employee-mockup.png', selector: '.mock-section', nth: 6 },
   { filename: 'registro-mockup.png', selector: '.mock-section', nth: 7 },
   { filename: 'hero-section.png', selector: '.mock-section', nth: 8 },
-  { filename: 'sistema-ux.png', selector: '.mock-section', nth: 9 },
 ];
 
 for (const { filename, selector, nth } of captures) {

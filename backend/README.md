@@ -54,6 +54,8 @@ sin auth → 401.
 - `DELETE /api/v1/b/{slug}/servicios/{id}` — eliminar servicio (en cascada)
 - `DELETE /api/v1/b/{slug}/empleados/{id}` — eliminar empleado (en cascada)
 - `DELETE /api/v1/b/{slug}/recursos/{id}` — borrar espacio (409 si tiene citas futuras)
+- `POST /api/v1/b/{slug}/recursos` — crear espacio (409 `instructor_con_choque` si el instructor ya tiene 1-a-1 o ya dicta otra clase en ese horario)
+- `DELETE /api/v1/b/{slug}/recursos/{id}/sesiones?fecha=&hora=` — cancelar sesión puntual, dueño o instructor (cancela inscritos + fan-out push; sin devoluciones: pago en local)
 - `POST /api/v1/b/{slug}/empleados/{id}/pin` — asignar PIN al empleado
 - `POST /api/v1/b/{slug}/no-show/{id}` — marcar cita como no-show (solo pasadas, + push al cliente)
 - `POST /api/v1/b/{slug}/citas/{id}/undo` — deshacer cancelación/no-show (cita de hoy o acción <24h; recrea el evento de Calendar si se había borrado)

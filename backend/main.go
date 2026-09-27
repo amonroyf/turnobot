@@ -549,6 +549,15 @@ func apiRouter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cancelar una sesión puntual: DELETE /api/v1/b/{slug}/recursos/{recursoID}/sesiones?fecha=YYYY-MM-DD&hora=HH:MM
+	// (dueño o instructor responsable). Cancela las reservas activas de esa
+	// instancia y avisa por push a cada inscrito con token. Sin devoluciones:
+	// el pago es en el local.
+	if len(parts) == 4 && parts[1] == "recursos" && parts[3] == "sesiones" && r.Method == http.MethodDelete {
+		cancelSesionHandler(w, r, slug, parts[2])
+		return
+	}
+
 	// Crear recurso: POST /api/v1/b/{slug}/recursos (solo dueño). La creación
 	// pasa por el backend (no addDoc directo): sanea nombre/tipo/capacidad y
 	// permite atar el espacio a un servicio (qué se dicta) y un empleado
@@ -1433,9 +1442,12 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// duración pura). Con ambos, el slot debe estar libre en los dos.
 	disponible := true
 	var slotsRec, slotsActuales []string
+	// libresRec registra TODAS las horas de la rejilla (incluso con 0): si la
+	// hora pedida existe ahí pero sin cupo, es "agotado", no "inexistente".
+	var libresRec map[string]int
 	if req.RecursoID != "" {
 		var err error
-		slotsRec, _, err = disponibilidadRecurso(ctx, slug, req.RecursoID, parsedDate, duration, cuposPedidos)
+		slotsRec, libresRec, err = disponibilidadRecurso(ctx, slug, req.RecursoID, parsedDate, duration, cuposPedidos)
 		if err != nil {
 			http.Error(w, "Error verificando disponibilidad del espacio", http.StatusInternalServerError)
 			return
@@ -1464,6 +1476,32 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		}
 	}
 	if !disponible {
+		// Sold out honesto: la hora existe en la rejilla del espacio pero el
+		// propio recurso la rechazó por cupo (el cliente ve "Agotado", no un
+		// genérico ocupado). Si el que falló fue el profesional combinado, cae
+		// al slot_taken de abajo.
+		if req.RecursoID != "" && libresRec != nil {
+			if _, esHueco := libresRec[req.Hora]; esHueco {
+				enSlots := false
+				for _, s := range slotsRec {
+					if s == req.Hora {
+						enSlots = true
+						break
+					}
+				}
+				if !enSlots {
+					log.Printf("Sin cupo al confirmar: %s %s rec %s en %s", req.Fecha, req.Hora, req.RecursoID, slug)
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusConflict)
+					json.NewEncoder(w).Encode(map[string]interface{}{
+						"success": false,
+						"error":   "sin_cupo",
+						"message": "Ya no quedan cupos en ese horario. Elige otro.",
+					})
+					return
+				}
+			}
+		}
 		log.Printf("Slot ocupado al confirmar: %s %s para emp %s rec %s en %s", req.Fecha, req.Hora, req.EmpleadoID, req.RecursoID, slug)
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
@@ -2388,6 +2426,133 @@ func deleteEmpleadoHandler(w http.ResponseWriter, r *http.Request, slug, empID s
 	})
 }
 
+// nombreDiaES nombra el weekday con las claves del HorarioSemanal.
+func nombreDiaES(wd time.Weekday) string {
+	switch wd {
+	case time.Monday:
+		return "lunes"
+	case time.Tuesday:
+		return "martes"
+	case time.Wednesday:
+		return "miercoles"
+	case time.Thursday:
+		return "jueves"
+	case time.Friday:
+		return "viernes"
+	case time.Saturday:
+		return "sabado"
+	case time.Sunday:
+		return "domingo"
+	}
+	return ""
+}
+
+// haySolapeTurnos dice si dos listas de turnos se cruzan en minutos.
+// Fin==inicio vale (clases seguidas se permiten).
+func haySolapeTurnos(a, b []Turno) bool {
+	aMin := func(t Turno) (int, int, bool) {
+		ok1, h1, m1 := parseClock(t.Inicio)
+		ok2, h2, m2 := parseClock(t.Fin)
+		if !ok1 || !ok2 {
+			return 0, 0, false
+		}
+		return h1*60 + m1, h2*60 + m2, true
+	}
+	for _, x := range a {
+		x1, x2, ok := aMin(x)
+		if !ok {
+			continue
+		}
+		for _, y := range b {
+			y1, y2, ok := aMin(y)
+			if !ok {
+				continue
+			}
+			if x1 < y2 && y1 < x2 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// choqueInstructorNuevoRecurso ("Escudo Preventivo"): revisa si el instructor
+// ya tiene citas 1-a-1 futuras que solapen los bloques semanales del horario
+// que se quiere asignar al recurso nuevo, y si ya dicta OTRA clase a la misma
+// hora (un instructor no da dos clases a la vez). Retorna el detalle del
+// primer choque y su origen ("cita" con fecha "YYYY-MM-DD HH:MM", o "clase"
+// con día y nombre); origen "" = sin choque.
+// Sin instructor o sin horario propio no hay nada que validar (espacio
+// flexible como cancha alquilada: no genera bloqueo de pie).
+func choqueInstructorNuevoRecurso(ctx context.Context, slug, instructorID string, horario *HorarioSemanal) (string, string) {
+	if instructorID == "" || horario == nil {
+		return "", ""
+	}
+	loc := shopLocation(ctx, slug)
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", instructorID).
+		Where("date_time", ">=", time.Now()).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: no se pudo validar choque de instructor %s: %v", instructorID, err)
+		return "", ""
+	}
+	for _, d := range docs {
+		if d.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		if err := d.DataTo(&b); err != nil {
+			continue
+		}
+		dur := time.Duration(b.DurationMinute) * time.Minute
+		if dur <= 0 {
+			dur = 60 * time.Minute
+		}
+		local := b.DateTime.In(loc)
+		dia := employeeDayHorario(horario, local.Weekday())
+		if dia == nil || !dia.Activo {
+			continue
+		}
+		for _, t := range dia.Turnos {
+			okO, oh, om := parseClock(t.Inicio)
+			okC, ch, cm := parseClock(t.Fin)
+			if !okO || !okC {
+				continue
+			}
+			blkStart := time.Date(local.Year(), local.Month(), local.Day(), oh, om, 0, 0, loc)
+			blkEnd := time.Date(local.Year(), local.Month(), local.Day(), ch, cm, 0, 0, loc)
+			if local.Before(blkEnd) && blkStart.Before(local.Add(dur)) {
+				return local.Format("2006-01-02 15:04"), "cita"
+			}
+		}
+	}
+	// 2. Otras clases del mismo instructor: nadie dicta dos clases a la misma
+	// hora. Se comparan horarios semanales día por día.
+	recDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Documents(ctx).GetAll()
+	if err == nil {
+		dias := []time.Weekday{time.Monday, time.Tuesday, time.Wednesday, time.Thursday, time.Friday, time.Saturday, time.Sunday}
+		for _, rd := range recDocs {
+			var rec Recurso
+			if err := rd.DataTo(&rec); err != nil || rec.InstructorID != instructorID || rec.Horario == nil {
+				continue
+			}
+			for _, wd := range dias {
+				dN := employeeDayHorario(horario, wd)
+				dE := employeeDayHorario(rec.Horario, wd)
+				if dN == nil || dE == nil || !dN.Activo || !dE.Activo {
+					continue
+				}
+				if haySolapeTurnos(dN.Turnos, dE.Turnos) {
+					return nombreDiaES(wd) + " con «" + rec.Name + "»", "clase"
+				}
+			}
+		}
+	}
+	return "", ""
+}
+
 // POST /api/v1/b/{slug}/recursos -> crea un espacio (solo dueño).
 // Sanea y acota todo en el servidor: nombre 1-100, capacidad 1-100, tipo
 // válido, descripción libre máx 500 (info del espacio, sin atados), duración
@@ -2489,6 +2654,23 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		}
 		horario = req.Horario
 	}
+	// Escudo Preventivo: con instructor + horario fijo, la clase recurrente
+	// no debe nacer chocando con citas 1-a-1 ya agendadas del instructor ni
+	// con otra clase que ya dicte a esa hora.
+	if detalle, origen := choqueInstructorNuevoRecurso(ctx, slug, instructorID, horario); origen != "" {
+		mensaje := fmt.Sprintf("El instructor ya tiene citas 1-a-1 en ese horario (ej. %s). Reubícalas o cancélalas antes de asignarle esta clase.", detalle)
+		if origen == "clase" {
+			mensaje = fmt.Sprintf("El instructor ya dicta otra clase en ese horario (%s). Cambia el horario o el instructor.", detalle)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "instructor_con_choque",
+			"message": mensaje,
+		})
+		return
+	}
 
 	docData := map[string]interface{}{
 		"name":             name,
@@ -2569,6 +2751,185 @@ func deleteRecursoHandler(w http.ResponseWriter, r *http.Request, slug, recursoI
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Recurso eliminado",
+	})
+}
+
+// DELETE /api/v1/b/{slug}/recursos/{recursoID}/sesiones?fecha=YYYY-MM-DD&hora=HH:MM
+// Cancela la sesión puntual (ej. el instructor se enfermó ese día): marca
+// canceladas todas las reservas activas de esa instancia, ajusta el CRM como
+// una cancelación normal (visitas, cobrado-real y stats) y dispara push a
+// cada inscrito con token registrado. Solo dueño o instructor responsable.
+// Las sesiones pasadas no se tocan (misma regla global: el historial no se
+// reescribe; si no vinieron, la herramienta es No llegó).
+// Sin devoluciones de dinero: TurnoBot no procesa pagos en línea, el cobro es
+// en el local y cada negocio maneja su política. Idempotente: repetir avisa
+// success con canceladas=0.
+func cancelSesionHandler(w http.ResponseWriter, r *http.Request, slug, recursoID string) {
+	ctx := r.Context()
+	rec, ok := resolveRecurso(ctx, slug, recursoID)
+	if !ok {
+		http.Error(w, "Recurso no encontrado", http.StatusNotFound)
+		return
+	}
+	// Autorización: dueño, o instructor responsable del espacio.
+	if !isOwnerRequest(r, slug) {
+		tokSlug, empID, err := verifyEmployeeToken(bearerToken(r.Header.Get("Authorization")))
+		if err != nil || tokSlug != slug || empID == "" || empID != rec.InstructorID {
+			http.Error(w, "No autorizado", http.StatusUnauthorized)
+			return
+		}
+	}
+	fechaStr := r.URL.Query().Get("fecha")
+	horaStr := r.URL.Query().Get("hora")
+	loc := shopLocation(ctx, slug)
+	d, err := time.ParseInLocation("2006-01-02", fechaStr, loc)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false, "error": "fecha_invalida",
+			"message": "Fecha inválida (usa YYYY-MM-DD).",
+		})
+		return
+	}
+	okH, hh, mm := parseClock(horaStr)
+	if !okH {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false, "error": "hora_invalida",
+			"message": "Hora inválida (usa HH:MM).",
+		})
+		return
+	}
+	eventDateTime := time.Date(d.Year(), d.Month(), d.Day(), hh, mm, 0, 0, loc)
+	dur := time.Duration(rec.Duration) * time.Minute
+	if dur <= 0 {
+		dur = 60 * time.Minute
+	}
+	eventEnd := eventDateTime.Add(dur)
+	if time.Now().After(eventEnd) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false, "error": "sesion_pasada",
+			"message": "Esta sesión ya pasó. Si los inscritos no vinieron, márcalos como No llegó en vez de cancelarla.",
+		})
+		return
+	}
+	// Instancia: reservas del recurso que solapan [eventDateTime, eventEnd).
+	// La ventana arranca al inicio del día (igual que verificarCuposTx): una
+	// sesión larga pudo empezar antes y extenderse dentro del candidato.
+	y, m, dd := eventDateTime.In(loc).Date()
+	inicioDia := time.Date(y, m, dd, 0, 0, 0, 0, loc)
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("recurso_id", "==", recursoID).
+		Where("date_time", ">=", inicioDia).
+		Where("date_time", "<", eventEnd).
+		Documents(ctx).GetAll()
+	if err != nil {
+		http.Error(w, "Error buscando inscritos", http.StatusInternalServerError)
+		return
+	}
+	type aviso struct {
+		citaID string
+		token  string
+		nombre string
+		calEvt string
+		empID  string
+	}
+	var objetivos []aviso
+	for _, doc := range docs {
+		if doc.Data()["cancelled"] == true {
+			continue
+		}
+		var b Booking
+		if err := doc.DataTo(&b); err != nil {
+			continue
+		}
+		bDur := time.Duration(b.DurationMinute) * time.Minute
+		if bDur <= 0 {
+			bDur = 60 * time.Minute
+		}
+		if !(eventDateTime.Before(b.DateTime.Add(bDur)) && b.DateTime.Before(eventEnd)) {
+			continue
+		}
+		objetivos = append(objetivos, aviso{citaID: doc.Ref.ID, token: b.ClientPushToken, nombre: b.ClientName, calEvt: b.CalendarEvt, empID: b.EmpID})
+	}
+	canceladas := 0
+	for _, o := range objetivos {
+		docRef := firestoreClient.Collection("reservas").Doc(o.citaID)
+		err := firestoreClient.RunTransaction(ctx, func(ctx context.Context, tx *firestore.Transaction) error {
+			snap, err := tx.Get(docRef)
+			if err != nil {
+				return err
+			}
+			if snap.Data()["cancelled"] == true {
+				return errYaAplicado
+			}
+			var b Booking
+			snap.DataTo(&b)
+			if b.NegocioID != slug {
+				return errYaAplicado
+			}
+			if err := tx.Update(docRef, []firestore.Update{
+				{Path: "cancelled", Value: true},
+				{Path: "cancelled_at", Value: time.Now()},
+			}); err != nil {
+				return err
+			}
+			cliRef := firestoreClient.Collection("clientes").Doc(clienteDocID(slug, b.UserPhone))
+			if err := tx.Set(cliRef, clienteCRMData(slug, b.UserPhone, -1, -b.Price), firestore.MergeAll); err != nil {
+				return err
+			}
+			if snap.Data()["pagado"] == true {
+				if err := tx.Set(cliRef, map[string]interface{}{
+					"paid_total":  firestore.Increment(-b.Price),
+					"paid_visits": firestore.Increment(-1),
+					"updated_at":  time.Now(),
+				}, firestore.MergeAll); err != nil {
+					return err
+				}
+			}
+			negRef := firestoreClient.Collection("negocios").Doc(slug)
+			return tx.Set(negRef, negocioStatsData(-1, -b.Price), firestore.MergeAll)
+		})
+		if err != nil {
+			if errors.Is(err, errYaAplicado) {
+				continue
+			}
+			log.Printf("Error cancelando inscrito %s de sesión %s %s: %v", o.citaID, recursoID, fechaStr, err)
+			continue
+		}
+		canceladas++
+	}
+	// Borrar eventos reales de Calendar del instructor (las reservas solo de
+	// espacio no crean evento; el guard lo filtra igual que al cancelar).
+	for _, o := range objetivos {
+		if o.calEvt != "" && o.calEvt != "mock_event_123" {
+			deleteCalendarEvent(ctx, slug, o.empID, o.calEvt)
+		}
+	}
+	// Fan-out push en background (igual que la cancelación individual): solo
+	// llega a quienes registraron token en ese dispositivo.
+	avisadas := 0
+	for _, o := range objetivos {
+		if o.token == "" {
+			continue
+		}
+		avisadas++
+		go sendPushToClient(context.Background(), o.token,
+			"Clase cancelada",
+			fmt.Sprintf("Hola %s: tu sesión de %s del %s a las %s fue cancelada por el local.", o.nombre, rec.Name, fechaStr, horaStr),
+			"/shop/"+slug, "sesion-cancel-"+o.citaID)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"message":    fmt.Sprintf("Sesión cancelada: %d reserva(s), %d aviso(s) por push.", canceladas, avisadas),
+		"canceladas": canceladas,
+		"avisadas":   avisadas,
 	})
 }
 
@@ -3254,6 +3615,9 @@ func getFreeSlots(ctx context.Context, negocioID, empID string, day time.Time, d
 		bookStart, bookEnd = day, day.Add(24*time.Hour)
 	}
 	booked := firestoreBookedIntervals(ctx, negocioID, empID, bookStart, bookEnd)
+	// Bloqueo Duro: las clases con horario fijo que dicta el empleado ocupan
+	// su agenda 1-a-1 aunque no tengan alumnos inscritos todavía.
+	booked = append(booked, intervalosClaseInstructor(ctx, negocioID, empID, day)...)
 	slotDur := time.Duration(durationMinutes) * time.Minute
 	filtered := make([]string, 0)
 	for _, s := range slots {
@@ -3296,6 +3660,31 @@ func instructorRecursos(ctx context.Context, slug, empID string) []string {
 		}
 	}
 	return ids
+}
+
+// intervalosClaseInstructor ("Bloqueo Duro"): convierte el horario semanal
+// fijo de las clases que dicta el empleado en intervalos ocupados del día
+// consultado. La clase bloquea su agenda 1-a-1 aunque aún no tenga alumnos
+// inscritos (sin documentos de reserva). Sin horario propio el espacio es
+// flexible (cancha alquilada) y no bloquea nada.
+func intervalosClaseInstructor(ctx context.Context, slug, empID string, day time.Time) [][2]time.Time {
+	if empID == "" {
+		return nil
+	}
+	docs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Documents(ctx).GetAll()
+	if err != nil {
+		return nil
+	}
+	var out [][2]time.Time
+	for _, d := range docs {
+		var rec Recurso
+		if err := d.DataTo(&rec); err != nil || rec.InstructorID != empID || rec.Horario == nil {
+			continue
+		}
+		dia := employeeDayHorario(rec.Horario, day.Weekday())
+		out = append(out, splitShiftIntervals(ctx, slug, dia, day)...)
+	}
+	return out
 }
 
 // intervalosDeDocs convierte reservas a intervalos [inicio, fin), saltando

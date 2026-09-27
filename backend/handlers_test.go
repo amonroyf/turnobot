@@ -1975,6 +1975,285 @@ func TestCrearRecursoValidaInstructor(t *testing.T) {
 	}
 }
 
+// diaClaveES mapea el weekday a la clave del HorarioSemanal (lunes..domingo).
+func diaClaveES(wd time.Weekday) string {
+	switch wd {
+	case time.Monday:
+		return "lunes"
+	case time.Tuesday:
+		return "martes"
+	case time.Wednesday:
+		return "miercoles"
+	case time.Thursday:
+		return "jueves"
+	case time.Friday:
+		return "viernes"
+	case time.Saturday:
+		return "sabado"
+	default:
+		return "domingo"
+	}
+}
+
+// Escudo Preventivo: crear clase con instructor + horario que choca con sus
+// citas 1-a-1 futuras se rechaza (409); sin choque pasa (201).
+func TestCrearRecursoBloqueaChoqueInstructor(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-choque")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenochoque@test.com")
+	duenoTok := tokenClienteTest(t, "duenochoque@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	// 1-a-1 con emp1 mañana 10:00-10:30 (svc1 dura 30 min).
+	fecha := mañanaStr()
+	code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "X", "clienteTelefono": "+573006661111",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book 1-a-1 code=%d, esperaba 201", code)
+	}
+	bog, _ := time.LoadLocation("America/Bogota")
+	f, _ := time.ParseInLocation("2006-01-02", fecha, bog)
+	clave := diaClaveES(f.Weekday())
+	// Mismo día 09:00-11:00 con instructor emp1 → 409 instructor_con_choque.
+	c, out := crear(fmt.Sprintf(
+		`{"name":"Funcional","tipo":"clase","capacidad":15,"duration_minutes":60,"instructor_id":"emp1","horario":{%q:{"activo":true,"turnos":[{"inicio":"09:00","fin":"11:00"}]}}}`,
+		clave))
+	if c != http.StatusConflict || out["error"] != "instructor_con_choque" {
+		t.Fatalf("choque code=%d out=%v, esperaba 409 instructor_con_choque", c, out)
+	}
+	// Otro día (sin citas) → 201.
+	otra := map[string]string{
+		"lunes": "martes", "martes": "miercoles", "miercoles": "jueves",
+		"jueves": "viernes", "viernes": "sabado", "sabado": "domingo", "domingo": "lunes",
+	}[clave]
+	c2, _ := crear(fmt.Sprintf(
+		`{"name":"Funcional","tipo":"clase","capacidad":15,"duration_minutes":60,"instructor_id":"emp1","horario":{%q:{"activo":true,"turnos":[{"inicio":"09:00","fin":"11:00"}]}}}`,
+		otra))
+	if c2 != http.StatusCreated {
+		t.Fatalf("sin choque code=%d, esperaba 201", c2)
+	}
+}
+
+// Bloqueo Duro: la clase con horario fijo bloquea la agenda 1-a-1 del
+// instructor aunque no tenga ni un alumno inscrito; la clase sí se ofrece
+// (hora extra fuera de su horario personal también vale).
+func TestBloqueoDuroClaseSinAlumnos(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-duro")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenoduro@test.com")
+	duenoTok := tokenClienteTest(t, "duenoduro@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	// Clase 09:00-18:00 todos los días con instructor emp1 (sin choque previo).
+	payload := `{"name":"Funcional","tipo":"clase","capacidad":15,"duration_minutes":60,"instructor_id":"emp1","horario":{`
+	dias := []string{"lunes", "martes", "miercoles", "jueves", "viernes", "sabado", "domingo"}
+	for i, d := range dias {
+		if i > 0 {
+			payload += ","
+		}
+		payload += fmt.Sprintf(`%q:{"activo":true,"turnos":[{"inicio":"09:00","fin":"18:00"}]}`, d)
+	}
+	payload += `}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+duenoTok)
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("crear clase code=%d body=%s, esperaba 201", rec.Code, rec.Body.String())
+	}
+	var creada map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &creada)
+	recID, _ := creada["id"].(string)
+	if recID == "" {
+		t.Fatalf("sin id de recurso: %s", rec.Body.String())
+	}
+	slotsDe := func(q string) []string {
+		r := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug+"/slots?"+q, nil)
+		w := httptest.NewRecorder()
+		getSlotsHandler(w, r, slug)
+		if w.Code != http.StatusOK {
+			t.Fatalf("slots %s code=%d, esperaba 200", q, w.Code)
+		}
+		var arr []string
+		if err := json.Unmarshal(w.Body.Bytes(), &arr); err == nil {
+			return arr
+		}
+		var obj struct {
+			Slots []string `json:"slots"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &obj); err != nil {
+			t.Fatalf("slots %s ilegible: %s", q, w.Body.String())
+		}
+		return obj.Slots
+	}
+	fecha := mañanaStr()
+	// Sin un solo alumno: la agenda 1-a-1 de emp1 queda vacía ese día.
+	if emp := slotsDe("emp_id=emp1&servicio_id=svc1&fecha=" + fecha); len(emp) != 0 {
+		t.Fatalf("1-a-1 ofrecido durante clase sin alumnos: %v", emp)
+	}
+	// La clase sí se ofrece (10:00 libre, 0/15).
+	esp := slotsDe("recurso_id=" + recID + "&fecha=" + fecha + "&cupos=1")
+	hay := false
+	for _, s := range esp {
+		if s == "10:00" {
+			hay = true
+		}
+	}
+	if !hay {
+		t.Fatalf("sesión 10:00 ausente sin motivo: %v", esp)
+	}
+}
+
+// Cancelar sesión puntual: dueño o instructor cancela inscritos (CRM +
+// Calendar + fan-out push), idempotente; 401 sin permiso, 409 si ya pasó.
+func TestCancelarSesionPuntual(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-sesion")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenosesion@test.com")
+	duenoTok := tokenClienteTest(t, "duenosesion@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) string {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("crear clase code=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		id, _ := out["id"].(string)
+		return id
+	}
+	// Espacio flexible (sin horario): no dispara el Escudo Preventivo.
+	recID := crear(`{"name":"Funcional","tipo":"clase","capacidad":5,"duration_minutes":60,"instructor_id":"emp1"}`)
+	fecha := mañanaStr()
+	reservar := func(phone string) {
+		body, _ := json.Marshal(map[string]interface{}{
+			"recursoId": recID,
+			"fecha": fecha, "hora": "10:00",
+			"clienteNombre": "Alu", "clienteTelefono": phone,
+			"clientePushToken": "fake-tok-" + phone,
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("book sesión %s code=%d body=%s", phone, rec.Code, rec.Body.String())
+		}
+	}
+	reservar("+573007771111")
+	reservar("+573007772222")
+	borrarSesion := func(token, f, h string) (int, map[string]interface{}) {
+		url := "/api/v1/b/" + slug + "/recursos/" + recID + "/sesiones?fecha=" + f + "&hora=" + h
+		req := httptest.NewRequest(http.MethodDelete, url, nil)
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	// Sin token → 401.
+	if c, _ := borrarSesion("", fecha, "10:00"); c != http.StatusUnauthorized {
+		t.Fatalf("sin auth code=%d, esperaba 401", c)
+	}
+	// Empleado ajeno (no instructor) → 401.
+	if c, _ := borrarSesion(signEmployeeToken(slug, "emp2"), fecha, "10:00"); c != http.StatusUnauthorized {
+		t.Fatalf("empleado ajeno code=%d, esperaba 401", c)
+	}
+	// Dueño cancela: 2 reservas, 2 avisos (ambos con token).
+	c, out := borrarSesion(duenoTok, fecha, "10:00")
+	if c != http.StatusOK || out["success"] != true {
+		t.Fatalf("dueño code=%d out=%v, esperaba 200", c, out)
+	}
+	if n, _ := out["canceladas"].(float64); n != 2 {
+		t.Fatalf("canceladas=%v, esperaba 2", out["canceladas"])
+	}
+	if n, _ := out["avisadas"].(float64); n != 2 {
+		t.Fatalf("avisadas=%v, esperaba 2", out["avisadas"])
+	}
+	for _, ph := range []string{"+573007771111", "+573007772222"} {
+		for _, id := range reservaIDsPorTelefono(t, ctx, slug, ph) {
+			doc, _ := firestoreClient.Collection("reservas").Doc(id).Get(ctx)
+			if doc.Data()["cancelled"] != true {
+				t.Fatalf("reserva %s no quedó cancelada", id)
+			}
+		}
+		if v := visitasCliente(t, ctx, slug, ph); v != 0 {
+			t.Fatalf("visits %s=%d, esperaba 0", ph, v)
+		}
+	}
+	// Idempotente: repetir avisa success con 0.
+	if c2, out2 := borrarSesion(duenoTok, fecha, "10:00"); c2 != http.StatusOK || out2["canceladas"].(float64) != 0 {
+		t.Fatalf("reintento code=%d out=%v, esperaba 200 con 0", c2, out2)
+	}
+	// Instructor responsable también puede (otra hora con 1 inscrito).
+	reservar2 := func() {
+		body, _ := json.Marshal(map[string]interface{}{
+			"recursoId": recID,
+			"fecha": fecha, "hora": "11:00",
+			"clienteNombre": "Alu3", "clienteTelefono": "+573007773333",
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		authClienteUnico(t, req)
+		rec := httptest.NewRecorder()
+		bookHandler(rec, req, slug)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("book 11:00 code=%d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+	reservar2()
+	c3, out3 := borrarSesion(signEmployeeToken(slug, "emp1"), fecha, "11:00")
+	if c3 != http.StatusOK || out3["canceladas"].(float64) != 1 {
+		t.Fatalf("instructor code=%d out=%v, esperaba 200 con 1", c3, out3)
+	}
+	// Sesión pasada → 409.
+	ayer := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	if c4, out4 := borrarSesion(duenoTok, ayer, "10:00"); c4 != http.StatusConflict || out4["error"] != "sesion_pasada" {
+		t.Fatalf("pasada code=%d out=%v, esperaba 409 sesion_pasada", c4, out4)
+	}
+}
+
 // Salud del servicio.
 func TestHealth(t *testing.T) {
 	testFirestoreClient(t)

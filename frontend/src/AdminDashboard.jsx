@@ -42,15 +42,15 @@ export function HorarioEmpleadoModal({ negocioId, empleado, onClose }) {
   );
 }
 
-export function HorarioRecursoModal({ negocioId, recurso, jornada, onClose }) {
+export function HorarioRecursoModal({ negocioId, recurso, jornada, recienCreado, onClose }) {
   // Si el espacio aún no tiene horario, se precarga la jornada del local
   // (no defaults duros): guardar sin editar nunca encoge la disponibilidad.
   const inicial = recurso.horario || horarioDesdeJornada(jornada);
   return (
     <HorarioModal
-      titulo="Horario del espacio"
+      titulo={recurso.recienCreado || recienCreado ? '¡Espacio creado!' : 'Horario del espacio'}
       nombre={recurso.name}
-      bajada="Días y turnos en que se puede reservar. Desmarca los días que no aplica."
+      bajada={recurso.recienCreado || recienCreado ? 'Define en qué días y horarios se ofrece. Si lo cierras sin guardar, queda el horario de ejemplo.' : 'Días y turnos en que se puede reservar. Desmarca los días que no aplica.'}
       horarioInicial={inicial}
       onGuardar={async (horario) => {
         const recRef = doc(db, `negocios/${negocioId}/recursos`, recurso.id);
@@ -235,8 +235,13 @@ function AdminPanel() {
   const [cancelando, setCancelando] = useState('');
   const [nuevoServicio, setNuevoServicio] = useState({ name: '', duration_minutes: 30, price: '', descripcion: '' });
   const [nuevoProfesional, setNuevoProfesional] = useState({ name: '' });
-  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', horario: horarioViernes14a16() });
+  const [nuevoRecurso, setNuevoRecurso] = useState({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', duration_minutes: 120, price: '', instructor_id: '', horario: horarioViernes14a16() });
   const [usarHorarioPropio, setUsarHorarioPropio] = useState(true);
+  // Editor de horario DURANTE la creación (modal en modo local: guarda en el
+  // estado, no en Firestore). Sin esto, el 409 del Escudo ("cambia el
+  // horario") era un callejón sin salida: no había dónde cambiarlo.
+  const [showHorarioNuevo, setShowHorarioNuevo] = useState(false);
+  const [horarioNuevoEditado, setHorarioNuevoEditado] = useState(false);
   const [editandoRecurso, setEditandoRecurso] = useState(null);
   const [editRecursoVals, setEditRecursoVals] = useState({ capacidad: 1 });
   const [guardandoRecurso, setGuardandoRecurso] = useState(false);
@@ -253,6 +258,31 @@ function AdminPanel() {
     }
     setGuardandoRecurso(false);
   };
+  const [guardandoInstructor, setGuardandoInstructor] = useState('');
+
+  // Instructor del espacio (directo como cupos): con instructor bloquea su
+  // 1-a-1 y aparece en su portal; sin instructor es flexible. El Escudo
+  // Preventivo aplica al crear (backend); aquí el resguardo es la
+  // verificación transaccional al reservar (cero choques igual).
+  const handleInstructorRecurso = async (recurso, instructorId) => {
+    if ((recurso.instructor_id || '') === (instructorId || '')) return;
+    setGuardandoInstructor(recurso.id);
+    try {
+      await updateDoc(doc(db, `negocios/${negocio.id}/recursos`, recurso.id), { instructor_id: instructorId || '' });
+      invalidarCache();
+      const nombre = (profesionales.find((p) => p.id === instructorId) || {}).name;
+      await avisar(
+        instructorId
+          ? `${nombre || 'El instructor'} ahora dicta "${recurso.name}": su agenda 1-a-1 se bloquea en ese horario.`
+          : `"${recurso.name}" quedó sin instructor: flexible, no bloquea agendas.`,
+        'exito',
+      );
+    } catch (err) {
+      await avisar('No se pudo guardar el instructor. Intenta de nuevo.', 'error');
+    }
+    setGuardandoInstructor('');
+  };
+
   const [eliminando, setEliminando] = useState('');
   const [horarioModal, setHorarioModal] = useState(null);
   const [horarioRecursoModal, setHorarioRecursoModal] = useState(null);
@@ -617,6 +647,7 @@ function AdminPanel() {
           duration_minutes: duracionCalculada,
           price: nuevoRecurso.price === '' ? 0 : Number(nuevoRecurso.price),
           descripcion: (nuevoRecurso.descripcion || '').trim().slice(0, 500),
+          instructor_id: nuevoRecurso.instructor_id || '',
           horario: usarHorarioPropio ? nuevoRecurso.horario : null,
         }),
       });
@@ -625,10 +656,24 @@ function AdminPanel() {
         await avisar(data?.message || await res.text().catch(() => '') || 'No se pudo guardar el espacio.', 'error');
         return;
       }
-      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', price: '', horario: horarioViernes14a16() });
+      const data = await res.json().catch(() => null);
+      // El botón promete "configurar horario": se cumple abriendo el modal
+      // DIRECTO, sin toast intermedio que bloquee la cadena (si ese diálogo
+      // no se confirma, el modal jamás abriría y no habría error visible).
+      // El propio modal confirma la creación con su título.
+      const horarioCreado = usarHorarioPropio ? nuevoRecurso.horario : null;
+      const nombreCreado = nombre;
+      // Si ya definió el horario en el formulario, no se reabre el modal.
+      const yaDefinido = horarioNuevoEditado;
+      setNuevoRecurso({ name: '', tipo: 'clase', capacidad: 1, descripcion: '', price: '', instructor_id: '', horario: horarioViernes14a16() });
       setUsarHorarioPropio(true);
+      setHorarioNuevoEditado(false);
       invalidarCache();
-      await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
+      if (data?.id && !yaDefinido) {
+        setHorarioRecursoModal({ id: data.id, name: nombreCreado, horario: horarioCreado, recienCreado: true });
+      } else {
+        await avisar('Espacio creado. Ya aparece para reservar.', 'exito');
+      }
     } catch (err) {
       await avisar('No se pudo guardar el espacio. Intenta de nuevo.', 'error');
     }
@@ -718,6 +763,48 @@ function AdminPanel() {
       await avisar('No se pudo cancelar la cita. Intenta de nuevo.', 'error');
     } finally {
       setCancelando('');
+    }
+  };
+
+  // Cancela la sesión puntual completa (ej. el instructor se enfermó): el
+  // backend cancela a cada inscrito y les avisa por push. Sin devoluciones
+  // (el pago es en el local).
+  const [cancelandoSesion, setCancelandoSesion] = useState('');
+  const handleCancelarSesion = async (grupo) => {
+    const recursoId = grupo.recurso?.id || (grupo.miembros || []).find((m) => m.recurso_id)?.recurso_id;
+    const activas = (grupo.miembros || []).filter((m) => !m.cancelled && !m.no_show);
+    if (!recursoId || activas.length === 0 || !grupo.minMs || !grupo.horaStr) return;
+    const fecha = diaKeyEnZona(grupo.minMs, zonaNegocio);
+    const ok = await confirmar({
+      titulo: `¿Cancelar la sesión "${grupo.nombre}"?`,
+      detalle: `${fecha} · ${grupo.horaStr} · ${activas.length} inscrito(s).`,
+      consecuencia: 'Se cancela a cada inscrito y se le avisa por push. El cupo se libera. Sin devoluciones: el pago es en el local.',
+      confirmarTexto: 'Sí, cancelar sesión',
+      variante: 'peligro',
+    });
+    if (!ok) return;
+    setCancelandoSesion(grupo.key);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL || ''}/api/v1/b/${negocio.id}/recursos/${recursoId}/sesiones?fecha=${fecha}&hora=${encodeURIComponent(grupo.horaStr)}`,
+        {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        },
+      );
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        const ids = new Set(activas.map((m) => m.id));
+        setReservas((prev) => prev.map((item) => (ids.has(item.id) ? { ...item, cancelled: true } : item)));
+        await avisar(data?.message || 'Sesión cancelada y avisada por push.', 'exito');
+      } else {
+        await avisar(data?.message || 'No se pudo cancelar la sesión. Intenta de nuevo.', 'error');
+      }
+    } catch (err) {
+      await avisar('No se pudo cancelar la sesión. Intenta de nuevo.', 'error');
+    } finally {
+      setCancelandoSesion('');
     }
   };
 
@@ -934,6 +1021,10 @@ function AdminPanel() {
     const capacidad = recurso?.capacidad || Math.max(activas.length, 1);
     const pct = Math.min(100, Math.round((activas.length / capacidad) * 100));
     const lleno = activas.length >= capacidad;
+    // La sesión ya pasó: no se cancela (regla global; backend responde 409).
+    const durSesion = (activas[0]?.duration_minutes || 60) * 60000;
+    const sesionFutura = grupo.minMs + durSesion > ahora;
+    const sePuedeCancelarSesion = activas.length > 0 && sesionFutura && (recurso?.id || miembros.some((m) => m.recurso_id));
     return (
       <div className="mb-4 bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
         <button
@@ -1035,6 +1126,18 @@ function AdminPanel() {
               </li>
             ))}
           </ul>
+        )}
+        {abierto && sePuedeCancelarSesion && (
+          <div className="border-t border-gray-100 px-4 py-2.5 bg-gray-50/60">
+            <button
+              type="button"
+              onClick={() => handleCancelarSesion(grupo)}
+              disabled={cancelandoSesion === grupo.key}
+              className="w-full min-h-[44px] py-2 text-[11px] text-red-600 font-bold bg-red-50 border border-red-100 rounded-xl active:scale-95 transition-transform disabled:opacity-50"
+            >
+              {cancelandoSesion === grupo.key ? 'Cancelando sesión…' : `✕ Cancelar sesión (${activas.length} inscrito${activas.length === 1 ? '' : 's'} · avisa por push)`}
+            </button>
+          </div>
         )}
       </div>
     );
@@ -1750,6 +1853,21 @@ function AdminPanel() {
                         {r.descripcion && (
                           <p className="text-xs font-medium text-gray-600 mt-0.5">{r.descripcion}</p>
                         )}
+                        <label className="block mt-1.5">
+                          <span className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Instructor</span>
+                          <select
+                            value={r.instructor_id || ''}
+                            disabled={guardandoInstructor === r.id}
+                            onChange={(e) => handleInstructorRecurso(r, e.target.value)}
+                            aria-label={`Instructor de ${r.name}`}
+                            className="w-full min-h-[44px] p-2.5 border border-gray-200 rounded-xl text-xs font-bold bg-gray-50 focus:border-black focus:outline-none disabled:opacity-50"
+                          >
+                            <option value="">Sin instructor (flexible)</option>
+                            {profesionales.map((p) => (
+                              <option key={p.id} value={p.id}>👤 {p.name}</option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <button
@@ -1804,8 +1922,14 @@ function AdminPanel() {
                   </li>
                 ))}
               </ul>
-              <form onSubmit={handleAddRecurso} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar clase o espacio</h3>
+              <form onSubmit={handleAddRecurso} className="space-y-4 pt-4 border-t border-gray-100">
+                <div>
+                  <h3 className="text-sm font-black text-gray-900">Agregar clase o espacio</h3>
+                  <p className="text-[11px] text-gray-500 font-medium mt-0.5">Primero las reglas; al guardar te pedimos el horario.</p>
+                </div>
+                {/* 1 · Detalles básicos (agrupación: lo descriptivo junto) */}
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">1 · Detalles básicos</h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block">
                     <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre</span>
@@ -1834,6 +1958,20 @@ function AdminPanel() {
                     </select>
                   </label>
                 </div>
+                <label className="block">
+                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
+                  <textarea
+                    rows={2} maxLength={500} placeholder="Ej. Cancha sintética techada, trae zapatos de goma…"
+                    value={nuevoRecurso.descripcion}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, descripcion: e.target.value })}
+                    aria-label="Información del espacio nuevo"
+                    className="w-full p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
+                  />
+                </label>
+                </div>
+                {/* 2 · Reglas de reserva (agrupación: números que definen el cupo) */}
+                <div className="bg-gray-50 border border-gray-100 rounded-2xl p-4 space-y-3">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">2 · Reglas de reserva</h4>
                 <div className="grid grid-cols-2 gap-3">
                    <label className="block">
                      <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Cupos (1 = exclusivo)</span>
@@ -1856,23 +1994,60 @@ function AdminPanel() {
                      />
                    </label>
 </div>
+                </div>
+                {/* 3 · Instructor (feedback inmediato del efecto en agenda) */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">3 · Instructor (opcional)</h4>
                 <label className="block">
-                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Info del espacio (opcional, máx 500)</span>
-                  <textarea
-                    rows={2} maxLength={500} placeholder="Ej. Cancha sintética techada, trae zapatos de goma…"
-                    value={nuevoRecurso.descripcion}
-                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, descripcion: e.target.value })}
-                    aria-label="Información del espacio nuevo"
-                    className="w-full p-3 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black resize-none"
-                  />
+                  <span className="block text-[11px] font-bold text-gray-700 mb-1">¿Alguien de tu equipo dirige este espacio?</span>
+                  <select
+                    value={nuevoRecurso.instructor_id || ''}
+                    onChange={(e) => setNuevoRecurso({ ...nuevoRecurso, instructor_id: e.target.value })}
+                    aria-label="Instructor responsable del espacio nuevo"
+                    className="w-full min-h-[48px] p-3 border border-gray-200 rounded-xl text-sm bg-white focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                  >
+                    <option value="">Sin instructor (espacio flexible)</option>
+                    {profesionales.map((p) => (
+                      <option key={p.id} value={p.id}>👤 {p.name}</option>
+                    ))}
+                  </select>
                 </label>
+                {nuevoRecurso.instructor_id ? (
+                  <div className="p-3 bg-green-50 border border-green-200 rounded-xl">
+                    <p className="text-[11px] text-green-800 font-medium leading-relaxed">
+                      <strong>Agenda protegida:</strong> mientras dicte esta clase, no le entrarán servicios 1-a-1 en ese horario y la clase aparece en su portal.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
+                    <p className="text-[11px] text-blue-800 font-medium leading-relaxed">
+                      <strong>Espacio flexible:</strong> sin instructor no bloquea ninguna agenda; se reserva según el horario que definas.
+                    </p>
+                  </div>
+                )}
+                </div>
+                {/* 4 · Horario (aquí mismo: si el Escudo choca, lo ajustas sin salir) */}
+                <div className="bg-white border border-gray-200 rounded-2xl p-4 space-y-3 shadow-sm">
+                  <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">4 · Horario</h4>
+                  <p className="text-[11px] font-medium text-gray-600 bg-gray-50 border border-gray-100 rounded-xl p-2.5">
+                    {resumenSemana(nuevoRecurso.horario)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowHorarioNuevo(true)}
+                    aria-label="Definir horario del espacio nuevo"
+                    className="w-full min-h-[48px] py-3 bg-gray-900 text-white font-bold rounded-xl text-xs active:scale-95 transition-transform"
+                  >
+                    🕒 Definir horario
+                  </button>
+                </div>
                 {/* Resumen previo: qué quedará configurado, sin sorpresas. */}
                 {nuevoRecurso.name && (
                   <p className="text-[11px] font-medium text-gray-600 bg-blue-50 border border-blue-100 rounded-xl p-2.5">
-                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {resumenSemana(nuevoRecurso.horario)} · {formatDinero(nuevoRecurso.price || '0')} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
+                    Quedará así: <strong>{nuevoRecurso.name}</strong> · {resumenSemana(nuevoRecurso.horario)} · {formatDinero(nuevoRecurso.price || '0')} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}{nuevoRecurso.instructor_id ? ` · con ${(profesionales.find((p) => p.id === nuevoRecurso.instructor_id) || {}).name || 'instructor'}` : ' · sin instructor'}.
                   </p>
                 )}
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
+                <button type="submit" className="w-full min-h-[52px] py-3.5 bg-black text-white font-bold rounded-2xl text-sm active:scale-95 transition-transform">Crear espacio y configurar horario →</button>
               </form>
               </>
               )}
@@ -2411,6 +2586,20 @@ function AdminPanel() {
 
       {horarioModal && <HorarioEmpleadoModal negocioId={negocio.id} empleado={horarioModal} onClose={() => { setHorarioModal(null); invalidarCache(); }} />}
       {horarioRecursoModal && <HorarioRecursoModal negocioId={negocio.id} recurso={horarioRecursoModal} jornada={jornadaLocal} onClose={() => { setHorarioRecursoModal(null); invalidarCache(); }} />}
+      {showHorarioNuevo && (
+        <HorarioModal
+          titulo="Horario del espacio nuevo"
+          nombre={nuevoRecurso.name || 'Espacio nuevo'}
+          bajada="Define en qué días y horarios se ofrece. Se guarda al crear el espacio."
+          horarioInicial={nuevoRecurso.horario}
+          onGuardar={async (h) => {
+            setNuevoRecurso((prev) => ({ ...prev, horario: h }));
+            setHorarioNuevoEditado(true);
+          }}
+          exito="Horario listo. Revisa el resumen y crea el espacio."
+          onClose={() => setShowHorarioNuevo(false)}
+        />
+      )}
       {serviciosModal && <ServiciosEmpleadoModal negocioId={negocio.id} empleado={serviciosModal} servicios={servicios} onClose={() => { setServiciosModal(null); invalidarCache(); }} />}
       {pinModal && <PinEmpleadoModal negocioId={negocio.id} empleado={pinModal} onClose={() => setPinModal(null)} />}
     </div>
