@@ -721,6 +721,23 @@ function SuperAdminPanel() {
             </div>
           </>
         )}
+
+        {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
+        <div className="mt-12 pt-6 pb-2 border-t border-gray-200/60 text-center">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all group"
+          >
+            <span className="w-5 h-5 bg-black text-white rounded-md flex items-center justify-center text-[10px] font-black group-hover:shadow-md transition-shadow">
+              T
+            </span>
+            <span className="text-[11px] font-bold text-gray-500">
+              Impulsado por <span className="text-gray-900">TurnoBot</span>
+            </span>
+          </a>
+        </div>
       </main>
     </div>
   );

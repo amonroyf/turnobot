@@ -1360,7 +1360,7 @@ function AdminPanel() {
                   const pendiente = hoy.filter(r => !r.pagado).reduce((s, r) => s + (Number(r.price) || 0), 0);
                   const sinPagar = hoy.filter(r => !r.pagado).length;
                   return (
-                    <div className="bg-gray-900 text-white rounded-2xl p-4 flex items-center gap-4 shadow-md">
+                    <div className="bg-black text-white rounded-2xl p-4 flex items-center gap-4 shadow-md">
                       <span className="text-2xl" aria-hidden="true">💰</span>
                       <div className="flex-1 min-w-0">
                         <p className="text-[10px] font-black uppercase tracking-widest text-gray-400">Cierre de hoy</p>
@@ -1708,7 +1708,7 @@ function AdminPanel() {
                     />
                   </label>
                 </div>
-                <button type="submit" className="w-full py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                <button type="submit" className="w-full py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   + Agregar Servicio
                 </button>
               </form>
@@ -1860,7 +1860,7 @@ function AdminPanel() {
                     Quedará así: <strong>{nuevoRecurso.name}</strong> · {resumenSemana(nuevoRecurso.horario)} · {formatDinero(nuevoRecurso.price || '0')} · {(Number(nuevoRecurso.capacidad) || 1) > 1 ? `${nuevoRecurso.capacidad} cupos` : 'uso exclusivo'}.
                   </p>
                 )}
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir espacio o clase</button>
               </form>
               </>
               )}
@@ -1955,7 +1955,7 @@ function AdminPanel() {
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
                 </label>
-                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir al equipo</button>
+                <button type="submit" className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">+ Añadir al equipo</button>
               </form>
             </div>
 
@@ -2003,7 +2003,7 @@ function AdminPanel() {
                   className="w-full p-3.5 border border-gray-200 rounded-xl text-sm focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                 />
                 </label>
-                <button type="submit" disabled={guardandoInfo} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
+                <button type="submit" disabled={guardandoInfo} className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform">
                   {guardandoInfo ? 'Guardando...' : 'Guardar datos'}
                 </button>
               </form>
@@ -2119,7 +2119,7 @@ function AdminPanel() {
                     </div>
                   </div>
                 </div>
-                <button type="submit" disabled={guardandoMarca} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                <button type="submit" disabled={guardandoMarca} className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
                   {guardandoMarca ? 'Guardando…' : 'Guardar marca'}
                 </button>
               </form>
@@ -2279,7 +2279,7 @@ function AdminPanel() {
                     🌍 Hora del negocio: <strong>{negocio?.timezone || 'America/Bogota'}</strong> (las citas siempre se muestran en esta hora).
                   </p>
                 </div>
-                <button type="submit" disabled={guardandoPoliticas} className="w-full min-h-[48px] py-3.5 bg-gray-900 text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
+                <button type="submit" disabled={guardandoPoliticas} className="w-full min-h-[48px] py-3.5 bg-black text-white font-bold rounded-xl text-sm active:scale-95 transition-transform disabled:opacity-50">
                   {guardandoPoliticas ? 'Guardando…' : 'Guardar reglas'}
                 </button>
               </form>
@@ -2363,6 +2363,23 @@ function AdminPanel() {
             </div>
           </div>
         )}
+
+        {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
+        <div className="mt-12 pt-6 pb-2 border-t border-gray-200/60 text-center">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all group"
+          >
+            <span className="w-5 h-5 bg-black text-white rounded-md flex items-center justify-center text-[10px] font-black group-hover:shadow-md transition-shadow">
+              T
+            </span>
+            <span className="text-[11px] font-bold text-gray-500">
+              Impulsado por <span className="text-gray-900">TurnoBot</span>
+            </span>
+          </a>
+        </div>
       </main>
 
       <nav aria-label="Secciones del panel" className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-6 py-2.5 flex justify-around items-center z-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">

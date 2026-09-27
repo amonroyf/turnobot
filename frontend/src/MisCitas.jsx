@@ -201,69 +201,86 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
         </div>
       )}
 
-      {citas && citas.length > 0 && (
-        <>
-          {/* Filtros de estado */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {[
-              { key: 'todas', label: 'Todas', count: citas.length },
-              { key: 'activas', label: 'Activas', count: citas.filter(c => !c.cancelled).length },
-              { key: 'canceladas', label: 'Canceladas', count: citas.filter(c => c.cancelled).length },
-            ].map(f => (
-              <button
-                key={f.key}
-                onClick={() => setFiltroEstado(f.key)}
-                className={`min-h-[44px] px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
-                  filtroEstado === f.key
-                    ? 'bg-black text-white shadow-md'
-                    : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                {f.label} ({f.count})
-              </button>
-            ))}
-          </div>
+        {citas && citas.length > 0 && (
+          <>
+            {/* Filtros de estado */}
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {[
+                { key: 'todas', label: 'Todas', count: citas.length },
+                { key: 'activas', label: 'Activas', count: citas.filter(c => !c.cancelled).length },
+                { key: 'canceladas', label: 'Canceladas', count: citas.filter(c => c.cancelled).length },
+              ].map(f => (
+                <button
+                  key={f.key}
+                  onClick={() => setFiltroEstado(f.key)}
+                  className={`min-h-[44px] px-4 py-2 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
+                    filtroEstado === f.key
+                      ? 'bg-black text-white shadow-md'
+                      : 'bg-white text-gray-500 border border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {f.label} ({f.count})
+                </button>
+              ))}
+            </div>
 
-          {/* SECCIÓN HOY */}
-          {citasHoy.length > 0 && (
-            <section>
-              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
-              <div className="space-y-3">
-                {citasHoy.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
-                ))}
-              </div>
-            </section>
-          )}
+            {/* SECCIÓN HOY */}
+            {citasHoy.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
+                <div className="space-y-3">
+                  {citasHoy.map(c => (
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-          {/* SECCIÓN MAÑANA */}
-          {citasManana.length > 0 && (
-            <section>
-              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
-              <div className="space-y-3">
-                {citasManana.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
-                ))}
-              </div>
-            </section>
-          )}
+            {/* SECCIÓN MAÑANA */}
+            {citasManana.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
+                <div className="space-y-3">
+                  {citasManana.map(c => (
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                  ))}
+                </div>
+              </section>
+            )}
 
-          {/* SECCIÓN PRÓXIMAS */}
-          {citasProximas.length > 0 && (
-            <section>
-              <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
-              <div className="space-y-3">
-                {citasProximas.map(c => (
-                  <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
-                ))}
-              </div>
-            </section>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
+            {/* SECCIÓN PRÓXIMAS */}
+            {citasProximas.length > 0 && (
+              <section>
+                <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
+                <div className="space-y-3">
+                  {citasProximas.map(c => (
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                  ))}
+                </div>
+              </section>
+            )}
+          </>
+        )}
+
+        {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
+        <div className="mt-12 pt-6 pb-2 border-t border-gray-200/60 text-center">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all group"
+          >
+            <span className="w-5 h-5 bg-black text-white rounded-md flex items-center justify-center text-[10px] font-black group-hover:shadow-md transition-shadow">
+              T
+            </span>
+            <span className="text-[11px] font-bold text-gray-500">
+              Impulsado por <span className="text-gray-900">TurnoBot</span>
+            </span>
+          </a>
+        </div>
+      </div>
+    );
+  }
 
 function CitaCard({ c, onCancel, cancelando, slug, API_URL, hoyMin, onMoved, getHeaders }) {
   const isCancelled = c.cancelled === true;

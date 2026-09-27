@@ -427,7 +427,7 @@ function PortalEmpleado() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 font-sans">
+      <div className={`${negocio?.marca?.color ? 'tema-marca ' : ''}min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 font-sans`} style={negocio?.marca?.color ? { '--marca': negocio.marca.color, '--sobre-marca': textoSobreMarca(negocio.marca.color) } : undefined}>
         <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
           <p className="text-[10px] font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
           <h1 className="text-2xl font-extrabold text-gray-900">{negocio?.name || slug}</h1>
@@ -673,6 +673,23 @@ function PortalEmpleado() {
             <ListaEmpleado items={filtrarPorEstado(citasProximas)} />
           </section>
         )}
+
+        {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
+        <div className="mt-12 pt-6 pb-2 border-t border-gray-200/60 text-center">
+          <a
+            href="/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 active:scale-95 transition-all group"
+          >
+            <span className="w-5 h-5 bg-black text-white rounded-md flex items-center justify-center text-[10px] font-black group-hover:shadow-md transition-shadow">
+              T
+            </span>
+            <span className="text-[11px] font-bold text-gray-500">
+              Impulsado por <span className="text-gray-900">TurnoBot</span>
+            </span>
+          </a>
+        </div>
       </main>
 
       {/* Mover cita */}
