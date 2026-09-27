@@ -115,6 +115,27 @@ function CTAPrincipal({ secundario = false, texto = 'Crear mi página gratis' })
   );
 }
 
+// NUEVO: Barra de navegación fija con efecto Glassmorphism
+function Navbar() {
+  return (
+    <nav className="fixed top-0 left-0 right-0 z-50 bg-gray-900/80 backdrop-blur-md border-b border-gray-800">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
+          <span className="text-white font-black text-lg tracking-wide">TurnoBot ✨</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <a href="/admin" className="text-sm font-bold text-gray-300 hover:text-white transition-colors hidden sm:block">
+            Entrar
+          </a>
+          <a href="/register" className="bg-green-500 hover:bg-green-600 text-white text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95 shadow-md shadow-green-500/20">
+            Crear mi página
+          </a>
+        </div>
+      </div>
+    </nav>
+  );
+}
+
 const features = [
   { icon: '📅', title: 'Calendario sin choques', desc: 'Se sincroniza con Google Calendar. Adiós a los turnos cruzados y a los huecos en la agenda.', svg: CalendarSVG },
   { icon: '💰', title: 'Servicios y espacios con precio claro', desc: 'Servicios 1 a 1 con duración y precio. Y espacios por cupos con barra de ocupación (ej: 12/30) y lista por persona.', svg: null },
@@ -133,7 +154,7 @@ const steps = [
 
 function HeroSection() {
   return (
-    <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white">
+    <section className="relative overflow-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-black text-white pt-28 pb-16 sm:pt-32 sm:pb-24">
       <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
         <div className="absolute -top-40 -right-40 w-80 h-80 bg-green-500/10 rounded-full blur-3xl"></div>
         <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-green-500/5 rounded-full blur-3xl"></div>
@@ -187,7 +208,7 @@ function HeroSection() {
 
 function DemoSection() {
   return (
-    <section id="demo" className="bg-white py-20 sm:py-28 scroll-mt-16">
+    <section id="demo" className="bg-white py-20 sm:py-28 scroll-mt-24">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <FadeIn>
           <div className="text-center max-w-3xl mx-auto mb-16">
@@ -617,6 +638,7 @@ function Footer() {
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-white font-sans antialiased">
+      <Navbar />
       <HeroSection />
       <DemoSection />
       <ProblemSection />
