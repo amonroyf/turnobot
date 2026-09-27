@@ -88,12 +88,17 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
     fecha ? `${formatearFechaLarga(fecha)}${hora ? ` a las ${hora}` : ''}` : null,
   ].filter(Boolean).join(' · ');
 
+  // Secuencia de peticiones: si el dueño cambia de día/servicio mientras una
+  // consulta vuela, la tardía se ignora (sin esto, slots de un día se pintan
+  // sobre otro y el confirmar rechaza con slot_taken).
+  const fetchSeqRef = useRef(0);
   const fetchSlots = async (f) => {
     setSlots([]);
     setHora('');
     setPrimerHueco(null);
     setSlotsPorHora({});
-    if (!f || !listoParaDias) return;
+    if (!f || !listoParaDias) return null;
+    const mi = ++fetchSeqRef.current;
     setLoading(true);
     setError('');
     try {
@@ -107,19 +112,26 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       }
       const res = await fetch(url);
       const data = await res.json().catch(() => null);
+      if (fetchSeqRef.current !== mi) return null;
+      let unidos = [];
       if (Array.isArray(data)) {
-        setSlots(data);
+        unidos = data;
       } else {
-        setSlots(Array.isArray(data?.slots) ? data.slots : []);
+        unidos = Array.isArray(data?.slots) ? data.slots : [];
         if (data?.asignado_por_hora) {
           setSlotsPorHora(data.asignado_por_hora);
         }
       }
+      setSlots(unidos);
+      return unidos;
     } catch {
+      if (fetchSeqRef.current !== mi) return null;
       setError('No pudimos cargar horarios.');
       setSlots([]);
+      return [];
+    } finally {
+      if (fetchSeqRef.current === mi) setLoading(false);
     }
-    setLoading(false);
   };
 
   const elegirFecha = (f) => {
@@ -149,9 +161,15 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
         setError('No encontramos huecos próximos. Elige el día manual.');
         return;
       }
-      setPrimerHueco(data);
       setFecha(data.fecha);
-      await fetchSlots(data.fecha);
+      const lista = await fetchSlots(data.fecha);
+      if (lista === null) return; // el dueño cambió de día mientras tanto
+      if (!lista.includes(data.hora)) {
+        setPrimerHueco(null);
+        setError('Ese hueco se acaba de ocupar. Elige otro de la lista.');
+        return;
+      }
+      setPrimerHueco(data);
       setHora(data.hora);
     } catch {
       setError('No pudimos buscar el primer hueco.');

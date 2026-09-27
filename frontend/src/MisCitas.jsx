@@ -24,6 +24,11 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
   const [cancelando, setCancelando] = useState('');
   const [citaCancelada, setCitaCancelada] = useState(null);
   const [filtroEstado, setFiltroEstado] = useState('todas');
+  // Paginación (un toque, sin recargar): cursor compuesto {iso, id} con
+  // avance estricto (nunca repite ni salta, ni al mismo minuto) + dedupe.
+  const [nextCursor, setNextCursor] = useState(null);
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const cursorValido = (nc) => (nc && nc.iso ? nc : null);
   // Solo Google: toda reserva web exige cuenta. Sin vía teléfono.
   const [currentUser, setCurrentUser] = useState(null);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -46,15 +51,46 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
     setError('');
     try {
       const idToken = await user.getIdToken();
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas`, {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/citas?limit=25`, {
         headers: { Authorization: `Bearer ${idToken}` },
       });
       if (!res.ok) throw new Error('Error del servidor');
-      setCitas(await res.json());
+      const data = await res.json();
+      const lista = Array.isArray(data) ? data : (data.citas || []);
+      setCitas(lista);
+      setNextCursor(!Array.isArray(data) ? cursorValido(data.next_cursor) : null);
     } catch {
       setError('Error buscando tus citas. Intenta de nuevo.');
     }
     setLoading(false);
+  };
+
+  const cargarMas = async () => {
+    if (!currentUser || cargandoMas || !nextCursor) return;
+    setCargandoMas(true);
+    setError('');
+    try {
+      const idToken = await currentUser.getIdToken();
+      const res = await fetch(
+        `${API_URL}/api/v1/b/${slug}/citas?limit=25&cursor=${encodeURIComponent(nextCursor.iso)}&cursor_id=${encodeURIComponent(nextCursor.id || '')}`,
+        { headers: { Authorization: `Bearer ${idToken}` } },
+      );
+      if (!res.ok) throw new Error('Error del servidor');
+      const data = await res.json();
+      const lista = Array.isArray(data) ? data : (data.citas || []);
+      setNextCursor(!Array.isArray(data) ? cursorValido(data.next_cursor) : null);
+      if (lista.length > 0) {
+        setCitas((prev) => {
+          if (!prev) return lista;
+          const vistos = new Set(prev.map((c) => c.id));
+          const nuevas = lista.filter((c) => !vistos.has(c.id));
+          return nuevas.length > 0 ? [...prev, ...nuevas] : prev;
+        });
+      }
+    } catch {
+      setError('Error buscando más citas. Intenta de nuevo.');
+    }
+    setCargandoMas(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -258,6 +294,17 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
                   ))}
                 </div>
               </section>
+            )}
+
+            {nextCursor && (
+              <button
+                type="button"
+                onClick={cargarMas}
+                disabled={cargandoMas}
+                className="w-full min-h-[48px] py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-2xl text-xs active:scale-95 transition-transform disabled:opacity-50 shadow-sm"
+              >
+                {cargandoMas ? 'Cargando más citas…' : 'Ver más citas ↓'}
+              </button>
             )}
           </>
         )}

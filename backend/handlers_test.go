@@ -417,7 +417,7 @@ func TestCancelIdempotenteYLiberaSlot(t *testing.T) {
 		t.Fatalf("reservas=%d", len(ids))
 	}
 
-	slotsAntes, err := getFreeSlots(ctx, slug, "emp1", mustParseFecha(t, fecha), 30)
+	slotsAntes, err := getFreeSlots(ctx, slug, "emp1", mustParseFecha(t, fecha), 30, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -435,7 +435,7 @@ func TestCancelIdempotenteYLiberaSlot(t *testing.T) {
 		t.Fatalf("visits=%d tras doble cancel, esperaba 0", v)
 	}
 
-	slotsDespues, err := getFreeSlots(ctx, slug, "emp1", mustParseFecha(t, fecha), 30)
+	slotsDespues, err := getFreeSlots(ctx, slug, "emp1", mustParseFecha(t, fecha), 30, "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { auth, provider, db } from './firebase';
 import usePushNotifications from './usePushNotifications';
 import NotificationDrawer from './NotificationDrawer';
@@ -12,6 +12,9 @@ import {
   collection,
   query,
   where,
+  orderBy,
+  limit,
+  startAfter,
   getDocs,
   onSnapshot,
   addDoc,
@@ -19,6 +22,11 @@ import {
   updateDoc,
   increment,
 } from 'firebase/firestore';
+
+// Tamaño de página de listas (cientos por negocio: primera página viva con
+// límite, resto a pedido con "Ver más", sin recargar).
+const PAGE_CITAS = 25;
+const PAGE_CLIENTES = 25;
 import { fechaHoyEnZona, sumarDias, diaKeyEnZona, horaEnZona, formatearFechaLarga, formatearTelefono, fechaHoraAUtc } from './fecha.js';
 import { IconoCalendario, IconoUsuarios, IconoAjustes } from './Iconos.jsx';
 import { HorarioModal, horarioDesdeJornada, horarioViernes14a16, resumenSemana } from './HorarioModal.jsx';
@@ -220,6 +228,15 @@ function AdminPanel() {
   const [recursos, setRecursos] = useState([]);
   const [reservas, setReservas] = useState([]);
   const [clientes, setClientes] = useState([]);
+  // Paginación agenda: primera página viva + resto estático a pedido.
+  const [cargandoMasCitas, setCargandoMasCitas] = useState(false);
+  const [hayMasCitas, setHayMasCitas] = useState(true);
+  // Paginación CRM: orden fidelidad (visits desc) + resto a pedido.
+  const [cargandoMasClientes, setCargandoMasClientes] = useState(false);
+  const [hayMasClientes, setHayMasClientes] = useState(true);
+  // Cursores exactos (documento Firestore): no saltan empates.
+  const ultimaCitaDoc = useRef(null);
+  const ultimoClienteDoc = useRef(null);
   const [loading, setLoading] = useState(true);
 
   const [infoLocal, setInfoLocal] = useState({ name: '', direccion: '', horario: '', telefono: '' });
@@ -363,10 +380,14 @@ function AdminPanel() {
           const inicioHoy = fechaHoraAUtc(fechaHoyEnZona(tzAgenda), '00:00', tzAgenda)
             || (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
 
+          // Primera página VIVA (límite): lo nuevo aparece solo. El resto se
+          // pide con "Ver más" (estático). Índice owner_uid + date_time.
           const qReservas = query(
             collection(db, 'reservas'),
             where('owner_uid', '==', currentUser.uid),
-            where('date_time', '>=', inicioHoy)
+            where('date_time', '>=', inicioHoy),
+            orderBy('date_time', 'asc'),
+            limit(PAGE_CITAS)
           );
 
           onSnapshot(qReservas, (snapshot) => {
@@ -374,6 +395,10 @@ function AdminPanel() {
               .map((d) => ({ id: d.id, ...d.data() }))
               .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
             setReservas(citas);
+            // Página llena = quizá hay más; incompleta = fin seguro.
+            setHayMasCitas(snapshot.docs.length >= PAGE_CITAS);
+            // Cursor exacto (documento): no salta empates del mismo minuto.
+            ultimaCitaDoc.current = snapshot.docs[snapshot.docs.length - 1] || null;
           }, (error) => console.error("Error consultando reservas:", error));
 
           // NOTA: la suscripción pasiva de Clientes se eliminó de aquí; el
@@ -385,16 +410,103 @@ function AdminPanel() {
     return unsubscribe;
   }, []);
 
-  // 2. LAZY LOADING DEL CRM: solo descarga si el usuario entra a la vista
+  // 2. LAZY LOADING DEL CRM: solo descarga si el usuario entra a la vista.
+  // Primera página VIVA ordenada por fidelidad (requiere índice
+  // clientes: owner_uid + visits desc); el resto a pedido con "Ver más".
   useEffect(() => {
     if (user && view === 'clientes' && clientes.length === 0) {
-      const qClientes = query(collection(db, 'clientes'), where('owner_uid', '==', user.uid));
+      const qClientes = query(
+        collection(db, 'clientes'),
+        where('owner_uid', '==', user.uid),
+        orderBy('visits', 'desc'),
+        limit(PAGE_CLIENTES)
+      );
       const unsub = onSnapshot(qClientes, (snapshot) => {
         setClientes(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setHayMasClientes(snapshot.docs.length >= PAGE_CLIENTES);
+        ultimoClienteDoc.current = snapshot.docs[snapshot.docs.length - 1] || null;
       }, (error) => console.error("Error cargando CRM:", error));
       return unsub;
     }
   }, [user, view, clientes.length]);
+
+  // "Ver más" sin recargar: páginas estáticas con cursor (un toque). La
+  // primera página sigue viva; estas se anexan deduplicando por id (una
+  // reserva nueva puede empujar un item vivo hacia la zona estática).
+  const cargarMasCitas = async () => {
+    if (!user || !negocio || cargandoMasCitas || !hayMasCitas) return;
+    // El cursor avanza con la última página ESTÁTICA si ya se pidió más;
+    // si no, con la cola de la página viva.
+    const cursorDoc = ultimaCitaDoc.current;
+    if (!cursorDoc && reservas.length === 0) {
+      setHayMasCitas(false);
+      return;
+    }
+    setCargandoMasCitas(true);
+    try {
+      const tz = negocio?.timezone || 'America/Bogota';
+      const inicioHoy = fechaHoraAUtc(fechaHoyEnZona(tz), '00:00', tz)
+        || (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; })();
+      const base = [
+        collection(db, 'reservas'),
+        where('owner_uid', '==', user.uid),
+        where('date_time', '>=', inicioHoy),
+        orderBy('date_time', 'asc'),
+      ];
+      const snap = await getDocs(query(
+        ...base,
+        ...(cursorDoc ? [startAfter(cursorDoc)] : []),
+        limit(PAGE_CITAS)
+      ));
+      if (snap.docs.length < PAGE_CITAS) setHayMasCitas(false);
+      if (snap.docs.length > 0) {
+        ultimaCitaDoc.current = snap.docs[snap.docs.length - 1];
+        const vistos = new Set(reservas.map((r) => r.id));
+        const nuevas = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((r) => !vistos.has(r.id));
+        if (nuevas.length > 0) setReservas((prev) => [...prev, ...nuevas]);
+      } else {
+        setHayMasCitas(false);
+      }
+    } catch (err) {
+      console.error('Error cargando más citas:', err);
+    }
+    setCargandoMasCitas(false);
+  };
+
+  const cargarMasClientes = async () => {
+    if (!user || cargandoMasClientes || !hayMasClientes || clientes.length === 0) return;
+    const cursorDoc = ultimoClienteDoc.current;
+    if (!cursorDoc) {
+      setHayMasClientes(false);
+      return;
+    }
+    setCargandoMasClientes(true);
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'clientes'),
+        where('owner_uid', '==', user.uid),
+        orderBy('visits', 'desc'),
+        startAfter(cursorDoc),
+        limit(PAGE_CLIENTES)
+      ));
+      if (snap.docs.length < PAGE_CLIENTES) setHayMasClientes(false);
+      if (snap.docs.length > 0) {
+        ultimoClienteDoc.current = snap.docs[snap.docs.length - 1];
+        const vistos = new Set(clientes.map((c) => c.id));
+        const nuevos = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((c) => !vistos.has(c.id));
+        if (nuevos.length > 0) setClientes((prev) => [...prev, ...nuevos]);
+      } else {
+        setHayMasClientes(false);
+      }
+    } catch (err) {
+      console.error('Error cargando más clientes:', err);
+    }
+    setCargandoMasClientes(false);
+  };
 
   const logout = () => signOut(auth);
 
@@ -1561,6 +1673,17 @@ function AdminPanel() {
                     </div>
                   );
                 })()}
+                {/* Paginación: un toque, sin recargar (primera página viva). */}
+                {hayMasCitas && (
+                  <button
+                    type="button"
+                    onClick={cargarMasCitas}
+                    disabled={cargandoMasCitas}
+                    className="w-full min-h-[48px] py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-2xl text-xs active:scale-95 transition-transform disabled:opacity-50 shadow-sm"
+                  >
+                    {cargandoMasCitas ? 'Cargando más citas…' : 'Ver más citas ↓'}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -1633,7 +1756,9 @@ function AdminPanel() {
                       );
                     }
 
-                    return filtrados.map((c, index) => {
+                    return (
+                      <>
+                        {filtrados.map((c, index) => {
                       // Top 3 clientes reciben una medalla visual
                       const isTop3 = index < 3 && !searchTermClientes;
 
@@ -1694,7 +1819,21 @@ function AdminPanel() {
                           </div>
                         </div>
                       );
-                    });
+                        })}
+                        {/* Paginación CRM: un toque, sin recargar. El buscador
+                            filtra sobre lo cargado. */}
+                        {!searchTermClientes && hayMasClientes && (
+                          <button
+                            type="button"
+                            onClick={cargarMasClientes}
+                            disabled={cargandoMasClientes}
+                            className="w-full min-h-[48px] py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-2xl text-xs active:scale-95 transition-transform disabled:opacity-50 shadow-sm"
+                          >
+                            {cargandoMasClientes ? 'Cargando más clientes…' : 'Ver más clientes ↓'}
+                          </button>
+                        )}
+                      </>
+                    );
                   })()}
                 </div>
               )}
@@ -1845,7 +1984,10 @@ function AdminPanel() {
                       <div className="min-w-0">
                         <p className="font-bold text-gray-900 truncate">📍 {r.name}</p>
                         <p className="text-xs font-medium text-gray-500 capitalize">
-                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}{r.horario ? ' · horario propio' : ''}
+                          {r.tipo || 'espacio'} · {(r.capacidad || 1) > 1 ? `${r.capacidad} cupos` : 'uso exclusivo'}
+                        </p>
+                        <p className="text-[11px] font-semibold text-gray-600 mt-0.5">
+                          🕒 {r.horario ? resumenSemana(r.horario) : `Jornada del local (${negocio?.open_time || '09:00'}–${negocio?.close_time || '18:00'})`}
                         </p>
                         <p className="text-xs font-semibold text-gray-700 mt-0.5">
                           ⏱️ {r.duration_minutes || 60} min · {formatDinero(r.price)}

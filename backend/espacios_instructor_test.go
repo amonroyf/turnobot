@@ -380,6 +380,10 @@ func TestBookDirectoEnBloqueo409(t *testing.T) {
 	if code != http.StatusConflict || out["error"] != "slot_taken" {
 		t.Fatalf("code=%d out=%v, esperaba 409 slot_taken", code, out)
 	}
+	// Dentro de jornada pero bloqueado por la clase: motivo ocupado.
+	if out["motivo"] != "ocupado" {
+		t.Fatalf("motivo=%v, esperaba ocupado", out["motivo"])
+	}
 }
 
 // ─── T3: cancelación de sesión ───
@@ -645,27 +649,22 @@ func TestDosEspaciosMismoInstructorBloqueoCruzado(t *testing.T) {
 	testAuthClient(t)
 	ctx := context.Background()
 	slug, duenoTok := setupEspacioTest(t, ctx, "test-dosbloq", "dosbloq@test.com")
-	fecha, clave := claveManana()
+	fecha, _ := claveManana()
 	mk := func(nombre string) string {
 		c, out := postRecursoTest(t, slug, duenoTok,
-			fmt.Sprintf(`{"name":%q,"tipo":"clase","capacidad":10,"duration_minutes":60,"instructor_id":"emp1","horario":%s}`, nombre, horarioDiaJSON(clave, "09:00", "18:00")))
+			fmt.Sprintf(`{"name":%q,"tipo":"clase","capacidad":10,"duration_minutes":60,"instructor_id":"emp1"}`, nombre))
 		if c != http.StatusCreated {
 			t.Fatalf("crear %s code=%d, esperaba 201", nombre, c)
 		}
 		id, _ := out["id"].(string)
 		return id
 	}
+	// Flexibles (sin horario fijo): el bloqueo cruzado aquí es por RESERVAS,
+	// no por horarios (eso lo cubre TestSolapeOtraClaseInstructor).
 	recA := mk("Fit A")
-	// Fit B se inserta directo (el Escudo ya impediría duplicarla por API):
-	// simula datos legacy para probar el bloqueo cruzado en reservas.
 	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("recB").Set(ctx, map[string]interface{}{
 		"name": "Fit B", "tipo": "clase", "capacidad": 10,
 		"duration_minutes": 60, "price": "0", "instructor_id": "emp1",
-		"horario": map[string]interface{}{
-			clave: map[string]interface{}{"activo": true, "turnos": []interface{}{
-				map[string]interface{}{"inicio": "09:00", "fin": "18:00"},
-			}},
-		},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -706,7 +705,8 @@ func TestDosEspaciosMismoInstructorBloqueoCruzado(t *testing.T) {
 	if rec.Code != http.StatusConflict || o["error"] != "slot_taken" {
 		t.Fatalf("book B code=%d out=%v, esperaba 409 slot_taken", rec.Code, o)
 	}
-	// Dueño cancela la de A → las 10:00 de B reaparecen.
+	// Dueño cancela la de A → B reaparece (sin horarios fijos, solo mandan
+	// las reservas).
 	citaID, _ := out["cita_id"].(string)
 	creq := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+citaID, nil)
 	creq.Header.Set("Authorization", "Bearer "+duenoTok)
@@ -760,6 +760,78 @@ func TestDosEspaciosDistintoInstructorIndependientes(t *testing.T) {
 	})
 	if code2 != http.StatusCreated {
 		t.Fatalf("book C code=%d, esperaba 201", code2)
+	}
+}
+
+// REGRESIÓN PROD (perrunos/Terapia): una clase con horario fijo e
+// instructor SÍ se puede reservar en su propio horario. El Bloqueo Duro no
+// debe bloquear al instructor de la clase que se está reservando.
+func TestClaseConHorarioReservable(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug, duenoTok := setupEspacioTest(t, ctx, "test-autobloq", "autobloq@test.com")
+	fecha, clave := claveManana()
+	c, out := postRecursoTest(t, slug, duenoTok,
+		fmt.Sprintf(`{"name":"Terapia","tipo":"clase","capacidad":11,"duration_minutes":120,"instructor_id":"emp1","horario":%s}`, horarioDiaJSON(clave, "14:00", "16:00")))
+	if c != http.StatusCreated {
+		t.Fatalf("crear clase code=%d, esperaba 201", c)
+	}
+	recID, _ := out["id"].(string)
+	// El panel (RegistroManual) y la web mandan empleadoId = instructor.
+	code, out2 := postBook(t, slug, map[string]string{
+		"recursoId": recID, "empleadoId": "emp1",
+		"fecha":     fecha, "hora": "14:00",
+		"clienteNombre": "X", "clienteTelefono": "+573008897777",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book clase code=%d out=%v, esperaba 201 (autobloqueo)", code, out2)
+	}
+}
+
+// Solape con OTRA clase del instructor (datos legacy): reservar B a una hora
+// cubierta por el horario fijo de A → 409; fuera de ese horario → 201.
+func TestSolapeOtraClaseInstructor(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug, duenoTok := setupEspacioTest(t, ctx, "test-solape", "solape@test.com")
+	fecha, clave := claveManana()
+	c, out := postRecursoTest(t, slug, duenoTok,
+		fmt.Sprintf(`{"name":"Fit A","tipo":"clase","capacidad":10,"duration_minutes":60,"instructor_id":"emp1","horario":%s}`, horarioDiaJSON(clave, "10:00", "12:00")))
+	if c != http.StatusCreated {
+		t.Fatalf("crear A code=%d, esperaba 201", c)
+	}
+	_ = out
+	// B directa (legacy) Lun 14-16 mismo instructor: no solapa con A.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("recB").Set(ctx, map[string]interface{}{
+		"name": "Fit B", "tipo": "clase", "capacidad": 10,
+		"duration_minutes": 60, "price": "0", "instructor_id": "emp1",
+		"horario": map[string]interface{}{
+			clave: map[string]interface{}{"activo": true, "turnos": []interface{}{
+				map[string]interface{}{"inicio": "14:00", "fin": "16:00"},
+			}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// 11:00 cae dentro del horario de A → 409 aunque A no tenga alumnos.
+	code, out2 := postBook(t, slug, map[string]string{
+		"recursoId": "recB", "empleadoId": "emp1",
+		"fecha":     fecha, "hora": "11:00",
+		"clienteNombre": "X", "clienteTelefono": "+573008898888",
+	})
+	if code != http.StatusConflict {
+		t.Fatalf("solape code=%d out=%v, esperaba 409", code, out2)
+	}
+	// 14:00 no solapa con A → 201.
+	code, out3 := postBook(t, slug, map[string]string{
+		"recursoId": "recB", "empleadoId": "emp1",
+		"fecha":     fecha, "hora": "14:00",
+		"clienteNombre": "Y", "clienteTelefono": "+573008899999",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("sin solape code=%d out=%v, esperaba 201", code, out3)
 	}
 }
 

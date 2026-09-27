@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { auth, provider, db } from './firebase';
 import { signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import {
-  collection, doc, updateDoc, onSnapshot, query, where,
+  collection, doc, updateDoc, onSnapshot, query, where, orderBy, limit,
 } from 'firebase/firestore';
 import { formatearTelefono } from './fecha.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
@@ -137,18 +137,23 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
   const [eliminando, setEliminando] = useState(false);
 
   useEffect(() => {
+    // Diagnóstico acotado: 50 próximas en servidor (antes descargaba todo
+    // el historial y recortaba en cliente). Clientes se deja completo porque
+    // los totales (ingresos/visitas) se calculan sobre el conjunto.
     const unsubReservas = onSnapshot(
-      query(collection(db, 'reservas'), where('negocio_id', '==', negocioId)),
+      query(
+        collection(db, 'reservas'),
+        where('negocio_id', '==', negocioId),
+        where('date_time', '>=', new Date()),
+        orderBy('date_time', 'asc'),
+        limit(50)
+      ),
       (snap) => {
-        const now = Date.now();
-        const citas = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((c) => {
-            const t = c.date_time?.seconds * 1000;
-            return t && t >= now && c.cancelled !== true;
-          })
-          .sort((a, b) => (a.date_time?.seconds || 0) - (b.date_time?.seconds || 0));
-        setReservas(citas);
+        setReservas(
+          snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((c) => c.cancelled !== true)
+        );
       },
     );
 
@@ -364,12 +369,12 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
       {/* Próximas citas */}
       <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
         <h3 className="text-sm font-bold text-gray-900 mb-1">Próximas citas ({reservas.length})</h3>
-        <p className="text-[11px] text-gray-500 font-medium mb-3">Solo futuras y no canceladas, en la hora del negocio.</p>
+        <p className="text-[11px] text-gray-500 font-medium mb-3">Solo futuras y no canceladas, en la hora del negocio (tope 50).</p>
         {reservas.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-4">Sin citas próximas</p>
         ) : (
           <div className="space-y-2 max-h-60 overflow-y-auto">
-            {reservas.slice(0, 20).map((r) => {
+            {reservas.map((r) => {
               const t = r.date_time?.seconds * 1000;
               const tz = negocio?.timezone || 'America/Bogota';
               const fecha = t ? new Date(t).toLocaleDateString('es-CO', { timeZone: tz }) : 'Sin fecha';

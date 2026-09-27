@@ -46,7 +46,7 @@ sin auth → 401.
 
 ### Reservas
 - `POST /api/v1/b/{slug}/book` — crea reserva (Firestore + Calendar)
-- `GET /api/v1/b/{slug}/citas?telefono=` — citas activas del cliente
+- `GET /api/v1/b/{slug}/citas?telefono=` — citas activas del cliente (paginable: `?limit=N&cursor=ISO&cursor_id=ID` → `{"citas":[],"next_cursor":{iso,id}}`; avance estricto, ni repite ni salta al mismo minuto)
 - `DELETE /api/v1/b/{slug}/citas/{id}` — cancela (nunca citas pasadas; el cliente solo con la antelación de `cancel_window_hours`, default 24h; dueño y equipo siempre)
 - `POST /api/v1/b/{slug}/citas/{id}/reschedule` — mueve la cita de día/hora (misma cita: no toca CRM; mueve el evento de Calendar; resetea `reminder_sent`)
 
@@ -68,7 +68,7 @@ sin auth → 401.
 
 ### Empleados (login con PIN, token 12h)
 - `POST /api/v1/b/{slug}/employee-login` — login (lockout: 5 fallos = 15 min)
-- `GET /api/v1/b/{slug}/employee/{id}/citas` — citas asignadas
+- `GET /api/v1/b/{slug}/employee/{id}/citas` — citas asignadas (paginable igual que `/citas`; mezcla directas + clases que dicta)
 - `POST /api/v1/b/{slug}/employee/{id}/register-push-token` — registrar push
 - `DELETE /api/v1/b/{slug}/employee/{id}/push-token` — baja de push
 

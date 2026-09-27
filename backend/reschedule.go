@@ -232,18 +232,26 @@ func rescheduleCitaHandler(w http.ResponseWriter, r *http.Request, slug, citaID 
 		}
 	}
 	if libre && b.EmpID != "" {
-		var slots []string
-		slots, err = getFreeSlots(ctx, slug, b.EmpID, parsedDate, dur)
-		if err != nil {
-			log.Printf("Error verificando disponibilidad para mover %s: %v", citaID, err)
-			http.Error(w, "Error verificando disponibilidad", http.StatusInternalServerError)
-			return
-		}
-		libre = false
-		for _, s := range slots {
-			if s == req.Hora {
-				libre = true
-				break
+		if b.RecursoID != "" {
+			// Mover sesión con instructor: solape, no rejilla (igual que /book).
+			nuevoEnd := nuevo.Add(time.Duration(dur) * time.Minute)
+			if choqueInstructor(ctx, slug, b.EmpID, b.RecursoID, nuevo, nuevoEnd) {
+				libre = false
+			}
+		} else {
+			var slots []string
+			slots, err = getFreeSlots(ctx, slug, b.EmpID, parsedDate, dur, b.RecursoID)
+			if err != nil {
+				log.Printf("Error verificando disponibilidad para mover %s: %v", citaID, err)
+				http.Error(w, "Error verificando disponibilidad", http.StatusInternalServerError)
+				return
+			}
+			libre = false
+			for _, s := range slots {
+				if s == req.Hora {
+					libre = true
+					break
+				}
 			}
 		}
 	}

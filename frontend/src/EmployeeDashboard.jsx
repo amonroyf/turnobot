@@ -125,17 +125,50 @@ function PortalEmpleado() {
     setLoading(false);
   };
 
+  // Paginación (un toque, sin recargar): primera página + "Ver más".
+  // Cursor compuesto {iso, id} con avance estricto + dedupe por id.
+  const [nextCursor, setNextCursor] = useState(null);
+  const [cargandoMas, setCargandoMas] = useState(false);
+  const cursorValido = (nc) => (nc && nc.iso ? nc : null);
+
   const cargarCitas = async (tok, empId) => {
     try {
-      const res = await fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/citas`, {
+      const res = await fetch(`${API_URL}/api/v1/b/${slug}/employee/${empId}/citas?limit=25`, {
         headers: { Authorization: `Bearer ${tok}` },
       });
       if (!res.ok) throw new Error('Error cargando citas');
       const data = await res.json();
-      setCitas(data);
+      const lista = Array.isArray(data) ? data : (data.citas || []);
+      setCitas(lista);
+      setNextCursor(!Array.isArray(data) ? cursorValido(data.next_cursor) : null);
     } catch {
       setError('Error cargando tus citas.');
     }
+  };
+
+  const cargarMasCitas = async () => {
+    if (!token || !empId || cargandoMas || !nextCursor) return;
+    setCargandoMas(true);
+    try {
+      const res = await fetch(
+        `${API_URL}/api/v1/b/${slug}/employee/${empId}/citas?limit=25&cursor=${encodeURIComponent(nextCursor.iso)}&cursor_id=${encodeURIComponent(nextCursor.id || '')}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      );
+      if (!res.ok) throw new Error('Error cargando más citas');
+      const data = await res.json();
+      const lista = Array.isArray(data) ? data : (data.citas || []);
+      setNextCursor(!Array.isArray(data) ? cursorValido(data.next_cursor) : null);
+      if (lista.length > 0) {
+        setCitas((prev) => {
+          const vistos = new Set(prev.map((c) => c.id));
+          const nuevas = lista.filter((c) => !vistos.has(c.id));
+          return nuevas.length > 0 ? [...prev, ...nuevas] : prev;
+        });
+      }
+    } catch {
+      setError('Error cargando más citas.');
+    }
+    setCargandoMas(false);
   };
 
   // Sin auto-login: cada vez que se abre el link, el empleado elige su nombre y clave.
@@ -148,6 +181,7 @@ function PortalEmpleado() {
     setEmpSeleccionado(null);
     setPin('');
     setCitas([]);
+    setNextCursor(null);
   };
 
   const handleCancelar = async (citaId) => {
@@ -672,6 +706,17 @@ function PortalEmpleado() {
             <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
             <ListaEmpleado items={filtrarPorEstado(citasProximas)} />
           </section>
+        )}
+
+        {nextCursor && (
+          <button
+            type="button"
+            onClick={cargarMasCitas}
+            disabled={cargandoMas}
+            className="w-full min-h-[48px] py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-2xl text-xs active:scale-95 transition-transform disabled:opacity-50 shadow-sm"
+          >
+            {cargandoMas ? 'Cargando más citas…' : 'Ver más citas ↓'}
+          </button>
         )}
 
         {/* Marca de agua PLG: cada enlace compartido promociona TurnoBot */}
