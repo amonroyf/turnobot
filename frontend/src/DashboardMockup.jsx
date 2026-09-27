@@ -21,10 +21,10 @@ export default function DashboardMockup() {
           <p className="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Modo Administrador</p>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4">
+        {/* Tabs reales: bottom nav Agenda / Clientes / Ajustes */}
+        <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4" role="tablist" aria-label="Panel del dueño">
           {['📅 Agenda', '👥 Clientes', '⚙️ Ajustes'].map((tab, i) => (
-            <div key={i} className={`flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold ${
+            <div key={i} role="tab" aria-selected={i === 0} className={`flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold min-h-[36px] flex items-center justify-center ${
               i === 0 ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
             }`}>
               {tab}
@@ -56,23 +56,25 @@ export default function DashboardMockup() {
         <div className="space-y-3">
           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">HOY</p>
 
-          {/* Cita individual */}
-          <div className="bg-white border border-gray-200 rounded-xl p-2.5 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-gray-200 rounded-full flex items-center justify-center text-[10px] font-bold text-gray-600">
-                C
-              </div>
-              <div>
+          {/* Cita individual: timeline + pagado / no-show / cancelar (código real) */}
+          <div className="flex gap-2 items-stretch">
+            <div className="flex flex-col items-center shrink-0">
+              <span className="text-[9px] font-bold text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded-md">10:00</span>
+              <div className="w-px flex-1 bg-gray-200" aria-hidden="true" />
+            </div>
+            <div className="flex-1 bg-white border border-gray-200 rounded-xl p-2.5">
+              <div className="flex justify-between items-center gap-2">
                 <p className="text-[10px] font-bold text-gray-900">Carlos Pérez</p>
-                <p className="text-[8px] text-gray-500">📋 Corte · 👤 José · ⏰ 10:00</p>
+                <span className="text-[9px] font-black bg-green-100 text-green-800 border border-green-200 px-1.5 py-0.5 rounded-lg">✅ Pagó</span>
+              </div>
+              <p className="text-[8px] text-gray-500 font-medium">📋 Corte · 👤 José · 📞 300 123 4567</p>
+              <div className="flex gap-1 mt-1.5">
+                <span className="text-[8px] font-bold text-green-700 bg-green-50 border border-green-200 rounded px-1.5 py-1">📲</span>
+                <span className="text-[8px] font-bold text-gray-600 px-1.5 py-1">No llegó</span>
+                <span className="text-[8px] font-bold text-red-600 bg-red-50 border border-red-100 rounded px-1.5 py-1">✕</span>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-[10px] font-black text-gray-900">$35.000</p>
-              <span className="text-[7px] font-bold px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">
-                Confirmada
-              </span>
-            </div>
+            <div className="text-right self-start"><p className="text-[10px] font-black text-gray-900">$35.000</p></div>
           </div>
 
           {/* Grupo espacio: UNA tarjeta por horario */}

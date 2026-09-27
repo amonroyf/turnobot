@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TurnoBot Mockups — Sistema por rol (Cliente · Dueño · Equipo)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .mock-section { display:flex; gap:48px; justify-content:center; padding:64px 48px; flex-wrap:wrap; background:#f3f4f6; align-items:flex-start; }
+  .mock-card { background:#e5e7eb; border-radius:16px; padding:40px; display:flex; flex-direction:column; align-items:center; gap:20px; }
+  .mock-label { font-size:12px; font-weight:700; color:#6b7280; text-transform:uppercase; letter-spacing:0.05em; }
+  .mock-title { font-size:14px; font-weight:900; color:#111827; }
+  .mock-note { font-size:12px; color:#4b5563; max-width:640px; text-align:center; line-height:1.5; }
+  .ux-chip { font-size:10px; font-weight:800; background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; border-radius:999px; padding:4px 10px; }
+</style>
+</head>
+<body class="bg-gray-100">
+
+<!-- ============ 0 · NAVBAR (fiel a LandingPage.jsx) ============ -->
+<div class="mock-section" style="background:white;">
+  <div class="mock-card" style="background:#111827; border-radius:16px; padding:0; width:100%; max-width:960px;">
+    <div class="mock-label" style="color:#9ca3af; align-self:flex-start; padding:16px 16px 0;">Navbar · Glassmorphism · Entrar → /admin · Crear → /register</div>
+    <div class="flex items-center justify-between px-4 sm:px-6 lg:px-8 h-16 w-full" style="background:rgba(17,24,39,0.85); backdrop-filter:blur(12px); border-bottom:1px solid #1f2937;">
+      <div class="flex items-center gap-2 cursor-pointer">
+        <span class="text-white font-black text-lg tracking-wide">TurnoBot ✨</span>
+      </div>
+      <div class="flex items-center gap-4">
+        <a href="#" class="text-sm font-bold text-gray-300 hover:text-white transition-colors hidden sm:block">Entrar</a>
+        <a href="#" class="bg-green-500 hover:bg-green-600 text-white text-sm font-bold px-4 py-2 rounded-xl transition-all active:scale-95 shadow-md shadow-green-500/20 min-h-[44px] flex items-center">Crear mi página</a>
+      </div>
+    </div>
+    <div style="height:24px;"></div>
+  </div>
+</div>
+
+<!-- ============ 1 · CLIENTE: reserva servicio + espacio ============ -->
+<div class="mock-section">
+  <div class="mock-card">
+    <div class="mock-label">📱 App Cliente · BookingApp.jsx</div>
+    <div class="mock-title">Servicio 1 a 1 — 5 pasos + Google obligatorio</div>
+    <div class="flex gap-1.5"><span class="ux-chip">Divulgación progresiva</span><span class="ux-chip">Ley de Hick</span><span class="ux-chip">Prevención error</span></div>
+    <div class="relative mx-auto w-[280px] sm:w-[300px]">
+      <div class="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl shadow-black/30 z-10">
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-20"></div>
+        <div class="bg-white rounded-[2.2rem] overflow-hidden">
+          <div class="bg-gray-900 text-white text-[10px] px-6 py-1.5 flex justify-between items-center"><span>9:41</span><span class="text-[8px] font-bold tracking-wide">5G · 100%</span></div>
+          <div class="p-4 space-y-3">
+            <div class="text-center mb-1"><p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">TurnoBot</p><p class="text-sm font-bold text-gray-900">Barbería El Corte</p></div>
+            <div class="flex items-center gap-1" aria-hidden="true"><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div></div>
+            <p class="text-[9px] font-bold text-gray-400 text-center -mt-1">Paso 5 de 5 · Confirmar</p>
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3"><div class="flex justify-between items-center"><div><p class="text-xs font-bold text-gray-900">Corte + Barba</p><p class="text-[10px] text-gray-500">unos 45 minutos</p></div><span class="text-xs font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-lg whitespace-nowrap">$35.000</span></div></div>
+            <div class="bg-green-50 border border-green-200 rounded-xl p-3"><p class="text-[10px] font-bold text-green-700 mb-1">Profesional</p><div class="flex items-center gap-2"><div class="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">J</div><span class="text-xs font-bold text-gray-900">José</span><span class="text-[8px] text-green-600 bg-green-100 px-1.5 py-0.5 rounded-full ml-auto whitespace-nowrap">✓ Seleccionado</span></div><p class="text-[9px] text-green-700 font-medium mt-1">o “Cualquiera disponible”</p></div>
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3"><p class="text-[10px] font-bold text-gray-700 mb-1">Primer hueco: <span class="text-green-700">Hoy 14:30 con José</span> · <span class="underline">usar</span></p><p class="text-[10px] font-bold text-gray-700 mb-2">Viernes, Sep 15</p><div class="grid grid-cols-3 gap-1.5"><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-white border border-gray-200 text-gray-600">10:00</div><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-white border border-gray-200 text-gray-600">10:30</div><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-green-500 text-white min-h-[44px] flex items-center justify-center">11:00</div></div></div>
+            <div class="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center text-[10px] font-black text-gray-700">G</span><span class="text-[10px] font-bold text-gray-700">Juan · juan@gmail.com</span><span class="text-[8px] text-green-600 font-bold ml-auto whitespace-nowrap">✓ Google</span></div>
+            <div class="bg-green-500 text-white text-center py-2.5 rounded-xl text-xs font-bold min-h-[44px] flex items-center justify-center">Confirmar Reserva ✓</div>
+            <p class="text-[9px] text-gray-400 text-center font-medium -mt-1">Pagas en el local · aquí solo apartas</p>
+            <div class="flex justify-around border-t border-gray-100 pt-2 text-[9px] font-black"><span class="text-black">Agendar</span><span class="text-gray-500">Mis Citas</span><span class="text-gray-500">Info</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 mx-auto bg-white rounded-2xl shadow-xl border border-gray-100 p-3 max-w-[230px]"><div class="flex items-center gap-2"><div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center shrink-0"><svg viewBox="0 0 24 24" class="w-4 h-4" fill="white"><path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2 1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1 0 1.2.2 2.4.6 3.6.1.3 0 .7-.2 1l-2.3 2.2z"/></svg></div><div><p class="text-[10px] font-bold text-gray-900">Nueva reserva</p><p class="text-[9px] text-gray-500">Juan · Corte · Vie 11am</p></div></div><p class="text-[8px] text-gray-400 text-center mt-1 font-bold uppercase">Push al dueño al confirmar</p></div>
+    </div>
+  </div>
+  <div class="mock-card">
+    <div class="mock-label">📱 App Cliente · modo espacio</div>
+    <div class="mock-title">Espacio por cupos — 5 pasos (termina en Listo)</div>
+    <div class="flex gap-1.5"><span class="ux-chip">1 tarjeta por horario</span><span class="ux-chip">Escasez honesta</span></div>
+    <div class="relative mx-auto w-[280px] sm:w-[300px]">
+      <div class="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl shadow-black/30 z-10">
+        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-6 bg-gray-900 rounded-b-2xl z-20"></div>
+        <div class="bg-white rounded-[2.2rem] overflow-hidden">
+          <div class="bg-gray-900 text-white text-[10px] px-6 py-1.5 flex justify-between items-center"><span>9:41</span><span class="text-[8px] font-bold tracking-wide">5G · 100%</span></div>
+          <div class="p-4 space-y-3">
+            <div class="text-center mb-1"><p class="text-[10px] font-black text-gray-400 uppercase tracking-widest">TurnoBot</p><p class="text-sm font-bold text-gray-900">Box Centro</p></div>
+            <div class="flex items-center gap-1" aria-hidden="true"><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-black"></div><div class="h-1.5 flex-1 rounded-full bg-gray-200"></div></div>
+            <p class="text-[9px] font-bold text-gray-400 text-center -mt-1">Paso 4 de 5 · Confirmar</p>
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3"><div class="flex justify-between items-center"><div><p class="text-xs font-bold text-gray-900">Clase de CrossFit</p><p class="text-[10px] text-gray-500">12/15 · ¡Quedan 3!</p></div><span class="text-[9px] font-black text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-lg whitespace-nowrap">3 libres</span></div><div class="mt-2 h-2 bg-gray-100 rounded-full overflow-hidden"><div class="h-full w-4/5 bg-amber-500 rounded-full"></div></div></div>
+            <div class="bg-gray-50 border border-gray-200 rounded-xl p-3"><p class="text-[10px] font-bold text-gray-700 mb-2">Viernes · sin profesional (el local asigna)</p><div class="grid grid-cols-3 gap-1.5"><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-white border border-gray-200 text-gray-600">17:00</div><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-green-500 text-white min-h-[44px]">18:00<span class="block text-[8px] font-bold">¡Quedan 3!</span></div><div class="text-center text-[10px] py-1.5 rounded-lg font-bold bg-white border border-gray-200 text-gray-600">19:30</div></div></div>
+            <div class="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-white border border-gray-300 flex items-center justify-center text-[10px] font-black text-gray-700">G</span><span class="text-[10px] font-bold text-gray-700">Ana · ana@gmail.com</span><span class="text-[8px] text-green-600 font-bold ml-auto whitespace-nowrap">✓ Google</span></div>
+            <div class="bg-green-500 text-white text-center py-2.5 rounded-xl text-xs font-bold min-h-[44px] flex items-center justify-center">Confirmar Reserva ✓</div>
+            <p class="text-[9px] text-gray-400 text-center font-medium -mt-1">Reserva de CrossFit · 18:00 · se libera si cancelas</p>
+            <div class="flex justify-around border-t border-gray-100 pt-2 text-[9px] font-black"><span class="text-black">Agendar</span><span class="text-gray-500">Mis Citas</span><span class="text-gray-500">Info</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 2 · CLIENTE: éxito + mis citas ============ -->
+<div class="mock-section" style="background:white;">
+  <div class="mock-card" style="max-width:340px;">
+    <div class="mock-label">📱 Cliente · Pantalla éxito (step 5)</div>
+    <div class="mock-title">Confirmada + autónoma: Calendar / .ics / push</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-5 text-center space-y-3 w-full" style="width:300px;">
+      <div class="w-12 h-12 mx-auto rounded-full bg-green-100 border border-green-200 flex items-center justify-center text-2xl font-black text-green-600">✓</div>
+      <p class="text-sm font-black text-gray-900">¡Cita confirmada!</p>
+      <p class="text-[11px] text-gray-500">Viernes 15 · 11:00 · Corte + Barba con José</p>
+      <div class="text-left bg-gray-50 rounded-xl p-3 space-y-1 text-[10px] text-gray-700 border border-gray-100"><p><strong>Corte + Barba</strong> · $35.000</p><p><strong>José</strong> · Barbería Centro</p><p><strong>Vie 15, 11:00</strong> · 45 min</p></div>
+      <div class="bg-white border border-gray-200 rounded-xl py-2.5 text-[11px] font-bold text-gray-700 min-h-[44px] flex items-center justify-center gap-2"><svg viewBox="0 0 24 24" class="w-4 h-4" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.8-2.9c-1 .7-2.4 1.2-4.1 1.2-3.1 0-5.8-2.1-6.8-5l-3.7 2.9C3.5 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.2 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4L1.5 6.6C.5 8.9 0 10.4 0 12s.5 3.1 1.5 4.5l3.7-2.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.5 0 3.5 2.7 1.5 6.6l3.7 2.9c1-2.9 3.7-4.8 6.8-4.8z"/></svg>Añadir a Google Calendar</div>
+      <div class="bg-gray-50 border border-gray-200 rounded-xl py-2.5 text-[11px] font-bold text-gray-600 min-h-[44px] flex items-center justify-center">Otros calendarios (.ics)</div>
+      <div class="bg-blue-50 border border-blue-200 rounded-xl py-2.5 text-[11px] font-bold text-blue-700 min-h-[44px] flex items-center justify-center">Activar recordatorio en este teléfono</div>
+      <div class="bg-green-50 border border-green-200 rounded-xl py-2.5 text-[11px] font-bold text-green-700 min-h-[44px] flex items-center justify-center">Tengo una duda (WhatsApp del local)</div>
+      <p class="text-[10px] text-gray-400 font-medium">Llega 5 min antes</p>
+    </div>
+  </div>
+  <div class="mock-card" style="max-width:340px;">
+    <div class="mock-label">Cliente · MisCitas.jsx</div>
+    <div class="mock-title">Autogestión: Hoy / Mañana / Próximas</div>
+    <div class="flex gap-1.5"><span class="ux-chip">Filtros con conteo</span><span class="ux-chip">Mover sin perder cita</span></div>
+    <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 space-y-3 w-full" style="width:300px;">
+      <div class="flex items-center justify-between gap-2 bg-green-50 border border-green-200 rounded-xl p-2.5"><span class="text-[10px] font-bold text-green-700 truncate">✓ juan@gmail.com</span><span class="text-[10px] font-bold text-green-900 underline shrink-0">Cerrar sesión</span></div>
+      <div class="flex gap-1.5"><span class="text-[9px] font-bold px-3 py-1.5 rounded-full bg-gray-900 text-white whitespace-nowrap">Todas (3)</span><span class="text-[9px] font-bold px-3 py-1.5 rounded-full bg-white border border-gray-200 text-gray-500 whitespace-nowrap">Activas (2)</span><span class="text-[9px] font-bold px-3 py-1.5 rounded-full bg-white border border-gray-200 text-gray-500 whitespace-nowrap">Canceladas (1)</span></div>
+      <p class="text-[9px] font-bold text-gray-400 uppercase">Hoy</p>
+      <div class="bg-white border border-gray-200 rounded-xl p-2.5"><div class="flex justify-between items-center"><p class="text-[11px] font-bold">Corte · 11:00</p><span class="text-[9px] font-black bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">$35.000</span></div><p class="text-[9px] text-gray-500">Con José · Vie 15</p><div class="flex gap-1.5 mt-2"><span class="flex-1 text-center text-[9px] font-bold bg-gray-100 rounded-lg py-2 min-h-[40px] flex items-center justify-center">Cambiar hora</span><span class="flex-1 text-center text-[9px] font-bold bg-red-50 border border-red-200 rounded-lg py-2 text-red-700 min-h-[40px] flex items-center justify-center">Cancelar cita</span></div></div>
+      <p class="text-[9px] font-bold text-gray-400 uppercase">Mañana</p>
+      <div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-[11px] font-bold">CrossFit · 18:00</p><div class="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div class="h-full w-4/5 bg-amber-500 rounded-full"></div></div><p class="text-[9px] text-gray-500 mt-1">Box Centro · 12/15</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 3 · DUEÑO: agenda ============ -->
+<div class="mock-section">
+  <div class="mock-card" style="flex-direction:row; align-items:flex-start; flex-wrap:wrap; justify-content:center;">
+    <div style="width:100%; text-align:center;">
+      <div class="mock-label">🧑‍💼 App Dueño · AdminDashboard.jsx — Agenda</div>
+      <div class="mock-title">Timeline + ocupación + pagado / no-show / deshacer</div>
+      <p class="mock-note">Corrige el mock anterior: la cita individual ahora muestra timeline, teléfono, WhatsApp y botón ✅ Pagó; el espacio es UNA tarjeta de ocupación con lista plegable.</p>
+    </div>
+    <div class="relative mx-auto max-w-[400px] w-full">
+      <div class="bg-gray-900 rounded-t-2xl px-4 py-2 flex items-center gap-2"><div class="flex gap-1.5"><div class="w-3 h-3 bg-red-400 rounded-full"></div><div class="w-3 h-3 bg-yellow-400 rounded-full"></div><div class="w-3 h-3 bg-green-400 rounded-full"></div></div><div class="flex-1 bg-gray-700 rounded-lg px-3 py-1 text-[10px] text-gray-400 ml-2">turnobot-web.web.app/admin</div></div>
+      <div class="bg-gray-50 border-x border-b border-gray-200 rounded-b-2xl p-4 sm:p-6">
+        <div class="text-center mb-4"><p class="text-sm font-black text-gray-900">Barbería El Corte</p><p class="text-[9px] font-bold text-gray-400 uppercase tracking-widest">Modo Administrador</p></div>
+        <div class="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4"><div class="flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold bg-white text-gray-900 shadow-sm min-h-[40px] flex items-center justify-center">Agenda</div><div class="flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold text-gray-500 min-h-[40px] flex items-center justify-center">Clientes</div><div class="flex-1 text-center py-1.5 rounded-lg text-[10px] font-bold text-gray-500 min-h-[40px] flex items-center justify-center">Ajustes</div></div>
+        <div class="grid grid-cols-2 gap-2 mb-4"><div class="bg-black text-white text-center text-[10px] font-bold py-2.5 rounded-xl min-h-[44px] flex items-center justify-center">＋ Nueva cita</div><div class="bg-blue-600 text-white text-center text-[10px] font-bold py-2.5 rounded-xl min-h-[44px] flex items-center justify-center">🔗 Copiar enlace</div></div>
+        <div class="grid grid-cols-3 gap-2 mb-4"><div class="bg-white border border-gray-200 rounded-xl p-2 text-center"><p class="text-[10px] text-gray-400">📅 Hoy</p><p class="text-lg font-black text-gray-900">4</p></div><div class="bg-white border border-gray-200 rounded-xl p-2 text-center"><p class="text-[10px] text-gray-400">📋 Mañana</p><p class="text-lg font-black text-gray-900">2</p></div><div class="bg-white border border-gray-200 rounded-xl p-2 text-center"><p class="text-[10px] text-gray-400">👥 Clientes</p><p class="text-lg font-black text-gray-900">47</p></div></div>
+        <div class="space-y-3">
+          <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">HOY</p>
+          <div class="flex gap-2 items-stretch"><div class="flex flex-col items-center shrink-0 w-[44px]"><span class="text-[10px] font-black text-gray-800 bg-gray-200 px-1.5 py-1 rounded-md whitespace-nowrap">10:00</span><div class="w-0.5 flex-1 bg-gray-300 rounded-full mt-1"></div></div><div class="flex-1 bg-white border border-gray-200 rounded-xl p-2.5 min-w-0"><div class="flex justify-between items-center gap-2"><p class="text-[11px] font-bold text-gray-900 truncate">Carlos Pérez</p><p class="text-[11px] font-black text-gray-900 whitespace-nowrap">$35.000</p></div><p class="text-[9px] text-gray-500 font-medium mt-0.5">Corte · con José · 300 123 4567</p><div class="flex justify-between items-center mt-1.5"><span class="text-[9px] font-black bg-green-100 text-green-800 border border-green-200 px-2 py-1 rounded-lg whitespace-nowrap">✓ Pagó</span><div class="flex gap-1"><span class="text-[9px] font-bold text-white bg-green-600 rounded-lg px-2 py-1.5 min-h-[40px] flex items-center whitespace-nowrap">WA</span><span class="text-[9px] font-bold text-gray-600 bg-gray-100 rounded-lg px-2 py-1.5 min-h-[40px] flex items-center whitespace-nowrap">No llegó</span><span class="text-[9px] font-bold text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5 min-h-[40px] flex items-center">✕</span></div></div></div></div>
+          <div class="bg-white border border-gray-200 rounded-xl overflow-hidden"><div class="p-2.5 flex items-center gap-2"><span class="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-black shrink-0">CF</span><div class="flex-1 min-w-0"><p class="text-[10px] font-bold text-gray-900">CrossFit · 18:00</p><div class="h-2 bg-gray-100 rounded-full overflow-hidden mt-1"><div class="h-full w-4/5 bg-amber-500 rounded-full"></div></div><p class="text-[9px] font-bold text-gray-500 mt-0.5">12/15 · ¡Casi lleno!</p></div><span class="text-[9px] font-black bg-gray-100 text-gray-700 px-2 py-1 rounded-lg whitespace-nowrap shrink-0">12/15</span></div><div class="border-t border-gray-100 divide-y divide-gray-50"><div class="px-3 py-2 flex items-center gap-2"><p class="text-[10px] font-bold text-gray-800 flex-1 min-w-0">Ana Gómez · 300 123 4567</p><span class="text-[9px] font-bold text-white bg-green-600 rounded-lg px-2 py-1.5 min-h-[40px] flex items-center shrink-0">WA</span><span class="text-[9px] font-bold text-gray-500 whitespace-nowrap shrink-0">No llegó</span></div><div class="px-3 py-2 flex items-center gap-2"><p class="text-[10px] font-bold text-gray-800 flex-1 min-w-0">Luis Ruiz · 310 987 6543</p><span class="text-[9px] font-bold text-white bg-green-600 rounded-lg px-2 py-1.5 min-h-[40px] flex items-center shrink-0">WA</span><span class="text-[9px] font-bold text-red-600 whitespace-nowrap shrink-0">✕</span></div></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 4 · DUEÑO: clientes + nueva cita ============ -->
+<div class="mock-section" style="background:white;">
+  <div class="mock-card" style="max-width:360px;">
+    <div class="mock-label">🧑‍💼 Dueño · Clientes CRM</div>
+    <div class="mock-title">LTV + cobrado + no-shows + Excel</div>
+    <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 w-full space-y-2" style="width:300px;">
+      <div class="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2"><span class="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-black">C</span><span class="flex-1"><span class="block text-[11px] font-black">Carlos Pérez</span><span class="block text-[9px] text-gray-500">6 visitas · última: vie 15</span></span><span class="text-right"><span class="block text-[10px] font-black">$210.000</span><span class="block text-[8px] text-green-700 font-bold">✅ $180.000 cobrado</span></span></div>
+      <div class="bg-white border border-amber-200 rounded-xl p-2.5 flex items-center gap-2"><span class="w-8 h-8 bg-amber-100 text-amber-800 rounded-full flex items-center justify-center text-xs font-black">A</span><span class="flex-1 min-w-0"><span class="block text-[11px] font-black">Ana Gómez</span><span class="block text-[9px] text-amber-700 font-bold">2 no-shows · escribir antes de agendar</span></span><span class="text-[9px] font-bold text-white bg-green-600 rounded-lg px-2 py-1.5 shrink-0">WA</span></div>
+      <div class="bg-black text-white text-center text-[11px] font-bold py-2.5 rounded-xl min-h-[44px] flex items-center justify-center">Descargar Excel</div>
+      <p class="text-[10px] text-gray-400 text-center">Visitas · cobrado real · última cita</p>
+    </div>
+  </div>
+  <div class="mock-card" style="max-width:360px;">
+    <div class="mock-label">🧑‍💼 Dueño · RegistroManual.jsx</div>
+    <div class="mock-title">＋ Nueva cita: llamadas y WhatsApp en 30 seg</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-4 shadow-lg w-full" style="width:300px;">
+      <p class="text-sm font-black">＋ Nueva cita</p><p class="text-[11px] text-gray-500 mb-3">Mismo flujo del cliente · sin pedirle nada</p>
+      <div class="flex gap-1.5 mb-3"><span class="flex-1 text-center text-[10px] font-bold bg-gray-900 text-white rounded-lg py-2 min-h-[40px] flex items-center justify-center">Servicio</span><span class="flex-1 text-center text-[10px] font-bold bg-gray-100 text-gray-500 rounded-lg py-2 min-h-[40px] flex items-center justify-center">Espacio</span></div>
+      <p class="text-[11px] font-bold bg-green-50 border border-green-200 rounded-lg px-2.5 py-2">Corte + Barba · $35.000 ✓</p>
+      <p class="text-[11px] font-bold bg-white border border-gray-200 rounded-lg px-2.5 py-2 text-gray-600 mt-1.5">Con José · Hoy · 14:30 ✓</p>
+      <p class="text-[11px] font-bold bg-white border border-gray-200 rounded-lg px-2.5 py-2 text-gray-600 mt-1.5">María · 300 123 4567</p>
+      <div class="bg-black text-white text-center py-2.5 rounded-xl text-xs font-bold mt-3 min-h-[44px] flex items-center justify-center">Guardar cita ✓</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 5 · DUEÑO: ajustes ============ -->
+<div class="mock-section">
+  <div class="mock-card" style="width:100%; max-width:960px;">
+    <div class="mock-label">🧑‍💼 Dueño · Ajustes (catálogo · marca · reglas)</div>
+    <div class="mock-title">Todo lo que antes faltaba en mockups</div>
+    <div class="flex flex-wrap gap-6 justify-center w-full">
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 w-full max-w-[300px]">
+        <p class="text-[10px] font-black text-gray-400 uppercase mb-2">Catálogo · Servicios / Espacios / Equipo</p>
+        <p class="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-2.5 py-2">Corte + Barba · 45 min · $35.000</p>
+        <p class="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-2.5 py-2 mt-1.5">CrossFit · 15 cupos · $20.000 · Lun–Vie</p>
+        <p class="text-[10px] font-bold bg-white border border-gray-200 rounded-lg px-2.5 py-2 mt-1.5">José · PIN ✓ · Lun–Vie 9–18</p>
+        <div class="bg-black text-white text-center text-[10px] font-bold py-2 rounded-xl mt-2 min-h-[44px] flex items-center justify-center">＋ Agregar</div>
+      </div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 w-full max-w-[300px]">
+        <p class="text-[10px] font-black text-gray-400 uppercase mb-2">Marca · gratis, sin fotos</p>
+        <div class="flex gap-1.5 mb-2"><span class="w-8 h-8 rounded-full border-2 border-gray-900" style="background:#16A34A;"></span><span class="w-8 h-8 rounded-full border border-gray-200" style="background:#111827;"></span><span class="w-8 h-8 rounded-full border border-gray-200" style="background:#7C3AED;"></span><span class="w-8 h-8 rounded-full border border-gray-200" style="background:#DB2777;"></span></div>
+        <div class="bg-white border border-gray-200 rounded-xl p-3 flex items-center gap-2.5"><span class="w-9 h-9 rounded-full bg-green-600 text-white flex items-center justify-center text-sm font-black">B</span><span><span class="block text-xs font-black">Barbería El Corte</span><span class="block text-[10px] text-gray-500">Cortes que se notan ✂️</span></span></div>
+        <div class="flex gap-1.5 mt-2"><span class="text-[9px] font-bold bg-white border border-gray-200 rounded-lg px-2 py-1.5">📷 Instagram</span><span class="text-[9px] font-bold bg-white border border-gray-200 rounded-lg px-2 py-1.5">👍 Facebook</span><span class="text-[9px] font-bold bg-white border border-gray-200 rounded-lg px-2 py-1.5">🎵 TikTok</span></div>
+      </div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4 w-full max-w-[300px]">
+        <p class="text-[10px] font-black text-gray-400 uppercase mb-2">Reglas · aplican desde ya</p>
+        <div class="grid grid-cols-2 gap-1.5 text-[10px]"><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Cancela hasta</p><p class="font-black text-xs">24 h antes</p></div><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Anticipación</p><p class="font-black text-xs">0 min</p></div><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Ventana reserva</p><p class="font-black text-xs">30 días</p></div><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Máx / día</p><p class="font-black text-xs">3 por teléfono</p></div><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Apertura</p><p class="font-black text-xs">09:00</p></div><div class="bg-white border border-gray-200 rounded-xl p-2.5"><p class="text-gray-400 font-bold text-[9px] uppercase">Cierre</p><p class="font-black text-xs">18:00</p></div></div>
+        <p class="text-[9px] text-gray-400 text-center mt-2">Como Fresha / Booksy · push de prueba incluido</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 6 · EQUIPO ============ -->
+<div class="mock-section" style="background:white;">
+  <div class="mock-card">
+    <div class="mock-label">👥 App Equipo · login PIN</div>
+    <div class="mock-title">Entra con clave · sin ver lo ajeno</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm" style="width:300px;">
+      <p class="text-xs font-bold text-gray-400 uppercase mb-1">Portal del empleado</p>
+      <p class="text-sm font-black mb-1">Entra con tu PIN 🔑</p>
+      <p class="text-[11px] text-gray-500 mb-3">El dueño te da tu clave de 4 a 6 números.</p>
+      <p class="text-[10px] font-bold text-gray-500 mb-1.5">Soy…</p>
+      <p class="text-xs font-bold bg-white border border-green-500 rounded-lg px-2.5 py-2 min-h-[44px] flex items-center">José ✓</p>
+      <p class="text-xs font-bold bg-white border border-gray-200 text-gray-500 rounded-lg px-2.5 py-2 min-h-[44px] flex items-center mt-1.5">Ana</p>
+      <p class="text-[10px] font-bold text-gray-500 mt-2.5 mb-1.5">Mi clave (4 a 6 números)</p>
+      <div class="flex gap-1.5 justify-center my-1.5" aria-hidden="true"><span class="w-10 h-11 rounded-lg bg-gray-900 text-white flex items-center justify-center text-sm font-black">•</span><span class="w-10 h-11 rounded-lg bg-gray-900 text-white flex items-center justify-center text-sm font-black">•</span><span class="w-10 h-11 rounded-lg bg-gray-900 text-white flex items-center justify-center text-sm font-black">•</span><span class="w-10 h-11 rounded-lg bg-gray-900 text-white flex items-center justify-center text-sm font-black">•</span></div>
+      <div class="bg-gray-900 text-white text-center py-2.5 px-3 rounded-xl text-xs font-bold min-h-[44px] flex items-center justify-center whitespace-nowrap mt-3">Entrar a mi agenda →</div>
+    </div>
+  </div>
+  <div class="mock-card">
+    <div class="mock-label">👥 App Equipo · Mi agenda / Mis números / Mi turno</div>
+    <div class="mock-title">Autónomo: mueve, escribe, cambia turno y clave</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm" style="width:340px;">
+      <p class="text-xs font-bold text-gray-400 uppercase mb-1">Portal del empleado</p>
+      <p class="text-sm font-black mb-3">Hola, José 👋</p>
+      <div class="flex gap-1.5 mb-3"><span class="text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-gray-900 text-white min-h-[32px] flex items-center">Mi agenda</span><span class="text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-gray-100 text-gray-500 min-h-[32px] flex items-center">Mis números</span><span class="text-[10px] font-bold px-2.5 py-1.5 rounded-full bg-gray-100 text-gray-500 min-h-[32px] flex items-center">Mi turno</span></div>
+      <div class="border border-gray-200 rounded-xl p-2.5"><div class="flex justify-between items-center gap-2 mb-1"><p class="text-[11px] font-bold whitespace-nowrap">10:00 · Corte · Carlos</p><span class="text-[9px] font-black bg-gray-100 px-1.5 py-0.5 rounded whitespace-nowrap">$35.000</span></div><p class="text-[10px] text-gray-500 mb-2">300 123 4567</p><div class="flex gap-1.5"><span class="flex-1 text-center text-[10px] font-bold text-white bg-green-600 rounded-lg py-2 min-h-[40px] flex items-center justify-center whitespace-nowrap">WA WhatsApp</span><span class="flex-1 text-center text-[10px] font-bold text-gray-700 bg-gray-100 rounded-lg py-2 min-h-[40px] flex items-center justify-center whitespace-nowrap">Mover 10→11</span></div><div class="flex flex-wrap gap-1.5 mt-2"><span class="text-[10px] font-bold bg-gray-900 text-white rounded-lg px-2.5 py-1.5">＋ Nueva cita</span><span class="text-[10px] font-bold bg-gray-100 text-gray-700 rounded-lg px-2.5 py-1.5">Mi horario</span><span class="text-[10px] font-bold bg-gray-100 text-gray-700 rounded-lg px-2.5 py-1.5">Mi clave</span><span class="text-[10px] font-bold bg-green-50 text-green-700 border border-green-200 rounded-lg px-2.5 py-1.5">Calendar ✓</span></div></div>
+      <p class="text-[10px] text-gray-400 mt-3 text-center">Solo ve su agenda · cambia horario y clave solo</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 7 · REGISTRO ============ -->
+<div class="mock-section">
+  <div class="mock-card">
+    <div class="mock-label">🆕 Onboarding · RegisterShop.jsx paso 1</div>
+    <div class="mock-title">1 clic con Google</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm" style="width:300px;">
+      <p class="text-[10px] font-black text-gray-400 uppercase text-center">TurnoBot</p>
+      <p class="text-[10px] font-bold text-gray-400 uppercase text-center mt-1">Paso 1 de 2</p>
+      <p class="text-base font-black text-center mt-1">Crea tu cuenta</p>
+      <div class="w-full py-3 border border-gray-300 rounded-xl text-xs font-bold mt-4 min-h-[48px] flex items-center justify-center gap-2"><svg viewBox="0 0 24 24" class="w-4 h-4" aria-hidden="true"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.3-2.3H12v4.5h6.5c-.1 1.1-.8 2.7-2.4 3.8l3.6 2.8c2.2-2 3.8-5 3.8-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.9l-3.8-2.9c-1 .7-2.4 1.2-4.1 1.2-3.1 0-5.8-2.1-6.8-5l-3.7 2.9C3.5 21.3 7.5 24 12 24z"/><path fill="#FBBC05" d="M5.2 14.4c-.2-.7-.4-1.5-.4-2.4s.1-1.7.4-2.4L1.5 6.6C.5 8.9 0 10.4 0 12s.5 3.1 1.5 4.5l3.7-2.1z"/><path fill="#EA4335" d="M12 4.7c1.8 0 3 .8 3.7 1.4l3.3-3.2C17.9 1.1 15.2 0 12 0 7.5 0 3.5 2.7 1.5 6.6l3.7 2.9c1-2.9 3.7-4.8 6.8-4.8z"/></svg>Continuar con Google</div>
+      <p class="text-[11px] text-gray-500 text-center mt-2 font-medium">Sin contraseñas · acceso rápido y seguro</p>
+    </div>
+  </div>
+  <div class="mock-card">
+    <div class="mock-label">🆕 Onboarding · paso 2</div>
+    <div class="mock-title">Nombre + WhatsApp + enlace (slug)</div>
+    <div class="bg-white border border-gray-200 rounded-2xl p-6 shadow-sm" style="width:300px;">
+      <p class="text-[10px] font-black text-gray-400 uppercase text-center">TurnoBot</p>
+      <p class="text-[10px] font-bold text-gray-400 uppercase text-center mt-1">Paso 2 de 2</p>
+      <p class="text-base font-black text-center mt-1">Configura tu agenda</p>
+      <div class="p-2.5 bg-green-50 border border-green-200 text-green-700 text-[10px] rounded-xl text-center font-bold mt-3">Cuenta conectada ✓</div>
+      <p class="text-[10px] font-bold mt-2.5">¿Cómo se llama tu negocio?</p>
+      <p class="p-2.5 border border-gray-300 rounded-xl text-xs mt-1">Barbería El Corte</p>
+      <p class="text-[10px] font-bold mt-2.5">WhatsApp para avisos de citas</p>
+      <p class="p-2.5 border border-gray-300 rounded-xl text-xs mt-1">300 123 4567</p>
+      <p class="text-[10px] font-bold mt-2.5">Tu enlace de reservas</p>
+      <p class="p-2.5 border border-gray-300 rounded-xl text-[10px] font-mono mt-1 break-all">turnobot-web.web.app/shop/barberia-el-corte</p>
+      <div class="w-full py-3 bg-black text-white rounded-xl text-center text-xs font-bold mt-3 min-h-[48px] flex items-center justify-center whitespace-nowrap">Activar mi agenda →</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 8 · HERO (fiel a LandingPage.jsx) ============ -->
+<div class="mock-section" style="background:linear-gradient(to bottom, #111827, #030712);">
+  <div class="mock-card" style="background:transparent; border-radius:0; padding:0; width:100%; max-width:960px;">
+    <div class="mock-label" style="color:#6b7280;">HeroSection · grid 2 col · phone a la derecha en desktop</div>
+    <div class="relative overflow-hidden rounded-2xl p-8 sm:p-12 w-full" style="background:linear-gradient(to bottom right, #111827, #1f2937, #030712); color:white;">
+      <div class="absolute inset-0 overflow-hidden" aria-hidden="true"><div class="absolute -top-40 -right-40 w-80 h-80 bg-green-500/10 rounded-full blur-3xl"></div><div class="absolute -bottom-40 -left-40 w-80 h-80 bg-green-500/5 rounded-full blur-3xl"></div></div>
+      <div class="relative grid lg:grid-cols-2 gap-12 items-center">
+        <div>
+          <div class="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-bold px-4 py-2 rounded-full mb-6 uppercase tracking-wider"><span class="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>Tu agenda online 24/7</div>
+          <h1 class="text-3xl sm:text-4xl lg:text-5xl font-black leading-tight mb-6">Recibe reservas <span class="text-green-400">sin contestar mensajes</span></h1>
+          <p class="text-lg text-gray-400 max-w-lg mb-6 leading-relaxed">Comparte tu enlace y el cliente reserva solo día y hora. Si te llaman o te escriben, lo registras en 30 segundos. <span class="text-white font-semibold">Todo queda ordenado en tu celular.</span></p>
+          <ul class="max-w-lg mb-8 space-y-2 text-sm text-gray-300"><li class="flex gap-2"><span class="text-green-400 font-bold">✓</span> Sin cruces: se conecta con tu Google Calendar.</li><li class="flex gap-2"><span class="text-green-400 font-bold">✓</span> Botón Nueva cita para llamadas y WhatsApp.</li><li class="flex gap-2"><span class="text-green-400 font-bold">✓</span> Sirve para citas 1 a 1 y para grupos por cupos.</li></ul>
+          <div class="flex flex-col sm:flex-row gap-4"><a href="#" class="inline-flex items-center justify-center whitespace-nowrap bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all active:scale-95 shadow-lg shadow-green-500/25 min-h-[56px]">Crear mi página gratis</a><a href="#" class="inline-flex items-center justify-center whitespace-nowrap bg-white/10 hover:bg-white/15 text-white font-bold px-8 py-4 rounded-2xl text-base transition-all border border-white/10 min-h-[56px]">Ver cómo se ve</a></div>
+          <div class="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-gray-300"><span>✓ Sin tarjeta de crédito</span><span>✓ Listo en 10 minutos</span><span>✓ Cancela cuando quieras</span></div>
+        </div>
+        <div class="hidden lg:flex justify-center"><div class="relative bg-gray-900 rounded-[3rem] p-3 shadow-2xl" style="width:280px;"><div class="bg-white rounded-[2.2rem] overflow-hidden"><div class="bg-gray-900 text-white text-[10px] px-6 py-1.5 flex justify-between items-center"><span>9:41</span><span class="text-[8px] font-bold">5G · 100%</span></div><div class="p-4 space-y-2.5"><div class="text-center"><p class="text-[9px] font-black text-gray-400 uppercase tracking-widest">TurnoBot</p><p class="text-sm font-bold text-gray-900">Barbería El Corte</p></div><div class="bg-gray-50 border border-gray-200 rounded-xl p-2.5"><div class="flex justify-between items-center"><p class="text-[11px] font-bold text-gray-900">Corte + Barba</p><span class="text-[11px] font-black text-green-600">$35.000</span></div><p class="text-[9px] text-gray-500">Con José · Vie 15, 11:00</p></div><div class="grid grid-cols-3 gap-1.5"><span class="text-center text-[10px] font-bold py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600">10:00</span><span class="text-center text-[10px] font-bold py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600">10:30</span><span class="text-center text-[10px] font-bold py-1.5 rounded-lg bg-green-500 text-white">11:00</span></div><div class="bg-green-500 text-white text-center rounded-xl py-2.5 text-xs font-bold">Confirmar Reserva ✓</div><p class="text-[9px] text-gray-400 text-center font-medium">Pagas en el local · aquí solo apartas</p></div></div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 9 · SISTEMA UX APLICADO ============ -->
+<div class="mock-section" style="background:white;">
+  <div class="mock-card" style="width:100%; max-width:960px; background:white; border:1px solid #e5e7eb;">
+    <div class="mock-label">Sistema visual · correcciones aplicadas</div>
+    <div class="mock-title">Lenguaje UX usado para que cada app se entienda sola</div>
+    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full text-left">
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">1 · Jerarquía visual</p><p class="text-[11px] text-gray-600">Título → dato → acción. El precio y la hora siempre en negrita arriba; lo secundario (notas, marca de agua) en gris pequeño.</p></div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">2 · Consistencia</p><p class="text-[11px] text-gray-600">Mismos chips, radios y verdes en las 3 apps. ✅ Pagó / No llegó / ✕ significan lo mismo en dueño y equipo.</p></div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">3 · Divulgación progresiva</p><p class="text-[11px] text-gray-600">Barra 1–5 + “¿Qué → Quién → Día → Hora → Confirmar”. Nunca se pide todo de golpe.</p></div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">4 · Ley de Hick + Fitts</p><p class="text-[11px] text-gray-600">Buscador con +4 servicios; botones táctiles ≥44px; hora seleccionada en verde sólido.</p></div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">5 · Feedback y prevención</p><p class="text-[11px] text-gray-600">Google obligatorio (anti-suplantación), guard anti-doble-clic, “¡Quedan 3!” honesto, deshacer &lt;24h.</p></div>
+      <div class="bg-gray-50 border border-gray-200 rounded-2xl p-4"><p class="text-xs font-black mb-1">6 · Accesibilidad</p><p class="text-[11px] text-gray-600">Contraste AA, roles tab/aria-selected, foco visible, bottom nav con aria-current, textos sin jerga.</p></div>
+    </div>
+    <p class="mock-note">Correcciones hechas en esta pasada: (1) espacio pasa de “4 de 4” a “4 de 5 · Confirmar” porque el código termina en <em>Listo</em>; (2) Entrar apunta a <em>/admin</em> y Crear a <em>/register</em>; (3) hero recupera el grid con phone en desktop; (4) dashboard usa timeline + ✅ Pagó + ocupación real; (5) se agregan Mis Citas, Éxito, CRM, Nueva cita, Ajustes y Registro que no existían.</p>
+  </div>
+</div>
+
+</body>
+</html>

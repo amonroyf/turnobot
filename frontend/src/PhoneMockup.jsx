@@ -1,5 +1,10 @@
 export default function PhoneMockup({ modo = 'servicio' }) {
+  // modos: 'servicio' | 'espacio' | 'exito' | 'miscitas'
+  // Reflejan BookingApp.jsx: PASOS (5, servicio), PASOS_ESPACIO (5 con Listo),
+  // pantalla de éxito (step 5) y MisCitas.jsx (Hoy/Mañana/Próximas + filtros).
   const esEspacio = modo === 'espacio';
+  const esExito = modo === 'exito';
+  const esMisCitas = modo === 'miscitas';
   return (
     <div className="relative mx-auto w-[280px] sm:w-[300px]">
       {/* Phone frame */}
@@ -26,17 +31,63 @@ export default function PhoneMockup({ modo = 'servicio' }) {
               <p className="text-sm font-bold text-gray-900">Mi Negocio</p>
             </div>
 
-            {/* Progress: 5 pasos reales (servicio) / 4 pasos (espacio) */}
-            <div className="flex items-center gap-1" aria-hidden="true">
-              {(esEspacio ? [1, 2, 3, 4] : [1, 2, 3, 4, 5]).map((n) => (
-                <div key={n} className={`h-1.5 flex-1 rounded-full ${n <= 4 ? 'bg-black' : 'bg-gray-200'}`} />
-              ))}
-            </div>
-            <p className="text-[9px] font-bold text-gray-400 text-center -mt-1">
-              {esEspacio ? 'Paso 4 de 4 · Confirmar' : 'Paso 5 de 5 · Confirmar'}
-            </p>
+            {/* Progreso: divulgación progresiva (PASOS / PASOS_ESPACIO del código) */}
+            {!esExito && !esMisCitas && (
+              <>
+                <div className="flex items-center gap-1" aria-hidden="true">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <div key={n} className={`h-1.5 flex-1 rounded-full ${(esEspacio ? n <= 4 : true) ? 'bg-black' : 'bg-gray-200'}`} />
+                  ))}
+                </div>
+                <p className="text-[9px] font-bold text-gray-400 text-center -mt-1">
+                  {esEspacio ? 'Paso 4 de 5 · Confirmar' : 'Paso 5 de 5 · Confirmar'}
+                </p>
+              </>
+            )}
+            {esMisCitas && (
+              <div className="flex gap-1.5 justify-center" aria-hidden="true">
+                {['Todas (3)', 'Activas (2)', 'Canceladas (1)'].map((f, i) => (
+                  <span key={f} className={`text-[8px] font-bold px-2 py-1 rounded-full ${i === 0 ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-500'}`}>{f}</span>
+                ))}
+              </div>
+            )}
 
-            {esEspacio ? (
+            {esExito ? (
+              <>
+                <div className="text-center py-1">
+                  <div className="text-3xl mb-1" aria-hidden="true">✅</div>
+                  <p className="text-sm font-black text-gray-900">¡Cita confirmada!</p>
+                  <p className="text-[10px] text-gray-500 font-medium">Viernes 15 · 11:00 · Corte + Barba con José</p>
+                </div>
+                <div className="text-left bg-gray-50 rounded-xl p-3 space-y-1 text-[10px] text-gray-700 border border-gray-100">
+                  <p>📋 <strong>Corte + Barba</strong> · $35.000</p>
+                  <p>👤 <strong>José</strong> · 📍 Barbería Centro</p>
+                  <p>📅 <strong>Vie 15, 11:00</strong> · unos 45 minutos</p>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl py-2 text-center text-[10px] font-bold text-gray-700">📅 Añadir a Google Calendar</div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl py-2 text-center text-[10px] font-bold text-blue-700">🔔 Activar recordatorio</div>
+                <p className="text-[9px] text-gray-400 text-center font-medium -mt-1">Llega 5 min antes · se libera si cancelas</p>
+              </>
+            ) : esMisCitas ? (
+              <>
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Hoy</p>
+                <div className="bg-white border border-gray-200 rounded-xl p-2.5">
+                  <div className="flex justify-between items-start">
+                    <div><p className="text-[11px] font-bold text-gray-900">📋 Corte · 11:00</p><p className="text-[9px] text-gray-500">👤 José · Vie 15</p></div>
+                    <span className="text-[9px] font-black bg-gray-100 px-1.5 py-0.5 rounded">$35.000</span>
+                  </div>
+                  <div className="flex gap-1.5 mt-2">
+                    <span className="flex-1 text-center text-[9px] font-bold bg-gray-100 rounded-lg py-1.5 text-gray-700">Cambiar hora</span>
+                    <span className="flex-1 text-center text-[9px] font-bold bg-red-50 border border-red-200 rounded-lg py-1.5 text-red-700">Cancelar</span>
+                  </div>
+                </div>
+                <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wider">Mañana</p>
+                <div className="bg-white border border-gray-200 rounded-xl p-2.5 opacity-80">
+                  <p className="text-[11px] font-bold text-gray-900">🧘 Crossfit · 18:00</p>
+                  <p className="text-[9px] text-gray-500">📍 Box Centro · 12/15</p>
+                </div>
+              </>
+            ) : esEspacio ? (
               <>
                 {/* Espacio card */}
                 <div className="bg-gray-50 border border-gray-200 rounded-xl p-3">
@@ -107,20 +158,31 @@ export default function PhoneMockup({ modo = 'servicio' }) {
               </>
             )}
 
-            {/* Google identity (real: login obligatorio) */}
-            <div className="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2">
-              <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center">G</span>
-              <span className="text-[10px] font-bold text-gray-700">Juan · juan@gmail.com</span>
-              <span className="text-[8px] text-green-600 font-bold ml-auto">✓ Google</span>
+            {/* Identidad Google obligatoria + primer hueco + bottom nav real */}
+            {!esExito && !esMisCitas && (
+              <>
+                <div className="bg-gray-50 border border-gray-200 rounded-xl p-2 text-center text-[10px] font-bold text-gray-600">
+                  ⚡ Primer hueco: <span className="text-green-700">Hoy 14:30 con José</span> · <span className="underline">usar</span>
+                </div>
+                <div className="bg-white border border-gray-200 rounded-xl p-2.5 flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-500 text-white text-[10px] font-black flex items-center justify-center">G</span>
+                  <span className="text-[10px] font-bold text-gray-700">Juan · juan@gmail.com</span>
+                  <span className="text-[8px] text-green-600 font-bold ml-auto">✓ Google</span>
+                </div>
+                <div className="bg-green-500 text-white text-center py-2.5 rounded-xl text-xs font-bold min-h-[44px] flex items-center justify-center">
+                  Confirmar Reserva ✓
+                </div>
+                <p className="text-[9px] text-gray-400 text-center font-medium -mt-1">
+                  {esEspacio ? 'Reserva de Crossfit · 18:00 · se libera si cancelas' : 'Pagas en el local · aquí solo apartas'}
+                </p>
+              </>
+            )}
+            {/* Bottom nav real del cliente: Agendar · Mis Citas · Info */}
+            <div className="flex justify-around border-t border-gray-100 pt-2 mt-1 text-[8px] font-black">
+              <span className="text-black">📅 Agendar</span>
+              <span className={esMisCitas ? 'text-black' : 'text-gray-400'}>🧾 Mis Citas</span>
+              <span className="text-gray-400">📍 Info</span>
             </div>
-
-            {/* CTA */}
-            <div className="bg-green-500 text-white text-center py-2.5 rounded-xl text-xs font-bold">
-              Confirmar Reserva ✓
-            </div>
-            <p className="text-[9px] text-gray-400 text-center font-medium -mt-1">
-              {esEspacio ? 'Reserva de Crossfit · 18:00 · se libera si cancelas' : 'Pagas en el local · aquí solo apartas'}
-            </p>
           </div>
         </div>
       </div>
