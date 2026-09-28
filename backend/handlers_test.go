@@ -568,6 +568,38 @@ func TestBookHoneypotFingeExito(t *testing.T) {
 	}
 }
 
+// El honeypot no debe gastar cupo del booking limiter: 12 bots seguidos
+// desde la misma IP reciben 201 fingido sin ver 429 (protege NAT/CGNAT
+// compartidos). No requiere emulador: el limiter responde antes del router.
+func TestHoneypotNoConsumeLimiter(t *testing.T) {
+	llamadas := 0
+	stub := func(w http.ResponseWriter, r *http.Request) {
+		llamadas++
+		w.WriteHeader(http.StatusTeapot)
+	}
+	h := apiBookingLimiter(stub)
+	slug := slugUnico("test-honeypot-lim")
+	for i := 0; i < 12; i++ {
+		body := `{"servicioId":"svc1","empleadoId":"emp1","fecha":"2030-01-01","hora":"10:00","clienteNombre":"Bot","clienteTelefono":"+573009990001","website":"http://spam.example"}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader([]byte(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.RemoteAddr = "10.99.99.99:1234"
+		rec := httptest.NewRecorder()
+		h(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("intento %d: code=%d, esperaba 201 fingido", i, rec.Code)
+		}
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		if out["success"] != true || out["event_id"] != "mock_event_123" {
+			t.Fatalf("intento %d: respuesta no fingida: %v", i, out)
+		}
+	}
+	if llamadas != 0 {
+		t.Fatalf("el handler real debió recibir 0 llamadas, recibió %d", llamadas)
+	}
+}
+
 func TestBookConNotasYPersistencia(t *testing.T) {
 	testFirestoreClient(t)
 	ctx := context.Background()
@@ -2445,6 +2477,35 @@ func TestUpdateDeleteServicio(t *testing.T) {
 	del := call(http.MethodDelete, "/api/v1/b/"+slug+"/servicios/svc1", ``)
 	if del.Code != http.StatusOK {
 		t.Fatalf("delete code=%d body=%s, esperaba 200", del.Code, del.Body.String())
+	}
+}
+
+// PUT sobre servicio inexistente: 404 servicio_no_encontrado, no 500.
+func TestUpdateServicioInexistente404(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-svc404")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenosvc404@test.com")
+	duenoTok := tokenClienteTest(t, "duenosvc404@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/b/"+slug+"/servicios/svc_no_existe", bytes.NewReader([]byte(`{"price":"99999"}`)))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+duenoTok)
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("code=%d body=%s, esperaba 404", rec.Code, rec.Body.String())
+	}
+	var out map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &out)
+	if out["error"] != "servicio_no_encontrado" {
+		t.Fatalf("error=%v, esperaba servicio_no_encontrado", out["error"])
 	}
 }
 

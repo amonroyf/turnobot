@@ -667,8 +667,12 @@ gcloud run services describe turnobot --region us-central1 --format="value(statu
 |----------|---------------|------|
 | `GET /api/v1/b/{slug}` | No | Público |
 | `GET /api/v1/b/{slug}/slots` | No | Público |
-| `POST /api/v1/b/{slug}/book` | No | Público (rate limited) |
-| `DELETE /api/v1/b/{slug}/citas/{id}` | No* | *Verificado por owner_uid |
+| `POST /api/v1/b/{slug}/book` | **Sí** | Firebase ID token (cliente). Sin token → `401 login_requerido`. Rate limited 10/min. Responde `201` con `cita_id` (no `id`) |
+| `GET /api/v1/b/{slug}/citas?telefono=` | **Sí** | Firebase ID token (cliente) |
+| `POST /api/v1/b/{slug}/citas/{id}/reschedule` | **Sí** | Firebase ID token (cliente dueño de la cita). Rate limited 10/min. Slot ocupado → `409 slot_taken` |
+| `POST /api/v1/b/{slug}/citas/{id}/client-push-token` | No* | *Sin auth (el `citaID` no es adivinable). Body estricto `{"token": "...", "phone": "<dígitos>"}`: sin `token` → `400 token_requerido`, sin `phone` coincidente → `403 telefono_no_coincide` |
+| `POST /api/v1/b/{slug}/citas/{id}/undo` | **Sí** | Firebase ID token (dueño o empleado asignado). Con token de cliente → `401`. Solo mismo día o <24h (`403 outside_window`) |
+| `DELETE /api/v1/b/{slug}/citas/{id}` | **Sí** | Firebase ID token (cliente dueño o equipo). Responde `200` con JSON y `cita_id` (nunca `204`) |
 | `DELETE /api/v1/b/{slug}/servicios/{id}` | **Sí** | Firebase ID token (owner) |
 | `DELETE /api/v1/b/{slug}/empleados/{id}` | **Sí** | Firebase ID token (owner) |
 | `POST /api/v1/b/{slug}/no-show/{id}` | **Sí** | Firebase ID token (owner) |

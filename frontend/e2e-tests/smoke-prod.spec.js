@@ -33,14 +33,14 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
     timeout: 30000,
   });
 
-  await page.getByPlaceholder('Nombre (ej. Corte clásico)').fill('Corte Smoke');
-  await page.getByPlaceholder('Minutos').fill('60');
-  await page.getByPlaceholder('Precio').fill('20000');
+  await page.getByPlaceholder('Ej. Corte, Uñas, Limpieza').fill('Corte Smoke');
+  await page.getByPlaceholder('Ej. 30').fill('60');
+  await page.getByPlaceholder('Ej. 20000').fill('20000');
   await page.getByRole('button', { name: /Agregar Servicio/ }).click();
   await expect(page.getByText('Corte Smoke')).toBeVisible({ timeout: 20000 });
 
-  await page.getByPlaceholder('Nombre del profesional').fill('Smoky');
-  await page.getByRole('button', { name: 'Añadir Profesional' }).click();
+  await page.getByPlaceholder('Ej. Camila, Andrés…').fill('Smoky');
+  await page.getByRole('button', { name: '+ Añadir al equipo' }).click();
   await expect(page.getByText('Smoky')).toBeVisible({ timeout: 20000 });
   const empleado = await db
     .collection('negocios')
@@ -87,17 +87,18 @@ test('Smoke prod: registro, catálogo, slots por jornada y eliminación en casca
   const segBody = await seg.json();
   expect(segBody.error).toBe('max_per_day');
 
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Eliminar profesional Smoky' }).click();
-  await expect(
-    page.getByRole('button', { name: 'Eliminar profesional Smoky' }),
-  ).toBeHidden({ timeout: 15000 });
+  // AdminDashboard usa modal propio (confirmar), no dialog nativo.
+  await page.getByLabel('Quitar a Smoky del equipo').click();
+  await page.getByRole('button', { name: 'Sí, quitar' }).click();
+  await expect(page.getByLabel('Quitar a Smoky del equipo')).toBeHidden({
+    timeout: 15000,
+  });
 
-  page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }).click();
-  await expect(
-    page.getByRole('button', { name: 'Eliminar servicio Corte Smoke' }),
-  ).toBeHidden({ timeout: 15000 });
+  await page.getByLabel('Eliminar servicio Corte Smoke').click();
+  await page.getByRole('button', { name: 'Sí, eliminar' }).click();
+  await expect(page.getByLabel('Eliminar servicio Corte Smoke')).toBeHidden({
+    timeout: 15000,
+  });
 
   const empDoc = await db
     .collection('negocios')

@@ -1,9 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { limpiarEntornoReal, elegirDiaEnCalendario, db } from './setup.js';
+import { limpiarEntornoReal, elegirDiaEnCalendario, db, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
 
 const SLUG_REAL = 'e2e-shop-test';
 const EMAIL_REAL = 'owner-e2e@turnobot.com';
-const PASS_REAL = 'Turnobot2026!';
 
 const mañana = () => {
   const d = new Date(Date.now() + 86400000);
@@ -16,35 +15,30 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
   });
 
   test('El dueño se registra y crea el catálogo de su negocio', async ({ page }) => {
-    // 1. Registro real en Firebase Auth (paso 1: correo/contraseña)
+    // 1. Registro: /register hoy es solo Google (sin flujo correo/contraseña en UI).
+    // Se crea el usuario vía Admin SDK y se inicia sesión con token personalizado,
+    // igual que smoke-prod.spec.js y crm.spec.js.
+    const { email: userEmail, password } = await crearUsuarioYTema(EMAIL_REAL, 'Negocio E2E', SLUG_REAL);
     await page.goto('/register');
-    await page.getByText('¿Prefieres crear tu cuenta con correo y contraseña?').click();
-    await page.locator('input[type="email"]').fill(EMAIL_REAL);
-    await page.locator('input[type="password"]').fill(PASS_REAL);
-    await page.getByRole('button', { name: 'Crear cuenta con correo' }).click();
+    await signInWithCustomToken(page, userEmail, password);
+    await page.goto('/admin');
 
-    // 2. Paso 2: nombre y slug del negocio
-    await expect(page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing')).toBeVisible();
-    await page.getByPlaceholder('Ej. Clínica Wellness / Auto Detailing').fill('Negocio E2E');
-    await page.locator('input[type="text"]').nth(1).fill(SLUG_REAL);
-    await page.getByRole('button', { name: 'Finalizar Configuración' }).click();
-
-    // 3. Acceso al Dashboard y correo persistido
+    // 2. Acceso al Dashboard con el negocio pre-creado por crearUsuarioYTema
     await expect(page).toHaveURL(/\/admin$/);
     await expect(page.getByRole('heading', { name: 'Negocio E2E' })).toBeVisible({
       timeout: 30000,
     });
 
-    // 3. Crear servicio en Firestore real
-    await page.getByPlaceholder('Nombre (ej. Consulta, Limpieza, Terapia)').fill('Consulta Premium');
-    await page.getByPlaceholder('Minutos').fill('45');
-    await page.getByPlaceholder('Precio').fill('35000');
+    // 3. Crear servicio en Firestore real (selectores vigentes de AdminDashboard.jsx)
+    await page.getByPlaceholder('Ej. Corte, Uñas, Limpieza').fill('Consulta Premium');
+    await page.getByPlaceholder('Ej. 30').fill('45');
+    await page.getByPlaceholder('Ej. 20000').fill('35000');
     await page.getByRole('button', { name: /Agregar Servicio/ }).click();
     await expect(page.getByText('Consulta Premium')).toBeVisible({ timeout: 20000 });
 
     // 4. Crear profesional en Firestore real
-    await page.getByPlaceholder('Nombre del profesional').fill('Profesional E2E');
-    await page.getByRole('button', { name: 'Añadir Profesional' }).click();
+    await page.getByPlaceholder('Ej. Camila, Andrés…').fill('Profesional E2E');
+    await page.getByRole('button', { name: '+ Añadir al equipo' }).click();
     await expect(page.getByText('Profesional E2E')).toBeVisible({ timeout: 20000 });
 
     // Verificación directa en la BD
@@ -99,8 +93,8 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     async function hastaConfirmacion(page) {
       await page.goto(`/shop/${SLUG_REAL}`);
       await page.getByRole('button', { name: /Agendar/ }).click();
-      await page.getByText('Corte Premium').first().click();
-      await page.getByText('Barbero E2E', { exact: true }).first().click();
+      await page.getByText('Consulta Premium').first().click();
+      await page.getByText('Profesional E2E', { exact: true }).first().click();
       await elegirDiaEnCalendario(page, mañana());
       await page.locator('div.grid-cols-3 button').first().click();
       await page.getByPlaceholder('Tu Nombre completo').fill('Usuario Rápido');
@@ -110,8 +104,8 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await hastaConfirmacion(p1);
     await p2.goto(`/shop/${SLUG_REAL}`);
     await p2.getByRole('button', { name: /Agendar/ }).click();
-    await p2.getByText('Corte Premium').first().click();
-    await p2.getByText('Barbero E2E', { exact: true }).first().click();
+    await p2.getByText('Consulta Premium').first().click();
+    await p2.getByText('Profesional E2E', { exact: true }).first().click();
     await elegirDiaEnCalendario(p2, mañana());
     await p2.locator('.grid button').first().click();
     await p2.getByPlaceholder('Tu Nombre completo').fill('Usuario Lento');

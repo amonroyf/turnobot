@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -8,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -2461,6 +2463,18 @@ func updateServicioHandler(w http.ResponseWriter, r *http.Request, slug, servici
 	updates = append(updates, firestore.Update{Path: "updated_at", Value: time.Now()})
 	servRef := firestoreClient.Collection("negocios").Doc(slug).Collection("servicios").Doc(servicioID)
 	if _, err := servRef.Update(r.Context(), updates); err != nil {
+		// Doc inexistente ≠ error del servidor: 404 para que el panel
+		// distinga "no existe" de un fallo real (y no meta ruido en logs).
+		if status.Code(err) == codes.NotFound {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "servicio_no_encontrado",
+				"message": "El servicio no existe.",
+			})
+			return
+		}
 		log.Printf("Error actualizando servicio %s: %v", servicioID, err)
 		http.Error(w, "Error guardando el servicio", http.StatusInternalServerError)
 		return
@@ -5314,6 +5328,27 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// honeypotLleno detecta el campo trampa anti-bots sin consumir el body:
+// lo repone para el handler real. Ante cualquier duda (sin body, JSON
+// inválido) devuelve false y el flujo normal sigue intacto.
+func honeypotLleno(r *http.Request) bool {
+	if r.Body == nil {
+		return false
+	}
+	raw, err := io.ReadAll(io.LimitReader(r.Body, 16<<10))
+	if err != nil {
+		return false
+	}
+	r.Body = io.NopCloser(bytes.NewBuffer(raw))
+	var probe struct {
+		Website string `json:"website"`
+	}
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		return false
+	}
+	return strings.TrimSpace(probe.Website) != ""
+}
+
 // apiBookingLimiter aplica rate limiting estricto solo a las escrituras que
 // un bot puede abusar: crear reserva y reprogramar. Antes frenaba TODOS los
 // POST (undo, no-show, PIN, push, caché) y con llave solo-IP: un wifi
@@ -5323,6 +5358,21 @@ func apiBookingLimiter(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost &&
 			(strings.HasSuffix(r.URL.Path, "/book") || strings.HasSuffix(r.URL.Path, "/reschedule")) {
+			// Honeypot ANTES del limiter: el bot que rellena el campo trampa
+			// recibe el 201 fingido sin gastar cupo del bucket ip|negocio.
+			// Sin esto, un bot tras un NAT/CGNAT compartido deja sin servicio
+			// a usuarios legítimos de esa IP durante 1 min.
+			if strings.HasSuffix(r.URL.Path, "/book") && honeypotLleno(r) {
+				log.Printf("Honeypot activado (pre-limiter, bot bloqueado sin gastar cupo)")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusCreated)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success":  true,
+					"message":  "Cita agendada exitosamente",
+					"event_id": "mock_event_123",
+				})
+				return
+			}
 			ip := clientIP(r)
 			slug := ""
 			if rest := strings.TrimPrefix(r.URL.Path, "/api/v1/b/"); rest != r.URL.Path {
