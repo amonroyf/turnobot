@@ -64,11 +64,8 @@ export default function useEmployeePushNotifications(slug, empToken, empId) {
       });
 
       if (fcmToken) {
-        setIsSubscribed(true);
-        localStorage.setItem(`emp_fcm_${slug}_${empId}`, fcmToken);
-
         const apiBase = import.meta.env.VITE_API_URL || '';
-        await fetch(`${apiBase}/api/v1/b/${slug}/employee/${empId}/register-push-token`, {
+        const res = await fetch(`${apiBase}/api/v1/b/${slug}/employee/${empId}/register-push-token`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${empToken}`,
@@ -76,6 +73,11 @@ export default function useEmployeePushNotifications(slug, empToken, empId) {
           },
           body: JSON.stringify({ token: fcmToken })
         });
+        // Éxito solo si el backend lo persistió (mismo defecto que el hook
+        // del dueño: antes se marcaba suscrito con el POST aún en vuelo).
+        if (!res.ok) return;
+        setIsSubscribed(true);
+        localStorage.setItem(`emp_fcm_${slug}_${empId}`, fcmToken);
       }
     } catch (err) {
       console.error('Error al suscribirse a push:', err);

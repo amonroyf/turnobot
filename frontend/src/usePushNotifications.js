@@ -75,16 +75,14 @@ export default function usePushNotifications(negocioId) {
       });
 
       if (fcmToken) {
-        setToken(fcmToken);
-        setIsSubscribed(true);
-        localStorage.setItem(`fcm_token_${negocioId}`, fcmToken);
-
-        // Registrar token en el backend
+        // Registrar token en el backend PRIMERO: el éxito se declara solo
+        // si el servidor lo persistió (antes se mostraba ✅ con el POST aún
+        // en vuelo o fallido, y el push-test posterior leía 0 tokens).
         const user = auth.currentUser;
         if (user) {
           const apiBase = import.meta.env.VITE_API_URL || '';
           const idToken = await user.getIdToken();
-          await fetch(`${apiBase}/api/v1/b/${negocioId}/register-push-token`, {
+          const res = await fetch(`${apiBase}/api/v1/b/${negocioId}/register-push-token`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${idToken}`,
@@ -92,7 +90,11 @@ export default function usePushNotifications(negocioId) {
             },
             body: JSON.stringify({ token: fcmToken })
           });
+          if (!res.ok) return false;
         }
+        setToken(fcmToken);
+        setIsSubscribed(true);
+        localStorage.setItem(`fcm_token_${negocioId}`, fcmToken);
         return true;
       }
       return false;
