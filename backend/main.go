@@ -4101,6 +4101,8 @@ func intervalosClaseInstructor(ctx context.Context, slug, empID string, day time
 		return nil
 	}
 	var out [][2]time.Time
+	loc := shopLocation(ctx, slug)
+	fechaDia := day.In(loc).Format("2006-01-02")
 	for _, d := range docs {
 		// El espacio que se está reservando/moviendo no bloquea: si no, la
 		// clase con horario fijo e instructor jamás se podría reservar
@@ -4109,7 +4111,30 @@ func intervalosClaseInstructor(ctx context.Context, slug, empID string, day time
 			continue
 		}
 		var rec Recurso
-		if err := d.DataTo(&rec); err != nil || rec.InstructorID != empID || rec.Horario == nil {
+		if err := d.DataTo(&rec); err != nil || rec.InstructorID != empID {
+			continue
+		}
+		// Evento de fecha única: su ventana bloquea 1-a-1 y otras sesiones
+		// ese día aunque aún no tenga inscritos (espejo del Escudo de
+		// creación; sin esto, reservar 1-a-1 después del evento lo
+		// doble-agenda).
+		if f := strings.TrimSpace(rec.FechaEspecifica); f != "" {
+			if f != fechaDia && f != day.Format("2006-01-02") {
+				continue
+			}
+			dia, err := time.Parse("2006-01-02", f)
+			if err != nil {
+				continue
+			}
+			if iv, ok := ventanaEventoUnico(ctx, slug, rec, dia, rec.Duration); ok {
+				out = append(out, iv)
+			} else {
+				s, e := workDayRange(ctx, slug, dia)
+				out = append(out, [2]time.Time{s, e})
+			}
+			continue
+		}
+		if rec.Horario == nil {
 			continue
 		}
 		dia := employeeDayHorario(rec.Horario, day.Weekday())

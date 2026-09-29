@@ -2686,6 +2686,63 @@ func TestCrearEventoUnicoBloqueaChoqueInstructor(t *testing.T) {
 	}
 }
 
+// Espejo del escudo: un evento con instructor (aún sin inscritos) bloquea
+// 1-a-1 posteriores en su ventana, sin autobloquear su propia reserva.
+func TestEventoUnicoBloqueaUnoAUnoPosterior(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-evespejo")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenoevespejo@test.com")
+	duenoTok := tokenClienteTest(t, "duenoevespejo@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	fecha := time.Now().Add(5 * 24 * time.Hour).Format("2006-01-02")
+	crear := func(payload string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	code, out := crear(`{"name":"Yoga","tipo":"clase","capacidad":10,"duration_minutes":120,"price":0,"instructor_id":"emp1","fecha_especifica":"` + fecha + `","hora_inicio":"14:00","hora_fin":"17:00"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("crear evento code=%d out=%v, esperaba 201", code, out)
+	}
+	idEv, _ := out["id"].(string)
+	// 1-a-1 con emp1 a las 15:00 (dentro de la ventana): rechazado.
+	if code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "15:00",
+		"clienteNombre": "Tarde", "clienteTelefono": "+573007772222",
+	}); code != http.StatusConflict {
+		t.Fatalf("1-a-1 en ventana code=%d, esperaba 409", code)
+	}
+	// 1-a-1 a las 10:00 (fuera): pasa.
+	if code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "10:00",
+		"clienteNombre": "Temprano", "clienteTelefono": "+573007773333",
+	}); code != http.StatusCreated {
+		t.Fatalf("1-a-1 fuera de ventana code=%d, esperaba 201", code)
+	}
+	// Reserva del propio evento a las 14:00: pasa (sin autobloqueo).
+	if code, out := postBook(t, slug, map[string]string{
+		"recursoId": idEv, "empleadoId": "",
+		"fecha": fecha, "hora": "14:00",
+		"clienteNombre": "Alumna", "clienteTelefono": "+573007774444",
+	}); code != http.StatusCreated {
+		t.Fatalf("reserva del evento code=%d out=%v, esperaba 201", code, out)
+	}
+}
+
 // Reglas puras (sin emulador): horarios, marca y zona horaria.
 func TestReglasHorarioYMarca(t *testing.T) {
 	h := &HorarioSemanal{Lunes: DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "13:00"}}}}

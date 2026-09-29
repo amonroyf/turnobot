@@ -2012,7 +2012,6 @@ function AdminPanel() {
                         >
                           🔗 Link
                         </button>
-                        <button onClick={() => setHorarioRecursoModal(r)} title={`Horario de ${r.name}`} aria-label={`Definir horario de ${r.name}`} className="min-h-[44px] px-3 bg-gray-50 border border-gray-200 text-gray-800 font-bold rounded-xl text-xs active:scale-95">🕒</button>
                         <button onClick={() => handleEliminarRecurso(r)} disabled={eliminando === r.id} aria-label={`Borrar espacio ${r.name}`} className="min-h-[44px] px-3 text-red-600 font-bold text-xs active:scale-95 transition-transform bg-red-50 rounded-xl border border-red-100">
                           {eliminando === r.id ? 'Borrando…' : 'Borrar'}
                         </button>
