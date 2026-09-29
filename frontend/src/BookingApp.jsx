@@ -1264,7 +1264,7 @@ export default function BookingApp() {
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block font-bold truncate text-sm">{r.name}</span>
                                   <span className="block text-[11px] font-semibold opacity-70 capitalize">
-                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}
+                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}{r.fecha_especifica ? ` · 📅 solo ${r.fecha_especifica}${r.hora_inicio ? ` ${r.hora_inicio}${r.hora_fin ? `–${r.hora_fin}` : ''}` : ''}` : ''}
                                   </span>
                                   {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                                 </span>

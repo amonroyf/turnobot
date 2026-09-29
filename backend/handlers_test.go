@@ -2509,6 +2509,183 @@ func TestUpdateServicioInexistente404(t *testing.T) {
 	}
 }
 
+// Evento de fecha única: creación validada, slots solo ese día y el
+// catálogo público oculta los ya pasados.
+func TestRecursoFechaUnica(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-recfecha")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenorecfecha@test.com")
+	duenoTok := tokenClienteTest(t, "duenorecfecha@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	if c, _ := crear(`{"name":"Mala","tipo":"clase","capacidad":10,"fecha_especifica":"2026-13-45"}`); c != http.StatusBadRequest {
+		t.Fatalf("fecha inválida code=%d, esperaba 400", c)
+	}
+	if c, _ := crear(`{"name":"Vieja","tipo":"clase","capacidad":10,"fecha_especifica":"2020-01-01"}`); c != http.StatusBadRequest {
+		t.Fatalf("fecha pasada code=%d, esperaba 400", c)
+	}
+	fechaEv := time.Now().Add(5 * 24 * time.Hour).Format("2006-01-02")
+	code, out := crear(`{"name":"Torneo","tipo":"clase","capacidad":10,"duration_minutes":60,"price":0,"fecha_especifica":"` + fechaEv + `"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("crear evento code=%d out=%v, esperaba 201", code, out)
+	}
+	idEv, _ := out["id"].(string)
+	if idEv == "" {
+		t.Fatalf("crear evento sin id: %v", out)
+	}
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc(idEv).Get(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Data()["fecha_especifica"] != fechaEv {
+		t.Fatalf("fecha_especifica=%v, esperaba %s", doc.Data()["fecha_especifica"], fechaEv)
+	}
+	if _, tiene := doc.Data()["horario"]; tiene {
+		t.Fatalf("evento único no debe guardar horario semanal")
+	}
+	otroDia := time.Now().Add(6 * 24 * time.Hour).Format("2006-01-02")
+	diaOtro, _ := time.Parse("2006-01-02", otroDia)
+	slots, _, err := disponibilidadRecurso(ctx, slug, idEv, diaOtro, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slots) != 0 {
+		t.Fatalf("fuera del evento slots=%d, esperaba 0", len(slots))
+	}
+	diaEv, _ := time.Parse("2006-01-02", fechaEv)
+	slotsEv, _, err := disponibilidadRecurso(ctx, slug, idEv, diaEv, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slotsEv) == 0 {
+		t.Fatalf("el día del evento debe ofrecer slots")
+	}
+	// Evento con horas: solo slots dentro de [hora_inicio, hora_fin].
+	code, out = crear(`{"name":"Taller","tipo":"clase","capacidad":10,"duration_minutes":60,"price":0,"fecha_especifica":"` + fechaEv + `","hora_inicio":"14:00","hora_fin":"16:00"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("crear evento con horas code=%d out=%v, esperaba 201", code, out)
+	}
+	idTaller, _ := out["id"].(string)
+	slotsT, _, err := disponibilidadRecurso(ctx, slug, idTaller, diaEv, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slotsT) != 2 || slotsT[0] != "14:00" || slotsT[1] != "15:00" {
+		t.Fatalf("ventana 14-16 slots=%v, esperaba [14:00 15:00]", slotsT)
+	}
+	if c, _ := crear(`{"name":"Mal","tipo":"clase","capacidad":5,"fecha_especifica":"` + fechaEv + `","hora_inicio":"16:00","hora_fin":"14:00"}`); c != http.StatusBadRequest {
+		t.Fatalf("fin<=inicio code=%d, esperaba 400", c)
+	}
+	// Sin horas: 201 y usa la jornada del negocio (09:00–18:00).
+	code, out = crear(`{"name":"TodoElDia","tipo":"clase","capacidad":5,"duration_minutes":60,"price":0,"fecha_especifica":"` + fechaEv + `"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("sin hora code=%d, esperaba 201", code)
+	}
+	idDia, _ := out["id"].(string)
+	slotsDia, _, err := disponibilidadRecurso(ctx, slug, idDia, diaEv, 60, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(slotsDia) == 0 || slotsDia[0] != "09:00" {
+		t.Fatalf("sin hora debe usar jornada, slots=%v", slotsDia)
+	}
+	// Evento pasado (insertado directo, la creación lo rechaza): oculto del catálogo.
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Doc("recViejo").Set(ctx, map[string]interface{}{
+		"name": "Pasado", "tipo": "clase", "capacidad": 10, "fecha_especifica": "2020-05-05",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	negocioCache.Invalidate(slug)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/b/"+slug, nil)
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("negocio code=%d, esperaba 200", rec.Code)
+	}
+	var neg map[string]interface{}
+	_ = json.Unmarshal(rec.Body.Bytes(), &neg)
+	recs, _ := neg["recursos"].([]interface{})
+	nombres := map[string]bool{}
+	for _, r := range recs {
+		if m, ok := r.(map[string]interface{}); ok {
+			if n, ok := m["name"].(string); ok {
+				nombres[n] = true
+			}
+		}
+	}
+	if nombres["Pasado"] {
+		t.Fatalf("evento pasado no debe aparecer en el catálogo")
+	}
+	if !nombres["Torneo"] {
+		t.Fatalf("evento futuro debe aparecer en el catálogo")
+	}
+}
+
+// Escudo fecha única: si el instructor ya tiene 1-a-1 u otra clase que
+// solapa la ventana del evento, la creación se rechaza (409).
+func TestCrearEventoUnicoBloqueaChoqueInstructor(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-evchoque")
+	seedTienda(t, ctx, slug)
+	duenoUID := clienteUIDTest(t, "duenoevchoque@test.com")
+	duenoTok := tokenClienteTest(t, "duenoevchoque@test.com")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"owner_uid": duenoUID,
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	crear := func(payload string) (int, map[string]interface{}) {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+duenoTok)
+		rec := httptest.NewRecorder()
+		apiRouter(rec, req)
+		var out map[string]interface{}
+		_ = json.Unmarshal(rec.Body.Bytes(), &out)
+		return rec.Code, out
+	}
+	// 1-a-1 con emp1 dentro de 5 días a las 14:00 (svc1 dura 30 min).
+	fecha := time.Now().Add(5 * 24 * time.Hour).Format("2006-01-02")
+	if code, _ := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": fecha, "hora": "14:00",
+		"clienteNombre": "Pedro", "clienteTelefono": "+573007771111",
+	}); code != http.StatusCreated {
+		t.Fatalf("book 1-a-1 code=%d, esperaba 201", code)
+	}
+	// Evento 14:00–17:00 con el mismo instructor: 409.
+	code, out := crear(`{"name":"Tokyo","tipo":"clase","capacidad":10,"duration_minutes":120,"price":20000,"instructor_id":"emp1","fecha_especifica":"` + fecha + `","hora_inicio":"14:00","hora_fin":"17:00"}`)
+	if code != http.StatusConflict || out["error"] != "instructor_con_choque" {
+		t.Fatalf("choque 1-a-1 code=%d out=%v, esperaba 409 instructor_con_choque", code, out)
+	}
+	// Evento 15:00–16:00 (sin solape, la cita termina 14:30): 201.
+	if code, _ := crear(`{"name":"Tarde","tipo":"clase","capacidad":10,"duration_minutes":60,"price":0,"instructor_id":"emp1","fecha_especifica":"` + fecha + `","hora_inicio":"15:00","hora_fin":"16:00"}`); code != http.StatusCreated {
+		t.Fatalf("sin choque code=%d, esperaba 201", code)
+	}
+	// Otro evento 15:30–16:30 solapa al anterior: 409 clase.
+	if code, out := crear(`{"name":"Choque","tipo":"clase","capacidad":5,"duration_minutes":60,"price":0,"instructor_id":"emp1","fecha_especifica":"` + fecha + `","hora_inicio":"15:30","hora_fin":"16:30"}`); code != http.StatusConflict || out["error"] != "instructor_con_choque" {
+		t.Fatalf("choque clase code=%d out=%v, esperaba 409 instructor_con_choque", code, out)
+	}
+}
+
 // Reglas puras (sin emulador): horarios, marca y zona horaria.
 func TestReglasHorarioYMarca(t *testing.T) {
 	h := &HorarioSemanal{Lunes: DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "13:00"}}}}

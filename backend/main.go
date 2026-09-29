@@ -270,6 +270,31 @@ type Recurso struct {
 	InstructorID string         `firestore:"instructor_id" json:"instructor_id,omitempty"`
 	Descripcion string          `firestore:"descripcion" json:"descripcion,omitempty"`
 	Horario     *HorarioSemanal `firestore:"horario" json:"horario,omitempty"`
+	// FechaEspecifica (YYYY-MM-DD, opcional): evento de fecha única (torneo,
+	// taller especial). Si viene, el espacio SOLO ofrece slots ese día y el
+	// horario semanal se ignora. Vacío = recurrente (comportamiento actual).
+	FechaEspecifica string `firestore:"fecha_especifica" json:"fecha_especifica,omitempty"`
+	// HoraInicio/HoraFin (HH:MM, solo con fecha única): ventana reservable
+	// ese día (ej. torneo 14:00–18:00). Sin HoraInicio se usa la jornada del
+	// negocio; sin HoraFin, inicio + duración del evento.
+	HoraInicio string `firestore:"hora_inicio" json:"hora_inicio,omitempty"`
+	HoraFin    string `firestore:"hora_fin" json:"hora_fin,omitempty"`
+}
+
+// esFechaUnica dice si el recurso es un evento de fecha única.
+func (r Recurso) esFechaUnica() bool { return strings.TrimSpace(r.FechaEspecifica) != "" }
+
+// normalizarFechaEspecifica valida YYYY-MM-DD con fecha real; devuelve la
+// fecha normalizada o "" si es inválida.
+func normalizarFechaEspecifica(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if t, err := time.Parse("2006-01-02", s); err == nil {
+		return t.Format("2006-01-02")
+	}
+	return ""
 }
 
 // capacidadEfectiva es la capacidad exacta (sin overbooking).
@@ -676,6 +701,21 @@ func getNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	if err != nil {
 		http.Error(w, "Negocio no encontrado", http.StatusNotFound)
 		return
+	}
+
+	// Eventos de fecha única ya pasados: no se muestran en el catálogo
+	// público (se reserva el día del evento y se oculta después). Se filtra
+	// sobre copia nueva para no mutar el objeto cacheado.
+	if len(negocio.Recursos) > 0 {
+		hoy := time.Now().In(shopLocation(r.Context(), slug)).Format("2006-01-02")
+		vivos := make([]Recurso, 0, len(negocio.Recursos))
+		for _, rec := range negocio.Recursos {
+			if f := strings.TrimSpace(rec.FechaEspecifica); f != "" && f < hoy {
+				continue
+			}
+			vivos = append(vivos, rec)
+		}
+		negocio.Recursos = vivos
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -2693,6 +2733,99 @@ func choqueInstructorNuevoRecurso(ctx context.Context, slug, instructorID string
 	return "", ""
 }
 
+// choqueInstructorEventoUnico ("Escudo Preventivo" para fecha única): revisa
+// si el instructor tiene citas 1-a-1 u otra clase que solape la ventana del
+// evento [evStart, evEnd). Retorna detalle y origen ("cita"/"clase") igual
+// que su contraparte semanal.
+func choqueInstructorEventoUnico(ctx context.Context, slug, instructorID string, evStart, evEnd time.Time) (string, string) {
+	if instructorID == "" || !evEnd.After(evStart) {
+		return "", ""
+	}
+	loc := shopLocation(ctx, slug)
+	solapa := func(a0, a1 time.Time) bool { return evStart.Before(a1) && a0.Before(evEnd) }
+
+	// 1. Citas 1-a-1 del instructor.
+	docs, err := firestoreClient.Collection("reservas").
+		Where("negocio_id", "==", slug).
+		Where("emp_id", "==", instructorID).
+		Where("date_time", ">=", evStart.Add(-24*time.Hour)).
+		Where("date_time", "<", evEnd).
+		Documents(ctx).GetAll()
+	if err != nil {
+		log.Printf("Aviso: no se pudo validar choque de instructor %s: %v", instructorID, err)
+	} else {
+		for _, d := range docs {
+			if d.Data()["cancelled"] == true {
+				continue
+			}
+			var b Booking
+			if err := d.DataTo(&b); err != nil {
+				continue
+			}
+			dur := time.Duration(b.DurationMinute) * time.Minute
+			if dur <= 0 {
+				dur = 60 * time.Minute
+			}
+			if solapa(b.DateTime, b.DateTime.Add(dur)) {
+				return b.DateTime.In(loc).Format("2006-01-02 15:04"), "cita"
+			}
+		}
+	}
+
+	// 2. Otras clases del instructor: recurrentes (turno fijo ese weekday) y
+	// otros eventos de fecha única el mismo día.
+	recDocs, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Documents(ctx).GetAll()
+	if err != nil {
+		return "", ""
+	}
+	fechaEv := evStart.In(loc).Format("2006-01-02")
+	for _, rd := range recDocs {
+		var rec Recurso
+		if err := rd.DataTo(&rec); err != nil || rec.InstructorID != instructorID {
+			continue
+		}
+		if f := strings.TrimSpace(rec.FechaEspecifica); f != "" {
+			if f != fechaEv {
+				continue
+			}
+			dia, err := time.Parse("2006-01-02", f)
+			if err != nil {
+				continue
+			}
+			iv, ok := ventanaEventoUnico(ctx, slug, rec, dia, rec.Duration)
+			if !ok {
+				s, e := workDayRange(ctx, slug, dia)
+				iv = [2]time.Time{s, e}
+			}
+			if solapa(iv[0], iv[1]) {
+				return fechaEv + " " + iv[0].In(loc).Format("15:04") + " con «" + rec.Name + "»", "clase"
+			}
+			continue
+		}
+		if rec.Horario == nil {
+			continue
+		}
+		dia := employeeDayHorario(rec.Horario, evStart.In(loc).Weekday())
+		if dia == nil || !dia.Activo {
+			continue
+		}
+		for _, t := range dia.Turnos {
+			okO, oh, om := parseClock(t.Inicio)
+			okC, ch, cm := parseClock(t.Fin)
+			if !okO || !okC {
+				continue
+			}
+			y, m, d := evStart.In(loc).Date()
+			b0 := time.Date(y, m, d, oh, om, 0, 0, loc)
+			b1 := time.Date(y, m, d, ch, cm, 0, 0, loc)
+			if solapa(b0, b1) {
+				return fechaEv + " " + t.Inicio + " con «" + rec.Name + "»", "clase"
+			}
+		}
+	}
+	return "", ""
+}
+
 // POST /api/v1/b/{slug}/recursos -> crea un espacio (solo dueño).
 // Sanea y acota todo en el servidor: nombre 1-100, capacidad 1-100, tipo
 // válido, descripción libre máx 500 (info del espacio, sin atados), duración
@@ -2712,6 +2845,9 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		Price           json.RawMessage `json:"price"`
 		InstructorID    string          `json:"instructor_id"`
 		Horario         *HorarioSemanal `json:"horario"`
+		FechaEspecifica string          `json:"fecha_especifica"`
+		HoraInicio      string          `json:"hora_inicio"`
+		HoraFin         string          `json:"hora_fin"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Payload inválido", http.StatusBadRequest)
@@ -2777,11 +2913,55 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 			return
 		}
 	}
+	// Fecha única (opcional): evento de un solo día (torneo, taller).
+	// Formato YYYY-MM-DD real y no pasada (en la zona del negocio). Con
+	// fecha única el horario semanal se ignora (se guarda nil).
+	fechaEspecifica := normalizarFechaEspecifica(req.FechaEspecifica)
+	if strings.TrimSpace(req.FechaEspecifica) != "" && fechaEspecifica == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "fecha_invalida",
+			"message": "La fecha del evento debe tener formato YYYY-MM-DD válido.",
+		})
+		return
+	}
+	if fechaEspecifica != "" && fechaEspecifica < time.Now().In(shopLocation(ctx, slug)).Format("2006-01-02") {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": false,
+			"error":   "fecha_pasada",
+			"message": "La fecha del evento ya pasó.",
+		})
+		return
+	}
+	// Horas del evento único (HH:MM, opcionales): si vienen deben ser
+	// válidas y fin posterior a inicio. Sin horas se usa la jornada del
+	// negocio (ej. torneo de día completo).
+	horaInicio := strings.TrimSpace(req.HoraInicio)
+	horaFin := strings.TrimSpace(req.HoraFin)
+	if fechaEspecifica != "" && (horaInicio != "" || horaFin != "") {
+		okI, hI, mI := parseClock(horaInicio)
+		okF, hF, mF := parseClock(horaFin)
+		if (horaInicio != "" && !okI) || (horaFin != "" && (!okF || !okI || hF*60+mF <= hI*60+mI)) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "hora_invalida",
+				"message": "Horas inválidas: usa HH:MM y fin posterior al inicio.",
+			})
+			return
+		}
+	}
 	// Horario propio (opcional, flujo simple): misma validación que el de
 	// empleados (turnos HH:MM saneados, sin solapes, máx 4 por día). Si no
-	// viene, el espacio usa la jornada del negocio.
+	// viene, el espacio usa la jornada del negocio. Con fecha única se
+	// ignora (el evento vive solo ese día).
 	var horario *HorarioSemanal
-	if req.Horario != nil {
+	if fechaEspecifica == "" && req.Horario != nil {
 		if err := validarHorarioSemanal(*req.Horario); err != nil {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadRequest)
@@ -2811,6 +2991,40 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 		})
 		return
 	}
+	// Escudo Preventivo para fecha única: con instructor, el evento no debe
+	// nacer chocando con sus citas 1-a-1 ni con otra clase ese día/horario.
+	// (El escudo semanal no aplica: el evento no tiene horario recurrente.)
+	if fechaEspecifica != "" && instructorID != "" {
+		locEv := shopLocation(ctx, slug)
+		diaEv, _ := time.Parse("2006-01-02", fechaEspecifica)
+		var evStart, evEnd time.Time
+		if okI, hI, mI := parseClock(horaInicio); okI {
+			evStart = time.Date(diaEv.Year(), diaEv.Month(), diaEv.Day(), hI, mI, 0, 0, locEv)
+			evEnd = evStart
+			if okF, hF, mF := parseClock(horaFin); okF {
+				evEnd = time.Date(diaEv.Year(), diaEv.Month(), diaEv.Day(), hF, mF, 0, 0, locEv)
+			}
+			if !evEnd.After(evStart) {
+				evEnd = evStart.Add(time.Duration(duracion) * time.Minute)
+			}
+		} else {
+			evStart, evEnd = workDayRange(ctx, slug, diaEv)
+		}
+		if detalle, origen := choqueInstructorEventoUnico(ctx, slug, instructorID, evStart, evEnd); origen != "" {
+			mensaje := fmt.Sprintf("El instructor ya tiene citas 1-a-1 en ese horario (ej. %s). Reubícalas o cancélalas antes de asignarle esta clase.", detalle)
+			if origen == "clase" {
+				mensaje = fmt.Sprintf("El instructor ya dicta otra clase en ese horario (%s). Cambia el horario o el instructor.", detalle)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"error":   "instructor_con_choque",
+				"message": mensaje,
+			})
+			return
+		}
+	}
 
 	docData := map[string]interface{}{
 		"name":             name,
@@ -2824,6 +3038,13 @@ func createRecursoHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	}
 	if horario != nil {
 		docData["horario"] = horario
+	}
+	if fechaEspecifica != "" {
+		docData["fecha_especifica"] = fechaEspecifica
+		docData["hora_inicio"] = horaInicio
+		if horaFin != "" {
+			docData["hora_fin"] = horaFin
+		}
 	}
 	docRef, _, err := firestoreClient.Collection("negocios").Doc(slug).Collection("recursos").Add(ctx, docData)
 	if err != nil {
@@ -4144,26 +4365,67 @@ func getFreeSlotsRecurso(ctx context.Context, negocioID, recursoID string, day t
 // disponibilidadRecurso devuelve los slots con cupo suficiente y el mapa de
 // libres por hora (capacidad efectiva menos ocupados). Usa el horario propio
 // del recurso si existe (si no, la jornada del negocio).
+// ventanaEventoUnico construye el intervalo reservable de un evento de fecha
+// única ese día: [hora_inicio, hora_fin] (fin por defecto = inicio +
+// duración). Sin hora_inicio válida devuelve false y se usa la jornada del
+// negocio (compatibilidad con eventos creados solo con fecha).
+func ventanaEventoUnico(ctx context.Context, slug string, rec Recurso, day time.Time, durationMinutes int) ([2]time.Time, bool) {
+	var cero [2]time.Time
+	ok, hI, mI := parseClock(strings.TrimSpace(rec.HoraInicio))
+	if !ok {
+		return cero, false
+	}
+	loc := shopLocation(ctx, slug)
+	inicio := time.Date(day.Year(), day.Month(), day.Day(), hI, mI, 0, 0, loc)
+	fin := inicio
+	if okF, hF, mF := parseClock(strings.TrimSpace(rec.HoraFin)); okF {
+		fin = time.Date(day.Year(), day.Month(), day.Day(), hF, mF, 0, 0, loc)
+	}
+	if !fin.After(inicio) {
+		d := time.Duration(durationMinutes) * time.Minute
+		if d <= 0 {
+			d = 60 * time.Minute
+		}
+		fin = inicio.Add(d)
+	}
+	return [2]time.Time{inicio, fin}, true
+}
+
 func disponibilidadRecurso(ctx context.Context, slug, recursoID string, day time.Time, durationMinutes, cuposPedidos int) (slots []string, libres map[string]int, err error) {
 	rec, ok := resolveRecurso(ctx, slug, recursoID)
 	if !ok {
 		return nil, nil, fmt.Errorf("recurso no encontrado")
+	}
+	// Evento de fecha única: fuera de ese día no hay disponibilidad. Esto
+	// también blinda /book (que re-verifica disponibilidad al confirmar).
+	if rec.esFechaUnica() && day.Format("2006-01-02") != strings.TrimSpace(rec.FechaEspecifica) {
+		return nil, map[string]int{}, nil
 	}
 	if cuposPedidos < 1 {
 		cuposPedidos = 1
 	}
 	efectiva := rec.capacidadEfectiva()
 
-	// Intervalos del día: horario propio o jornada del negocio.
+	// Intervalos del día: evento único (ventana hora_inicio–hora_fin ese día),
+	// horario propio o jornada del negocio.
 	var shiftIntervals [][2]time.Time
-	if rec.Horario != nil {
-		if dia := employeeDayHorario(rec.Horario, day.Weekday()); dia != nil {
-			shiftIntervals = splitShiftIntervals(ctx, slug, dia, day)
+	fechaUnicaHoy := rec.esFechaUnica() && day.Format("2006-01-02") == strings.TrimSpace(rec.FechaEspecifica)
+	if fechaUnicaHoy {
+		if iv, ok := ventanaEventoUnico(ctx, slug, rec, day, durationMinutes); ok {
+			shiftIntervals = [][2]time.Time{iv}
 		}
-		// Con horario propio pero día inactivo: vacío (igual que empleados).
-	} else {
-		startDay, endDay := workDayRange(ctx, slug, day)
-		shiftIntervals = [][2]time.Time{{startDay, endDay}}
+		// Sin hora válida: se usa la jornada (compat con eventos solo-fecha).
+	}
+	if len(shiftIntervals) == 0 {
+		if rec.Horario != nil && !fechaUnicaHoy {
+			if dia := employeeDayHorario(rec.Horario, day.Weekday()); dia != nil {
+				shiftIntervals = splitShiftIntervals(ctx, slug, dia, day)
+			}
+			// Con horario propio pero día inactivo: vacío (igual que empleados).
+		} else {
+			startDay, endDay := workDayRange(ctx, slug, day)
+			shiftIntervals = [][2]time.Time{{startDay, endDay}}
+		}
 	}
 
 	slotDuration := time.Duration(durationMinutes) * time.Minute
