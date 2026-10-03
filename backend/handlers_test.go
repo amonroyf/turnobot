@@ -2743,6 +2743,32 @@ func TestEventoUnicoBloqueaUnoAUnoPosterior(t *testing.T) {
 	}
 }
 
+// Negocio mexicano: el 10 dígitos local se valida en región MX.
+func TestBookMexicoValidaRegion(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-mx")
+	seedTienda(t, ctx, slug)
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"pais": "MX",
+	}, firestore.MergeAll); err != nil {
+		t.Fatal(err)
+	}
+	code, out := postBook(t, slug, map[string]string{
+		"servicioId": "svc1", "empleadoId": "emp1",
+		"fecha": mañanaStr(), "hora": "10:00",
+		"clienteNombre": "Juan", "clienteTelefono": "5512345678",
+	})
+	if code != http.StatusCreated {
+		t.Fatalf("book MX code=%d out=%v, esperaba 201", code, out)
+	}
+	ids := reservaIDsPorTelefono(t, ctx, slug, "+525512345678")
+	if len(ids) != 1 {
+		t.Fatalf("reservas MX=%d, esperaba 1 en +52", len(ids))
+	}
+}
+
 // Reglas puras (sin emulador): horarios, marca y zona horaria.
 func TestReglasHorarioYMarca(t *testing.T) {
 	h := &HorarioSemanal{Lunes: DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "13:00"}}}}

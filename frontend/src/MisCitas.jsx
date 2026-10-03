@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth';
 import { auth, provider } from './firebase.js';
 import { formatearFechaLarga, sumarDias } from './fecha.js';
+import { formatoMoneda } from './paises.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 
 // Obtener fecha "YYYY-MM-DD" en la zona horaria del negocio
@@ -27,6 +28,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
   // Paginación (un toque, sin recargar): cursor compuesto {iso, id} con
   // avance estricto (nunca repite ni salta, ni al mismo minuto) + dedupe.
   const [nextCursor, setNextCursor] = useState(null);
+  const [pais, setPais] = useState('');
   const [cargandoMas, setCargandoMas] = useState(false);
   const cursorValido = (nc) => (nc && nc.iso ? nc : null);
   // Solo Google: toda reserva web exige cuenta. Sin vía teléfono.
@@ -58,6 +60,11 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
       const data = await res.json();
       const lista = Array.isArray(data) ? data : (data.citas || []);
       setCitas(lista);
+      // País para moneda (no bloquea la lista si falla).
+      fetch(`${API_URL}/api/v1/b/${slug}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((n) => { if (n && n.pais) setPais(n.pais); })
+        .catch(() => {});
       setNextCursor(!Array.isArray(data) ? cursorValido(data.next_cursor) : null);
     } catch {
       setError('Error buscando tus citas. Intenta de nuevo.');
@@ -266,7 +273,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Hoy</h2>
                 <div className="space-y-3">
                   {citasHoy.map(c => (
-                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} pais={pais} />
                   ))}
                 </div>
               </section>
@@ -278,7 +285,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Mañana</h2>
                 <div className="space-y-3">
                   {citasManana.map(c => (
-                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} pais={pais} />
                   ))}
                 </div>
               </section>
@@ -290,7 +297,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
                 <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">Próximas</h2>
                 <div className="space-y-3">
                   {citasProximas.map(c => (
-                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} />
+                    <CitaCard key={c.id} c={c} onCancel={cancelarCita} cancelando={cancelando} slug={slug} API_URL={API_URL} hoyMin={hoy} onMoved={moverCita} getHeaders={headersCliente} pais={pais} />
                   ))}
                 </div>
               </section>
@@ -329,7 +336,7 @@ function MisCitasContenido({ slug, API_URL, whatsapp, timezone }) {
     );
   }
 
-function CitaCard({ c, onCancel, cancelando, slug, API_URL, hoyMin, onMoved, getHeaders }) {
+function CitaCard({ c, onCancel, cancelando, slug, API_URL, hoyMin, onMoved, getHeaders, pais }) {
   const isCancelled = c.cancelled === true;
   const [moviendo, setMoviendo] = useState(false);
   const [nuevaFecha, setNuevaFecha] = useState(c.fecha);
@@ -394,7 +401,7 @@ function CitaCard({ c, onCancel, cancelando, slug, API_URL, hoyMin, onMoved, get
         </div>
         {c.price > 0 && (
           <span className="text-xs font-black text-gray-900 bg-gray-100 px-2.5 py-1 rounded-lg shrink-0">
-            ${Number(c.price).toLocaleString('es-CO')}
+            {formatoMoneda(c.price, pais)}
           </span>
         )}
       </div>

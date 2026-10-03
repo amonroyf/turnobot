@@ -5,6 +5,7 @@ import { useParams } from 'react-router-dom';
 import { getToken } from 'firebase/messaging';
 import MisCitas from './MisCitas.jsx';
 import { fechaHoyEnZona, sumarDias, formatearFechaLarga, formatearTelefono, descargarICS, generarEnlaceGoogleCalendar } from './fecha.js';
+import { formatoMoneda, paisPorISO, prefijoPorPais } from './paises.js';
 import { IconoCalendario, IconoLista, IconoPin } from './Iconos.jsx';
 import { temaMarcaProps, textoSobreMarca, inicialMarca, fondoMarca, enlaceRed } from './marca.js';
 
@@ -24,7 +25,7 @@ const formatPhoneNumber = (value) => {
   return value;
 };
 
-const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+const formatDinero = (n, pais) => formatoMoneda(n, pais);
 
 const DIAS_SEMANA_ABREV = ['Do', 'Lu', 'Ma', 'Mi', 'Ju', 'Vi', 'Sa'];
 const MESES_ES = [
@@ -113,21 +114,21 @@ const duracionAmable = (min) => {
 
 // Pasos del flujo (divulgación progresiva: el usuario siempre sabe dónde va).
 const PASOS = [
-  { n: 1, etiqueta: 'Servicio' },
-  { n: 2, etiqueta: 'Profesional' },
-  { n: 3, etiqueta: 'Día' },
+  { n: 1, etiqueta: 'Qué' },
+  { n: 2, etiqueta: 'Quién' },
+  { n: 3, etiqueta: 'Cuándo' },
   { n: 4, etiqueta: 'Hora' },
-  { n: 5, etiqueta: 'Confirmar' },
+  { n: 5, etiqueta: 'Listo' },
 ];
 
-// Modo "reservar espacio" (canchas, boxes): sin servicio ni profesional.
-// Flujo propio: Espacio → Día → Hora → Confirmar.
+// Camino clase/evento (sin profesional). Flujo propio: Qué → Cuándo →
+// Hora → Listo.
 const PASOS_ESPACIO = [
-  { n: 1, etiqueta: 'Espacio' },
-  { n: 2, etiqueta: 'Día' },
+  { n: 1, etiqueta: 'Qué' },
+  { n: 2, etiqueta: 'Cuándo' },
   { n: 3, etiqueta: 'Hora' },
-  { n: 4, etiqueta: 'Confirmar' },
-  { n: 5, etiqueta: 'Listo' },
+  { n: 4, etiqueta: 'Listo' },
+  { n: 5, etiqueta: 'Hecho' },
 ];
 
 function CalendarioGrid({ fechaSeleccionada, onSeleccionar, timezone, ventanaDias }) {
@@ -394,6 +395,62 @@ export default function BookingApp() {
     : negocio?.empleados?.find(e => e.id === booking.empleadoId);
 
   const hayRecursos = (negocio?.recursos || []).length > 0;
+  // Clases = recursos recurrentes (los eventos tienen su propia vitrina).
+  const hayClases = (negocio?.recursos || []).some((r) => !r.fecha_especifica);
+  // Próximos eventos (fecha única, no pasados): vitrina propia con su fecha,
+  // para que no se entierren entre servicios y clases.
+  const eventosProximos = (negocio?.recursos || [])
+    .filter((r) => r.fecha_especifica && r.fecha_especifica >= fechaHoyEnZona(negocio?.timezone))
+    .sort((a, b) => (a.fecha_especifica < b.fecha_especifica ? -1 : 1));
+  const elegirEvento = (r) => {
+    setModo('espacio');
+    setBooking((prev) => ({ ...prev, servicioId: '', empleadoId: '', recursoId: r.id, cupos: 1, participantes: [], fecha: r.fecha_especifica, hora: '' }));
+    setSlots([]);
+    setSlotsPorHora({});
+    setLibresPorHora({});
+    setPrimerHueco(null);
+    setError('');
+    setStep(2);
+    setTimeout(() => fetchHorariosRef.current?.(r.fecha_especifica), 0);
+  };
+  // Próxima disponibilidad por tarjeta (vitrina "qué hay y cuándo"): una
+  // sonda primer-hueco por servicio/clase al cargar el catálogo. No bloquea
+  // el render; si falla, la tarjeta queda sin esa línea.
+  const [proximos, setProximos] = useState({});
+  const fechaCorta = (f) => {
+    const p = /^(\d{4})-(\d{2})-(\d{2})$/.exec(f || '');
+    return p ? `${p[3]}/${p[2]}` : '';
+  };
+  useEffect(() => {
+    if (!negocio?.id) return;
+    let vivo = true;
+    const sonda = (url) => fetch(url).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    const trabajos = [];
+    (negocio.servicios || []).forEach((s) => {
+      trabajos.push(
+        sonda(`${API_URL}/api/v1/b/${slug}/slots/primer-hueco?servicio_id=${s.id}&emp_id=any&dias=14`)
+          .then((d) => ({ k: `s:${s.id}`, d })),
+      );
+    });
+    (negocio.recursos || [])
+      .filter((r) => !r.fecha_especifica)
+      .forEach((r) => {
+        trabajos.push(
+          sonda(`${API_URL}/api/v1/b/${slug}/slots/primer-hueco?recurso_id=${r.id}&duracion=${r.duration_minutes || 60}&dias=14`)
+            .then((d) => ({ k: `r:${r.id}`, d })),
+        );
+      });
+    Promise.all(trabajos).then((res) => {
+      if (!vivo) return;
+      const m = {};
+      res.forEach((x) => {
+        if (x && x.d && x.d.fecha && x.d.hora) m[x.k] = x.d;
+      });
+      setProximos(m);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [negocio?.id]);
   const recursoElegido = negocio?.recursos?.find(r => r.id === booking.recursoId);
   // Instructor responsable del espacio (opcional): "con Ana" en tarjetas y resúmenes.
   const instructorDe = (r) => (negocio?.empleados || []).find(e => e.id === r?.instructor_id)?.name || '';
@@ -963,7 +1020,7 @@ export default function BookingApp() {
                   <div className="space-y-3 text-xs text-gray-600">
                     {negocio.direccion ? <p className="flex items-center gap-2"><span aria-hidden="true">🏠</span> <span>{negocio.direccion}</span></p> : null}
                     {negocio.horario ? <p className="flex items-center gap-2">🕒 <span>{negocio.horario}</span></p> : null}
-                    {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{formatearTelefono(negocio.telefono)}</span></p> : null}
+                    {negocio.telefono ? <p className="flex items-center gap-2">📞 <span>{formatearTelefono(negocio.telefono, prefijoPorPais(negocio?.pais))}</span></p> : null}
                     
                     {(!negocio.direccion && !negocio.horario && !negocio.telefono) && (
                       <p className="text-gray-400 italic">Información del local no configurada.</p>
@@ -1064,59 +1121,51 @@ export default function BookingApp() {
                 {/* PASO 1 */}
                 {/* Con espacios: primero se elige el camino (servicio o espacio).
                     Sin espacios: directo a servicios como siempre. */}
-                {step >= 1 && hayRecursos && !modo && (
-                  <div id="step-1" className="scroll-mt-24">
-                    <h2 className="font-bold text-gray-800 mb-1 text-sm">1. ¿Qué quieres reservar?</h2>
+                {step >= 1 && !modo && eventosProximos.length > 0 && (
+                  <div id="eventos" className="scroll-mt-24 mb-6">
+                    <h2 className="font-bold text-gray-800 mb-1 text-sm">📅 Próximos eventos</h2>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
-                      Tenemos atención por servicio y espacios para usar.
+                      Pasan un solo día: aparta tu lugar antes de que se llenen.
                     </p>
                     <div className="grid gap-3">
-                      <button
-                        type="button"
-                        onClick={() => elegirModo('servicio')}
-                        className="min-h-[76px] p-4 rounded-2xl border-2 border-gray-200 bg-white text-left flex items-center gap-3 active:scale-[0.98] hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                      >
-                        <span className="text-3xl" aria-hidden="true">📋</span>
-                        <span className="flex-1">
-                          <span className="font-bold text-sm block">Reservar un servicio</span>
-                          <span className="text-xs text-gray-500 font-medium block">Corte, consulta, clase… con profesional</span>
-                        </span>
-                        <span aria-hidden="true" className="text-gray-300 font-black">›</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => elegirModo('espacio')}
-                        className="min-h-[76px] p-4 rounded-2xl border-2 border-gray-200 bg-white text-left flex items-center gap-3 active:scale-[0.98] hover:border-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black"
-                      >
-                        <span className="text-3xl" aria-hidden="true">📍</span>
-                        <span className="flex-1">
-                          <span className="font-bold text-sm block">Reservar un espacio</span>
-                          <span className="text-xs text-gray-500 font-medium block">Cancha, box, sala… directo, sin servicio</span>
-                        </span>
-                        <span aria-hidden="true" className="text-gray-300 font-black">›</span>
-                      </button>
+                      {eventosProximos.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => elegirEvento(r)}
+                          aria-label={`Apartar lugar en ${r.name} el ${formatearFechaLarga(r.fecha_especifica)}`}
+                          className="min-h-[76px] p-4 rounded-2xl border-2 border-purple-200 bg-purple-50 text-left flex items-center gap-3 active:scale-[0.98] hover:border-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
+                        >
+                          <span className="text-3xl" aria-hidden="true">🎟️</span>
+                          <span className="flex-1 min-w-0">
+                            <span className="font-bold text-sm block truncate">{r.name}</span>
+                            <span className="text-xs text-purple-900 font-semibold block">
+                              📅 {formatearFechaLarga(r.fecha_especifica)}{r.hora_inicio ? ` · ${r.hora_inicio}${r.hora_fin ? `–${r.hora_fin}` : ''}` : ''}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · {formatDinero(r.price, negocio?.pais)}
+                            </span>
+                          </span>
+                          <span aria-hidden="true" className="text-purple-300 font-black">›</span>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 )}
-                {step >= 1 && (!hayRecursos || modo === 'servicio') && (
+                {step >= 1 && modo !== 'espacio' && (
                   <div id="step-1" className={`scroll-mt-24 ${step !== 1 ? 'opacity-60' : ''}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <h2 className="font-bold text-gray-800 text-sm">1. ¿Qué te quieres hacer?</h2>
-                      {hayRecursos && modo === 'servicio' && (
-                        <button type="button" onClick={() => elegirModo(null)} className="min-h-[44px] px-2 text-[11px] font-bold text-gray-400 underline">
-                          Cambiar
-                        </button>
-                      )}
+                      <h2 className="font-bold text-gray-800 text-sm">1. ¿Qué quieres hacer?</h2>
                     </div>
                     <p className="text-[11px] text-gray-500 font-medium mb-3">
-                      Elige un servicio. El precio se paga en el local, aquí solo apartas tu turno.
+                      Elige una cita o un lugar en una actividad. El precio se paga en el local, aquí solo apartas tu turno.
                     </p>
-                    {(!negocio.servicios || negocio.servicios.length === 0) ? (
+                    <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider mb-2">✂️ Citas</p>
+                    {(!negocio.servicios || negocio.servicios.length === 0) && !hayClases ? (
                       <div className="p-6 text-center bg-white border border-gray-200 rounded-2xl">
                         <p className="text-sm font-bold text-gray-700">Aún no hay servicios publicados</p>
                         <p className="text-[11px] text-gray-500 font-medium mt-1">Escríbenos y te ayudamos a elegir por WhatsApp.</p>
                       </div>
                     ) : (
+                    <>
+                    {((negocio.servicios?.length || 0) > 0) && (
                     <>
                     {(negocio.servicios?.length || 0) > 4 && (
                       <label className="block mb-3">
@@ -1141,13 +1190,15 @@ export default function BookingApp() {
                             key={s.id}
                             role="radio"
                             aria-checked={isActive}
-                            aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price)}`}
+                            aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price, negocio?.pais)}`}
                             onClick={() => {
                               // Cambiar de servicio conserva profesional/fecha/
                               // hora cuando siguen siendo válidos (no se
                               // resetea todo): solo se ajusta lo incompatible.
+                              // El modo queda implícito: elegir cita = camino cita.
+                              setModo('servicio');
                               setBooking((prev) => {
-                                const next = { ...prev, servicioId: s.id };
+                                const next = { ...prev, servicioId: s.id, recursoId: '', cupos: 1, participantes: [] };
                                 const empOk = !prev.empleadoId || prev.empleadoId === EMP_ANY || empleadosParaServicio(negocio, s.id).includes(prev.empleadoId);
                                 if (!empOk) {
                                   next.empleadoId = '';
@@ -1182,10 +1233,15 @@ export default function BookingApp() {
                               <span className={`text-xs font-semibold block mt-0.5 ${isActive ? 'text-gray-300' : 'text-gray-500'}`}>
                                   {duracionAmable(s.duration_minutes)}
                               </span>
+                              {proximos[`s:${s.id}`] && (
+                                <span className={`text-[11px] font-bold block mt-0.5 ${isActive ? 'text-emerald-200' : 'text-emerald-700'}`}>
+                                  🟢 {fechaCorta(proximos[`s:${s.id}`].fecha)} {proximos[`s:${s.id}`].hora}
+                                </span>
+                              )}
                             </span>
 
                             <span className="text-right shrink-0">
-                              <span className="font-black text-base block leading-none">{formatDinero(s.price)}</span>
+                              <span className="font-black text-base block leading-none">{formatDinero(s.price, negocio?.pais)}</span>
                               <span className={`text-[10px] font-semibold block mt-1 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>en el local</span>
                             </span>
                           </button>
@@ -1197,10 +1253,12 @@ export default function BookingApp() {
                         </div>
                       )}
                     </div>
+                    </>
+                    )}
                     {/* Retroalimentación: confirma en palabras lo elegido */}
                     {servicioElegido && (
                       <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-                        ✅ Elegiste: <strong>{servicioElegido.name}</strong> — {duracionAmable(servicioElegido.duration_minutes)} — {formatDinero(servicioElegido.price)} en el local.
+                        ✅ Elegiste: <strong>{servicioElegido.name}</strong> — {duracionAmable(servicioElegido.duration_minutes)} — {formatDinero(servicioElegido.price, negocio?.pais)} en el local.
                       </p>
                     )}
                     {negocio.whatsapp && (
@@ -1212,6 +1270,56 @@ export default function BookingApp() {
                       >
                         ¿No sabes cuál elegir? Pregúntanos por WhatsApp
                       </a>
+                    )}
+                    {hayClases && (
+                      <div className="mt-6">
+                        <p className="text-[11px] font-black text-gray-400 uppercase tracking-wider mb-2">🧘 Clases</p>
+                        <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Clases disponibles">
+                          {(negocio.recursos || []).filter((r) => !r.fecha_especifica).map((r) => {
+                            const isActive = booking.recursoId === r.id;
+                            return (
+                              <button
+                                key={r.id}
+                                role="radio"
+                                aria-checked={isActive}
+                                aria-label={`${r.name}${proximos[`r:${r.id}`] ? `, próximo ${fechaCorta(proximos[`r:${r.id}`].fecha)} ${proximos[`r:${r.id}`].hora}` : ''}`}
+                                onClick={() => {
+                                  if (isActive) { elegirModo(null); return; }
+                                  setModo('espacio');
+                                  setBooking((prev) => ({ ...prev, recursoId: r.id, cupos: 1, empleadoId: '', servicioId: '', fecha: '', hora: '' }));
+                                  setSlots([]);
+                                  setSlotsPorHora({});
+                                  setLibresPorHora({});
+                                  setPrimerHueco(null);
+                                  setError('');
+                                  setStep(2);
+                                }}
+                                className={`p-3.5 border rounded-2xl font-bold text-sm flex items-center gap-3 active:scale-95 transition-all shadow-2xs ${
+                                  isActive ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800 active:bg-gray-100'
+                                }`}
+                              >
+                                <span className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 border text-base ${
+                                  isActive ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'
+                                }`} aria-hidden="true">
+                                  {r.tipo === 'cancha' ? '⚽' : r.tipo === 'box' ? '🏋️' : r.tipo === 'consultorio' ? '🩺' : r.tipo === 'sala' ? '🎶' : r.tipo === 'camilla' ? '💆' : r.tipo === 'clase' ? '🧘' : '📍'}
+                                </span>
+                                <span className="leading-tight text-left min-w-0">
+                                  <span className="block font-bold truncate text-sm">{r.name}</span>
+                                  <span className="block text-[11px] font-semibold opacity-70 capitalize">
+                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price, negocio?.pais)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}
+                                  </span>
+                                  {proximos[`r:${r.id}`] && (
+                                    <span className="block text-[11px] font-bold opacity-90 mt-0.5">
+                                      🟢 {fechaCorta(proximos[`r:${r.id}`].fecha)} {proximos[`r:${r.id}`].hora}
+                                    </span>
+                                  )}
+                                  {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     )}
                     </>
                     )}
@@ -1226,14 +1334,15 @@ export default function BookingApp() {
                     {modo === 'espacio' && (
                       <div className={modo === 'espacio' ? '' : 'mb-5'}>
                         <div className="flex items-center justify-between mb-1">
-                          <h2 className="font-bold text-gray-800 text-sm">{modo === 'espacio' ? '1. ¿Qué espacio?' : '¿Dónde?'}</h2>
+                          <h2 className="font-bold text-gray-800 text-sm">{modo === 'espacio' ? '1. ¿A cuál vas?' : '¿Dónde?'}</h2>
                           <button type="button" onClick={() => elegirModo(null)} className="min-h-[44px] px-2 text-[11px] font-bold text-gray-400 underline">
                             Cambiar
                           </button>
                         </div>
                         <p className="text-[11px] text-gray-500 font-medium mb-3">
-                          Si tu plan necesita un espacio concreto (cancha, box), elige cuál. Si no, sigue abajo.
+                          Elige la clase o el evento. Cada uno dice su fecha y sus cupos.
                         </p>
+                        {!booking.recursoId && (
                         <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Espacios disponibles">
                           {negocio.recursos.map((r) => {
                             const isActive = booking.recursoId === r.id;
@@ -1264,7 +1373,7 @@ export default function BookingApp() {
                                 <span className="leading-tight text-left min-w-0">
                                   <span className="block font-bold truncate text-sm">{r.name}</span>
                                   <span className="block text-[11px] font-semibold opacity-70 capitalize">
-                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}{r.fecha_especifica ? ` · 📅 solo ${r.fecha_especifica}${r.hora_inicio ? ` ${r.hora_inicio}${r.hora_fin ? `–${r.hora_fin}` : ''}` : ''}` : ''}
+                                    {r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price, negocio?.pais)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}{r.fecha_especifica ? ` · 📅 solo ${r.fecha_especifica}${r.hora_inicio ? ` ${r.hora_inicio}${r.hora_fin ? `–${r.hora_fin}` : ''}` : ''}` : ''}
                                   </span>
                                   {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                                 </span>
@@ -1272,9 +1381,10 @@ export default function BookingApp() {
                             );
                           })}
                         </div>
+                        )}
                         {recursoElegido && (
                           <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-                            ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)}{instructorDe(recursoElegido) ? ` · con ${instructorDe(recursoElegido)}` : ''})
+                            ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price, negocio?.pais)}{instructorDe(recursoElegido) ? ` · con ${instructorDe(recursoElegido)}` : ''})
                             {(recursoElegido.capacidad || 1) > 1
                               ? ` (para ${recursoElegido.capacidad} personas — cada una reserva la suya).`
                               : modo === 'espacio' ? '. Sigue a elegir el día 👇.' : '. Abajo elige quién te atiende o deja “El local asigna”.'}
@@ -1546,7 +1656,7 @@ export default function BookingApp() {
                       <h2 className="font-bold text-gray-800 text-sm">{modoEspacio ? '4. Tus datos para confirmar' : '5. Tus datos para confirmar'}</h2>
 
                       <div className="bg-white border border-gray-200 rounded-2xl p-4 text-xs text-gray-700 space-y-1.5 shadow-2xs">
-                        <p>📋 {modoEspacio ? 'Espacio/Clase' : 'Servicio'}: <strong>{servicioNombre}</strong>{modoEspacio ? (Number(recursoElegido?.price) > 0 ? ` (${formatDinero(recursoElegido.price)})` : '') : (servicioElegido ? ` (${formatDinero(servicioElegido.price)})` : '')}</p>
+                        <p>📋 {modoEspacio ? 'Espacio/Clase' : 'Servicio'}: <strong>{servicioNombre}</strong>{modoEspacio ? (Number(recursoElegido?.price) > 0 ? ` (${formatDinero(recursoElegido.price, negocio?.pais)})` : '') : (servicioElegido ? ` (${formatDinero(servicioElegido.price, negocio?.pais)})` : '')}</p>
                         {!modoEspacio && (
                           <p>👤 Profesional: <strong>{esModoAny ? `${empleadoElegido?.name || 'Por asignar'} (primer disponible)` : empleadoElegido?.name || (booking.recursoId ? 'El local asigna' : 'Por asignar')}</strong></p>
                         )}
@@ -1618,7 +1728,7 @@ export default function BookingApp() {
                         className="w-full p-4 border border-gray-200 rounded-xl bg-white text-sm focus:outline-none focus:border-black"
                       />
                       <input
-                        type="tel" required placeholder="Tu WhatsApp (Ej. 300 123 4567)"
+                        type="tel" required placeholder={`Tu WhatsApp (Ej. ${paisPorISO(negocio?.pais).ejemplo})`}
                         aria-label="Tu número de WhatsApp"
                         inputMode="tel"
                         autoComplete="tel"

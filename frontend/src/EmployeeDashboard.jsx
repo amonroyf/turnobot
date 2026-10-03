@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { formatearFechaLarga, horaEnZona, sumarDias } from './fecha.js';
+import { formatoMoneda } from './paises.js';
 import useEmployeePushNotifications from './useEmployeePushNotifications.js';
 import { messaging } from './firebase.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
@@ -251,7 +252,7 @@ function PortalEmpleado() {
       variante: 'info',
     } : {
       titulo: `¿Registrar pago de ${c.cliente}?`,
-      detalle: c.precio > 0 ? `Se registrará el cobro de $${Number(c.precio).toLocaleString('es-CO')}.` : 'Se marcará la cita como pagada.',
+      detalle: c.precio > 0 ? `Se registrará el cobro de ${formatoMoneda(c.precio, negocio?.pais)}.` : 'Se marcará la cita como pagada.',
       confirmarTexto: 'Sí, marcar pagado',
       variante: 'exito',
     });
@@ -580,11 +581,11 @@ function PortalEmpleado() {
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Activas</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
-              <p className="text-xl font-black text-gray-900">${misIngresos.toLocaleString('es-CO')}</p>
+              <p className="text-xl font-black text-gray-900">{formatoMoneda(misIngresos, negocio?.pais)}</p>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Suman</p>
             </div>
             <div className="bg-white border border-green-200 rounded-2xl p-3 text-center">
-              <p className="text-xl font-black text-green-700">${hoyCobrado.toLocaleString('es-CO')}</p>
+              <p className="text-xl font-black text-green-700">{formatoMoneda(hoyCobrado, negocio?.pais)}</p>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Hoy cobré</p>
             </div>
             <div className="bg-white border border-gray-200 rounded-2xl p-3 text-center">
@@ -900,7 +901,7 @@ function CitaCard({ c, zona, ahora, onCancel, onNoShow, onUndo, onMove, onPago, 
         </div>
         {c.precio > 0 && (
           <span className="text-xs font-black text-gray-900 bg-gray-100 px-2 py-1 rounded-lg shrink-0">
-            ${c.precio.toLocaleString('es-CO')}
+            {formatoMoneda(c.precio, negocio?.pais)}
           </span>
         )}
       </div>

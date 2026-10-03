@@ -3,6 +3,7 @@ import { auth, provider, db } from './firebase';
 import usePushNotifications from './usePushNotifications';
 import NotificationDrawer from './NotificationDrawer';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
+import { PAISES, prefijoPorPais, formatoMoneda } from './paises.js';
 import {
   signInWithPopup,
   signOut,
@@ -222,6 +223,35 @@ function AdminPanel() {
     const t = setTimeout(() => setPushToast(null), 8000);
     return () => clearTimeout(t);
   }, [pushToast]);
+  // Onboarding "¿qué ofreces?": /admin?ofrecer=cita|clase|evento aterriza en
+  // "Lo que ofreces" con el formulario correspondiente listo. Una sola vez.
+  const ofrecerAplicado = useRef(false);
+  useEffect(() => {
+    if (ofrecerAplicado.current) return;
+    let ofrecer = '';
+    try {
+      ofrecer = new URLSearchParams(window.location.search).get('ofrecer') || '';
+    } catch {
+      return;
+    }
+    if (!['cita', 'clase', 'evento'].includes(ofrecer)) return;
+    ofrecerAplicado.current = true;
+    if (ofrecer === 'cita') {
+      setTabCatalogo('servicios');
+    } else {
+      setTabCatalogo('espacios');
+      setEsFechaUnica(ofrecer === 'evento');
+    }
+    setView('ajustes');
+    try {
+      window.history.replaceState(null, '', window.location.pathname);
+    } catch {
+      // Sin historial: el parámetro se ignora en la próxima visita.
+    }
+    setTimeout(() => {
+      document.getElementById('catalogo-ofreces')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 600);
+  }, []);
 
   const [servicios, setServicios] = useState([]);
   const [profesionales, setProfesionales] = useState([]);
@@ -617,12 +647,22 @@ function AdminPanel() {
     setGuardandoInfo(false);
   };
 
+  // El prefijo sigue al país del negocio (una vez, sin pisar cambios manuales).
+  const paisSincronizado = useRef(false);
+  useEffect(() => {
+    if (!paisSincronizado.current && negocio?.id) {
+      paisSincronizado.current = true;
+      setCodigoPais(prefijoPorPais(negocio?.pais));
+    }
+  }, [negocio?.id]);
   const handleGuardarWhatsApp = async (e) => {
     e.preventDefault();
     const digitos = whatsApp.replace(/\D/g, '');
     const limpio = digitos.startsWith(codigoPais) ? digitos : codigoPais + digitos;
-    if (limpio.length < 10) {
-      await avisar('Revisa el número: escribe solo los dígitos locales (ej. 3001234567).', 'error');
+    const paisWhats = PAISES.find((p) => p.prefijo === codigoPais) || PAISES[0];
+    const localLen = limpio.startsWith(codigoPais) ? limpio.length - codigoPais.length : limpio.length;
+    if (localLen < (paisWhats.minDigitos || 7)) {
+      await avisar(`Revisa el número: en ${paisWhats.nombre} escribe al menos ${paisWhats.minDigitos} dígitos (ej. ${paisWhats.ejemplo}).`, 'error');
       return;
     }
     setGuardandoWhatsApp(true);
@@ -1029,7 +1069,7 @@ function AdminPanel() {
     setUndoingId('');
   };
 
-  const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+  const formatDinero = (n) => formatoMoneda(n, negocio?.pais);
 
   const fechaUltimaVisita = (c) => {
     if (c.last_date_str) {
@@ -1173,7 +1213,7 @@ function AdminPanel() {
                     {m.no_show && <span className="ml-2 text-[9px] font-black bg-amber-200 text-amber-800 px-1.5 py-0.5 rounded uppercase">No llegó</span>}
                     {!m.cancelled && !m.no_show && m.pagado && <span className="ml-2 text-[9px] font-black bg-green-200 text-green-800 px-1.5 py-0.5 rounded uppercase">Pagó</span>}
                   </p>
-                  <p className="text-[11px] text-gray-500 font-medium">📞 {formatearTelefono(m.user_phone)}</p>
+                  <p className="text-[11px] text-gray-500 font-medium">📞 {formatearTelefono(m.user_phone, prefijoPorPais(negocio?.pais))}</p>
                 </div>
                 {!m.cancelled && !m.no_show && (
                   <div className="flex gap-1 shrink-0">
@@ -1348,7 +1388,7 @@ function AdminPanel() {
                   <span className="text-gray-400">👤</span> {profesional?.name || 'Sin Asignar'}
                 </p>
                 <p className="text-xs text-green-700 font-medium flex items-center gap-1.5 mt-1">
-                  <span className="text-gray-400">📞</span> {formatearTelefono(r.user_phone)}
+                  <span className="text-gray-400">📞</span> {formatearTelefono(r.user_phone, prefijoPorPais(negocio?.pais))}
                 </p>
                 {r.notes && (
                   <div className="mt-2 p-2 bg-gray-100/50 rounded-lg border border-gray-100">
@@ -1797,7 +1837,7 @@ function AdminPanel() {
                                 rel="noreferrer"
                                 className="inline-flex items-center gap-1.5 text-xs text-green-700 font-bold bg-green-50 hover:bg-green-100 px-3 py-1.5 rounded-lg transition-colors border border-transparent hover:border-green-200"
                               >
-                                💬 WhatsApp: {formatearTelefono(c.cliente_phone)}
+                                💬 WhatsApp: {formatearTelefono(c.cliente_phone, prefijoPorPais(negocio?.pais))}
                               </a>
                             </div>
 
@@ -1841,12 +1881,48 @@ function AdminPanel() {
         {/* PESTAÑA: AJUSTES */}
         {view === 'ajustes' && (
           <div className="space-y-5">
-            {/* CATÁLOGO: SERVICIOS Y ESPACIOS POR PESTAÑA */}
-            <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-              <h2 className="text-base font-bold text-gray-900 mb-1">Lo que vendes</h2>
-              <p className="text-xs font-medium text-gray-500 mb-4">Servicios 1 a 1 y espacios por cupos. El cliente los ve en tu página.</p>
+            {/* CATÁLOGO: CITAS, CLASES Y EVENTOS POR PESTAÑA */}
+            <div id="catalogo-ofreces" className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm scroll-mt-24">
+              <h2 className="text-base font-bold text-gray-900 mb-1">Lo que ofreces</h2>
+              <p className="text-xs font-medium text-gray-500 mb-4">Citas con tu equipo, clases por cupos y eventos de un día. El cliente los ve en tu página.</p>
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 mb-4">
+                <p className="text-xs font-black text-purple-900 uppercase tracking-wider mb-1">¿Qué quieres ofrecer?</p>
+                <p className="text-[11px] font-medium text-purple-800 mb-3">Elige y te llevamos al formulario listo.</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setTabCatalogo('servicios')}
+                    aria-label="Ofrecer una cita"
+                    className="min-h-[64px] p-2 rounded-xl bg-white border border-purple-200 text-purple-900 active:scale-95 transition-transform"
+                  >
+                    <span className="block text-xl" aria-hidden="true">✂️</span>
+                    <span className="block text-[11px] font-black mt-1">Cita</span>
+                    <span className="block text-[10px] font-medium opacity-70">ej. corte 30 min</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTabCatalogo('espacios'); setEsFechaUnica(false); }}
+                    aria-label="Ofrecer una clase"
+                    className="min-h-[64px] p-2 rounded-xl bg-white border border-purple-200 text-purple-900 active:scale-95 transition-transform"
+                  >
+                    <span className="block text-xl" aria-hidden="true">🧘</span>
+                    <span className="block text-[11px] font-black mt-1">Clase</span>
+                    <span className="block text-[10px] font-medium opacity-70">ej. yoga viernes</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTabCatalogo('espacios'); setEsFechaUnica(true); }}
+                    aria-label="Ofrecer un evento"
+                    className="min-h-[64px] p-2 rounded-xl bg-white border border-purple-200 text-purple-900 active:scale-95 transition-transform"
+                  >
+                    <span className="block text-xl" aria-hidden="true">📅</span>
+                    <span className="block text-[11px] font-black mt-1">Evento</span>
+                    <span className="block text-[10px] font-medium opacity-70">ej. torneo sábado</span>
+                  </button>
+                </div>
+              </div>
               <div className="flex gap-1 bg-gray-100 rounded-xl p-1 mb-4" role="tablist" aria-label="Catálogo">
-                {[{ id: 'servicios', label: `✂️ Servicios (${servicios.length})` }, { id: 'espacios', label: `🏟️ Espacios (${recursos.length})` }].map((t) => (
+                {[{ id: 'servicios', label: `✂️ Citas (${servicios.length})` }, { id: 'espacios', label: `🧘 Clases y eventos (${recursos.length})` }].map((t) => (
                   <button
                     key={t.id}
                     type="button"
@@ -1861,12 +1937,12 @@ function AdminPanel() {
               </div>
               {tabCatalogo === 'servicios' && (
               <>
-              <p className="text-xs font-medium text-gray-500 mb-4">Lo que verán tus clientes en el paso 1 de la reserva: nombre, duración y precio.</p>
+              <p className="text-xs font-medium text-gray-500 mb-4">Lo que verán tus clientes al reservar: nombre, duración y precio.</p>
               <ul className="space-y-3 mb-4">
                 {servicios.length === 0 && (
                   <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-sm font-bold text-gray-700">Aún no hay servicios</p>
-                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega el primero abajo 👇 para que los clientes puedan reservar.</p>
+                    <p className="text-sm font-bold text-gray-700">Aún no hay citas</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Agrega la primera abajo 👇 para que los clientes puedan reservar.</p>
                   </div>
                 )}
                 {servicios.map((s) => {
@@ -1921,7 +1997,7 @@ function AdminPanel() {
 
               {/* FORMULARIO PARA AGREGAR NUEVO SERVICIO */}
               <form onSubmit={handleAddServicio} className="space-y-3 pt-3 border-t border-gray-100">
-                <h3 className="text-sm font-bold text-gray-800">Agregar un servicio nuevo</h3>
+                <h3 className="text-sm font-bold text-gray-800">Agregar una cita nueva</h3>
                 <label className="block">
                   <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">Nombre del servicio</span>
                 <input
@@ -1967,12 +2043,12 @@ function AdminPanel() {
               )}
               {tabCatalogo === 'espacios' && (
               <>
-              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Define precio, duración y cupos: se reservan directo, sin elegir profesional.</p>
+              <p className="text-xs font-medium text-gray-500 mb-4">Opcional. Clases por cupos o eventos de un día: se reservan directo, sin elegir profesional.</p>
               <ul className="space-y-3 mb-4">
                 {recursos.length === 0 && (
                   <div className="p-5 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl">
-                    <p className="text-sm font-bold text-gray-700">Sin espacios</p>
-                    <p className="text-[11px] text-gray-500 font-medium mt-1">Si solo atienden personas, no necesitas nada aquí.</p>
+                    <p className="text-sm font-bold text-gray-700">Sin clases ni eventos</p>
+                    <p className="text-[11px] text-gray-500 font-medium mt-1">Si solo atienden citas, no necesitas nada aquí.</p>
                   </div>
                 )}
                 {recursos.map((r) => (
@@ -2507,13 +2583,9 @@ function AdminPanel() {
                     aria-label="Código de país"
                     className="p-3.5 border border-gray-200 rounded-xl text-sm bg-white font-bold focus:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
                   >
-                    <option value="57">🇨🇴 +57</option>
-                    <option value="52">🇲🇽 +52</option>
-                    <option value="51">🇵🇪 +51</option>
-                    <option value="56">🇨🇱 +56</option>
-                    <option value="54">🇦🇷 +54</option>
-                    <option value="34">🇪🇸 +34</option>
-                    <option value="1">🇺🇸 +1</option>
+                    {PAISES.map((p) => (
+                      <option key={p.iso} value={p.prefijo}>{p.bandera} +{p.prefijo}</option>
+                    ))}
                   </select>
                   </label>
                   <label className="flex-1 min-w-0">

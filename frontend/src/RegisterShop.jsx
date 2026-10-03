@@ -11,6 +11,7 @@ import {
   addDoc,
 } from 'firebase/firestore';
 import { auth, provider, db } from './firebase';
+import { PAISES, paisPorISO } from './paises.js';
 
 export function esSlugValido(slug) {
   return typeof slug === 'string' && /^[a-z0-9]([a-z0-9-]{1,48}[a-z0-9])?$/.test(slug);
@@ -36,6 +37,7 @@ export default function RegisterShop() {
     name: '',
     slug: '',
     whatsapp: '',
+    pais: 'CO',
   });
 
   const irASuTiendaOCrear = async (currentUser) => {
@@ -89,13 +91,15 @@ export default function RegisterShop() {
       return;
     }
 
+    const paisSel = paisPorISO(formData.pais);
     const waLimpio = formData.whatsapp.replace(/\D/g, '');
-    if (waLimpio.length < 10) {
-      setError('Ingresa un número de WhatsApp válido de 10 dígitos (ej. 3001234567).');
+    const waLocal = waLimpio.startsWith(paisSel.prefijo) ? waLimpio.slice(paisSel.prefijo.length) : waLimpio;
+    if (waLocal.length < (paisSel.minDigitos || 7)) {
+      setError(`Ingresa un número de WhatsApp válido de ${paisSel.nombre} (ej. ${paisSel.ejemplo}).`);
       setLoading(false);
       return;
     }
-    const whatsappFinal = waLimpio.startsWith('57') ? waLimpio : `57${waLimpio}`;
+    const whatsappFinal = paisSel.prefijo + waLocal;
 
     try {
       const API = import.meta.env.VITE_API_URL || '';
@@ -108,6 +112,7 @@ export default function RegisterShop() {
       await setDoc(doc(db, 'negocios', slug), {
         name: formData.name,
         owner_uid: user.uid,
+        pais: (formData.pais || 'CO').toUpperCase(),
         whatsapp: whatsappFinal,
         direccion: '',
         horario: 'Lun a Sáb: 9:00 AM - 6:00 PM',
@@ -131,7 +136,8 @@ export default function RegisterShop() {
         created_at: new Date(),
       });
 
-      navigate('/admin');
+      // El negocio nace configurado: paso 3 "¿qué ofreces?" antes del panel.
+      setStep(3);
     } catch (err) {
       console.error(err);
       if (err.message === 'slug-en-uso' || err.code === 'permission-denied') {
@@ -147,16 +153,18 @@ export default function RegisterShop() {
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8 font-sans">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <p className="text-xs font-black tracking-widest text-gray-400 uppercase mb-2">TurnoBot</p>
-        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2" aria-label={`Paso ${step} de 2`}>
-          Paso {step} de 2
+        <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-2" aria-label={`Paso ${step} de 3`}>
+          Paso {step} de 3
         </p>
         <h2 className="text-3xl font-extrabold text-gray-900">
-          {step === 1 ? 'Crea tu cuenta' : 'Configura tu agenda'}
+          {step === 1 ? 'Crea tu cuenta' : step === 2 ? 'Configura tu agenda' : '¿Qué ofreces?'}
         </h2>
         <p className="mt-2 text-sm text-gray-600">
           {step === 1
             ? 'Entra con tu cuenta de Google en 1 clic.'
-            : 'Información básica para que tus clientes reserven.'}
+            : step === 2
+              ? 'Información básica para que tus clientes reserven.'
+              : 'Elige y te dejamos el formulario listo. Lo puedes cambiar cuando quieras.'}
         </p>
       </div>
 
@@ -212,15 +220,27 @@ export default function RegisterShop() {
                 <label className="block text-xs font-bold text-gray-700 mb-1">
                   WhatsApp para recibir avisos de citas
                 </label>
-                <input
-                  type="tel"
-                  required
-                  inputMode="numeric"
-                  placeholder="Ej. 300 123 4567"
-                  value={formData.whatsapp}
-                  onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
-                  className="w-full min-h-[48px] p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
-                />
+                <div className="flex gap-2">
+                  <select
+                    value={formData.pais || 'CO'}
+                    onChange={(e) => setFormData({ ...formData, pais: e.target.value })}
+                    aria-label="País del negocio"
+                    className="min-h-[48px] p-3 border border-gray-300 rounded-xl text-sm bg-white font-bold focus:ring-black focus:border-black"
+                  >
+                    {PAISES.map((p) => (
+                      <option key={p.iso} value={p.iso}>{p.bandera} +{p.prefijo}</option>
+                    ))}
+                  </select>
+                  <input
+                    type="tel"
+                    required
+                    inputMode="numeric"
+                    placeholder={`Ej. ${paisPorISO(formData.pais).ejemplo}`}
+                    value={formData.whatsapp}
+                    onChange={(e) => setFormData({ ...formData, whatsapp: e.target.value })}
+                    className="flex-1 min-w-0 w-full min-h-[48px] p-3 border border-gray-300 rounded-xl text-sm focus:ring-black focus:border-black"
+                  />
+                </div>
                 <p className="mt-1 text-[11px] text-gray-400 font-medium">
                   Aquí te notificaremos las reservas de tus clientes.
                 </p>
@@ -262,6 +282,41 @@ export default function RegisterShop() {
                 {loading ? 'Creando tu agenda...' : 'Activar mi agenda de reservas'}
               </button>
             </form>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-3">
+              <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-xs rounded-xl text-center font-medium">
+                ¡Tu página está lista! Ahora cuéntanos qué ofreces.
+              </div>
+              {[
+                { id: 'cita', icon: '✂️', titulo: 'Citas', ej: 'ej. corte 30 min' },
+                { id: 'clase', icon: '🧘', titulo: 'Clases', ej: 'ej. yoga viernes' },
+                { id: 'evento', icon: '📅', titulo: 'Evento', ej: 'ej. torneo sábado' },
+              ].map((o) => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => navigate(`/admin?ofrecer=${o.id}`)}
+                  aria-label={`Ofrecer: ${o.titulo}`}
+                  className="w-full flex items-center gap-3 p-4 border border-gray-200 rounded-2xl bg-white text-left active:scale-[0.98] transition-transform hover:border-black focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
+                >
+                  <span className="text-3xl" aria-hidden="true">{o.icon}</span>
+                  <span className="flex-1">
+                    <span className="block text-sm font-black text-gray-900">{o.titulo}</span>
+                    <span className="block text-[11px] font-medium text-gray-500">{o.ej}</span>
+                  </span>
+                  <span aria-hidden="true" className="text-gray-300 font-black">›</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => navigate('/admin')}
+                className="w-full py-3 text-xs font-bold text-gray-500 underline"
+              >
+                Hacer después →
+              </button>
+            </div>
           )}
         </div>
       </div>

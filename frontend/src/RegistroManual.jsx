@@ -6,8 +6,9 @@
 //        empFijo (empleado: agenda bloqueada a sí mismo), compacto opcional.
 import { useState, useEffect, useRef } from 'react';
 import { formatearFechaLarga, fechaHoyEnZona } from './fecha.js';
+import { formatoMoneda } from './paises.js';
 
-const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+const formatDinero = (n, pais) => formatoMoneda(n, pais);
 const duracionAmable = (m) => {
   const n = Number(m) || 60;
   if (n < 60) return `${n} min`;
@@ -309,7 +310,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       {/* Modo */}
       {hayRecursos && !empFijo && (
         <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Tipo de registro">
-          {[{ id: 'servicio', label: '✂️ Servicio' }, { id: 'espacio', label: '🏟️ Espacio' }].map((m) => (
+          {[{ id: 'servicio', label: '✂️ Cita' }, { id: 'espacio', label: '🧘 Clase/evento' }].map((m) => (
             <button
               key={m.id}
               type="button"
@@ -337,7 +338,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       )}
       {!modoEspacio && (
         <div>
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿Qué servicio?</span>
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿Qué cita?</span>
           <div className="grid grid-cols-1 gap-2" role="radiogroup" aria-label="Servicios">
             {serviciosFiltrados.map((s) => {
               const activo = servicioId === s.id;
@@ -347,13 +348,13 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
                   type="button"
                   role="radio"
                   aria-checked={activo}
-                  aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price)}`}
+                  aria-label={`${s.name}, ${duracionAmable(s.duration_minutes)}, ${formatDinero(s.price, negocio?.pais)}`}
                   onClick={() => { setServicioId(activo ? '' : s.id); setFecha(''); setSlots([]); setHora(''); }}
                   className={`p-3 border rounded-2xl text-left active:scale-95 transition-all shadow-2xs ${activo ? 'border-black bg-black text-white' : 'bg-white border-gray-200 text-gray-800'}`}
                 >
                   <span className="block text-sm font-bold">{s.name}</span>
                   <span className={`block text-[11px] font-semibold mt-0.5 ${activo ? 'opacity-80' : 'text-gray-500'}`}>
-                    ⏱️ {duracionAmable(s.duration_minutes)} · {formatDinero(s.price)}
+                    ⏱️ {duracionAmable(s.duration_minutes)} · {formatDinero(s.price, negocio?.pais)}
                   </span>
                 </button>
               );
@@ -431,7 +432,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
       {/* Espacio: tarjetas como la reserva del cliente */}
       {modoEspacio && (
         <div>
-          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿Qué espacio?</span>
+          <span className="block text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-1">1. ¿A cuál clase o evento?</span>
           <p className="text-[11px] text-gray-500 font-medium mb-2">Si el plan necesita un espacio concreto (cancha, box), elige cuál.</p>
           <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Espacios disponibles">
             {(negocio?.recursos || []).map((r) => {
@@ -456,7 +457,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
                   </span>
                   <span className="leading-tight text-left min-w-0">
                     <span className="block font-bold truncate text-sm">{r.name}</span>
-                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}</span>
+                    <span className="block text-[11px] font-semibold opacity-70 capitalize">{r.tipo}{(r.capacidad || 1) > 1 ? ` · ${r.capacidad} cupos` : ''} · ⏱️ {duracionAmable(r.duration_minutes || 60)} · {formatDinero(r.price, negocio?.pais)}{instructorDe(r) ? ` · con ${instructorDe(r)}` : ''}</span>
                     {r.descripcion && <span className="block text-[11px] font-medium opacity-70 truncate mt-0.5 normal-case">{r.descripcion}</span>}
                   </span>
                 </button>
@@ -465,7 +466,7 @@ export default function RegistroManual({ slug, API_URL, negocio, getHeaders, emp
           </div>
           {recursoElegido && (
             <p aria-live="polite" className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-semibold">
-              ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price)})
+              ✅ Espacio: <strong>{recursoElegido.name}</strong> (⏱️ {duracionAmable(recursoElegido.duration_minutes || 60)} · {formatDinero(recursoElegido.price, negocio?.pais)})
               {(recursoElegido.capacidad || 1) > 1
                 ? ` (para ${recursoElegido.capacidad} personas — cada una con su reserva).`
                 : '. Sigue a elegir el día 👇.'}

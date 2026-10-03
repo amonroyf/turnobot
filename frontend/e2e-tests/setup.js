@@ -49,6 +49,27 @@ export async function signInWithCustomToken(page, email, password) {
   await page.reload();
 }
 
+// Login real dentro de la página con el SDK modular (misma config del
+// bundle): escribe la persistencia IndexedDB que la app sí reconoce. Reemplaza
+// a signInWithCustomToken, cuya inyección por localStorage ya no funciona.
+export async function signInEnPagina(page, email, password) {
+  await page.evaluate(async ({ email, password }) => {
+    const { initializeApp, getApps, getApp } = await import(
+      'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js'
+    );
+    const { getAuth, signInWithEmailAndPassword } = await import(
+      'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js'
+    );
+    const cfg = {
+      apiKey: 'AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU',
+      authDomain: 'stalwart-coast-439901-d0.firebaseapp.com',
+      projectId: 'stalwart-coast-439901-d0',
+    };
+    const app = getApps().length ? getApp() : initializeApp(cfg);
+    await signInWithEmailAndPassword(getAuth(app), email, password);
+  }, { email, password });
+}
+
 export const E2E_PREFIX = process.env.E2E_SLUG_PREFIX || 'e2e';
 export const e2eSlug = (base) => `${E2E_PREFIX}-${base}`;
 

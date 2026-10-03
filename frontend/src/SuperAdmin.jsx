@@ -5,6 +5,7 @@ import {
   collection, doc, updateDoc, onSnapshot, query, where, orderBy, limit,
 } from 'firebase/firestore';
 import { formatearTelefono } from './fecha.js';
+import { formatoMoneda, paisPorISO } from './paises.js';
 import { DialogoProvider, useDialogo } from './ConfirmDialog.jsx';
 
 const API_URL = import.meta.env.VITE_API_URL || '';
@@ -12,7 +13,7 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 // UID del super admin del SaaS (solo esta cuenta tiene acceso)
 const SUPER_ADMIN_UID = '0FF1nrcBnSPIdB1rMgYocmRnYUb2';
 
-const formatDinero = (n) => '$' + Number(n || 0).toLocaleString('es-CO');
+const formatDinero = (n, pais) => formatoMoneda(n, pais);
 
 // ──────────────────────────────────────────────────────────────
 // Componentes auxiliares
@@ -88,11 +89,11 @@ function NegocioCard({ negocio, onSelect, selected, onToggleSuspend }) {
             👥 {negocio.stats_total_clientes || 0} clientes
           </span>
           <span className="text-xs font-bold text-gray-500">
-            💰 {formatDinero(negocio.stats_ingresos_totales || 0)}
+            💰 {formatDinero(negocio.stats_ingresos_totales || 0, negocio?.pais)}
           </span>
           {negocio.created_at?.seconds && (
             <span className="text-[11px] font-medium ml-auto text-gray-400">
-              Desde {new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { month: 'short', year: 'numeric' })}
+              Desde {new Date(negocio.created_at.seconds * 1000).toLocaleDateString(paisPorISO(negocio?.pais).locale, { month: 'short', year: 'numeric' })}
             </span>
           )}
         </div>
@@ -275,7 +276,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
             <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
               <span className="text-xs font-bold text-gray-600">📅 {reservas.length} citas próximas</span>
               <span className="text-xs font-bold text-gray-600">👥 {clientes.length} clientes</span>
-              <span className="text-xs font-bold text-gray-600">💰 {formatDinero(totalIngresos)} sumados</span>
+              <span className="text-xs font-bold text-gray-600">💰 {Number(totalIngresos || 0).toLocaleString('es-CO')} sumados (multi-moneda)</span>
             </div>
           </div>
         </div>
@@ -359,7 +360,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
             <dt className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Registrado el</dt>
             <dd className="mt-1 font-semibold text-gray-800">
               {negocio?.created_at?.seconds
-                ? new Date(negocio.created_at.seconds * 1000).toLocaleDateString('es-CO', { year: 'numeric', month: 'long', day: 'numeric' })
+                ? new Date(negocio.created_at.seconds * 1000).toLocaleDateString(paisPorISO(negocio?.pais).locale, { year: 'numeric', month: 'long', day: 'numeric' })
                 : 'Sin fecha'}
             </dd>
           </div>
@@ -377,9 +378,10 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
             {reservas.map((r) => {
               const t = r.date_time?.seconds * 1000;
               const tz = negocio?.timezone || 'America/Bogota';
-              const fecha = t ? new Date(t).toLocaleDateString('es-CO', { timeZone: tz }) : 'Sin fecha';
-              const hora = t
-                ? new Date(t).toLocaleTimeString('es-CO', { timeZone: tz, hour: '2-digit', minute: '2-digit' })
+              const loc = paisPorISO(negocio?.pais).locale;
+              const fecha = t ? new Date(t).toLocaleDateString(loc, { timeZone: tz }) : 'Sin fecha';
+              const hora = h
+                ? new Date(t).toLocaleTimeString(loc, { timeZone: tz, hour: '2-digit', minute: '2-digit' })
                 : '';
               return (
                 <div key={r.id} className="flex justify-between items-center gap-2 py-2 border-b border-gray-50">
@@ -389,7 +391,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
                   </div>
                   <div className="text-right shrink-0">
                     <p className="text-xs font-bold text-gray-700">{fecha} {hora}</p>
-                    <p className="text-[11px] text-gray-500">{formatDinero(r.price)}</p>
+                    <p className="text-[11px] text-gray-500">{formatDinero(r.price, negocio?.pais)}</p>
                   </div>
                 </div>
               );
@@ -445,7 +447,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
           Mejores clientes
         </h3>
         <p className="text-[11px] text-gray-500 font-medium mt-0.5 mb-3">
-          {clientes.length} en total · {totalVisitas} visitas · {formatDinero(totalIngresos)} sumados
+          {clientes.length} en total · {totalVisitas} visitas · {Number(totalIngresos || 0).toLocaleString('es-CO')} sumados (multi-moneda)
         </p>
         {clientes.length === 0 ? (
           <p className="text-xs text-gray-400 text-center py-4">Sin clientes registrados</p>
@@ -461,7 +463,7 @@ function NegocioDetalle({ negocioId, negocio, onBack, onDeleted }) {
                     <p className="text-[11px] text-gray-500">{formatearTelefono(c.cliente_phone)}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-xs font-black text-gray-900">{formatDinero(c.total_spent)}</p>
+                    <p className="text-xs font-black text-gray-900">{formatDinero(c.total_spent, negocio?.pais)}</p>
                     <p className="text-[11px] text-gray-500">{c.visits || 0} visitas</p>
                   </div>
                 </div>
@@ -670,7 +672,7 @@ function SuperAdminPanel() {
               <MetricCard icon="🏢" label="Negocios" value={totalNegocios} sub={`${negociosActivos} recibiendo reservas · ${negociosSuspendidos} pausados`} />
               <MetricCard icon="📅" label="Citas próximas" value={totalReservas} sub="futuras y no canceladas" />
               <MetricCard icon="👥" label="Clientes" value={totalClientes} sub="sumando todos los negocios" />
-              <MetricCard icon="💰" label="Ingresos sumados" value={formatDinero(totalIngresos)} sub="de todos los negocios" />
+              <MetricCard icon="💰" label="Ingresos sumados" value={Number(totalIngresos || 0).toLocaleString('es-CO')} sub="multi-moneda, ver por negocio" />
             </div>
 
             {/* Lista de Negocios */}

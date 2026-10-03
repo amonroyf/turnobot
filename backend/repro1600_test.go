@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"testing"
+	"time"
 )
 
 // Espejo barberia-vip: sin open/close, emp sin horario ni calendar, svc 30min.
@@ -31,9 +32,19 @@ func TestReproLun1600(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Próximo lunes estrictamente futuro en Bogotá: la fecha quemada
+	// original (2026-09-28 16:00) se pudría en cuanto pasaba esa hora y el
+	// test fallaba con 400 aunque el código estuviera bien.
+	bog, _ := time.LoadLocation("America/Bogota")
+	ahora := time.Now().In(bog)
+	delta := (int(time.Monday) - int(ahora.Weekday()) + 7) % 7
+	if delta == 0 {
+		delta = 7
+	}
+	fechaLunes := ahora.AddDate(0, 0, delta).Format("2006-01-02")
 	code, out := postBook(t, slug, map[string]string{
 		"servicioId": "svc1", "empleadoId": "emp1",
-		"fecha": "2026-09-28", "hora": "16:00",
+		"fecha": fechaLunes, "hora": "16:00",
 		"clienteNombre": "X", "clienteTelefono": "+573009988877",
 	})
 	if code != http.StatusCreated {

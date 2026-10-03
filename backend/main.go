@@ -103,6 +103,9 @@ func empleadosQueOfrecen(ctx context.Context, slug, servicioID string) ([]profes
 type Negocio struct {
 	ID           string `json:"id"`
 	Name         string `firestore:"name" json:"name"`
+	// Pais (ISO 3166-1 alpha-2, ej. "CO", "MX"): define región telefónica,
+	// moneda y locale. Vacío = Colombia (compat con negocios existentes).
+	Pais         string `firestore:"pais" json:"pais,omitempty"`
 	OwnerUID     string `firestore:"owner_uid" json:"-"`
 	RefreshToken string `firestore:"refresh_token" json:"-"` // Oculto en JSON
 	CalendarID   string `firestore:"calendar_id" json:"-"`   // Oculto en JSON
@@ -1274,7 +1277,7 @@ func bookHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	// cualquiera puede reservar con el número de otro. La prueba real de
 	// titularidad sería un OTP por SMS/WhatsApp (con costo por mensaje).
 	// Mientras tanto: tope diario por número + throttle por número/hora.
-	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono, defaultPhoneRegion)
+	telefonoLimpio, err := sanitizePhone(req.ClienteTelefono, regionNegocio(r.Context(), slug))
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusBadRequest)
@@ -3717,6 +3720,38 @@ func parseClock(s string) (bool, int, int) {
 // interpretar los números sin código de país. Por defecto Colombia.
 const defaultPhoneRegion = "CO"
 
+// paisesSoportados: regiones con negocio activo (Fase A multi-país).
+// La región de libphonenumber es el mismo ISO, así que el campo `pais`
+// del negocio sirve directo; aquí solo se valida.
+var paisesSoportados = map[string]bool{
+	"CO": true, "MX": true, "PE": true, "CL": true, "AR": true,
+	"EC": true, "UY": true, "PY": true, "BO": true, "CR": true,
+	"PA": true, "DO": true, "GT": true, "ES": true, "US": true,
+}
+
+// normalizarPais valida el ISO del negocio; desconocido o vacío = Colombia
+// (compat con negocios creados antes de Fase A).
+func normalizarPais(iso string) string {
+	iso = strings.ToUpper(strings.TrimSpace(iso))
+	if paisesSoportados[iso] {
+		return iso
+	}
+	return defaultPhoneRegion
+}
+
+// regionNegocio lee el país del negocio para validar teléfonos con
+// libphonenumber en la región correcta (ej. un 10 dígitos mexicano no es
+// un móvil colombiano válido).
+func regionNegocio(ctx context.Context, slug string) string {
+	doc, err := firestoreClient.Collection("negocios").Doc(slug).Get(ctx)
+	if err != nil {
+		return defaultPhoneRegion
+	}
+	var n Negocio
+	doc.DataTo(&n)
+	return normalizarPais(n.Pais)
+}
+
 // sanitizePhone valida la estructura real del número con libphonenumber
 // (reglas oficiales por operador/país) y lo normaliza a E.164 (ej. +573001234567).
 // Rechaza números matemáticamente imposibles o sin asignación en la región.
@@ -3748,10 +3783,13 @@ func digitsOnly(s string) string {
 
 // phoneQueryKeys devuelve las variantes de búsqueda en Firestore para un
 // teléfono: el valor crudo enviado, la versión E.164 (formato nuevo) y la
-// nacional en dígitos (formato legado de reservas anteriores a +57...). Así
-// "Mis citas", el límite diario y la doble reserva siguen funcionando con
-// reservas creadas antes y después de la normalización.
-func phoneQueryKeys(phone string) []string {
+// nacional en dígitos (formato legado). La región interpreta números sin
+// código de país (vacía = Colombia). Así "Mis citas", el límite diario y la
+// doble reserva funcionan con reservas de antes y después, en todo país.
+func phoneQueryKeys(phone, region string) []string {
+	if region == "" {
+		region = defaultPhoneRegion
+	}
 	keys := map[string]bool{}
 	add := func(p string) {
 		if p != "" && !keys[p] {
@@ -3759,7 +3797,7 @@ func phoneQueryKeys(phone string) []string {
 		}
 	}
 	add(phone)
-	if num, err := phonenumbers.Parse(phone, defaultPhoneRegion); err == nil && phonenumbers.IsValidNumber(num) {
+	if num, err := phonenumbers.Parse(phone, region); err == nil && phonenumbers.IsValidNumber(num) {
 		add(phonenumbers.Format(num, phonenumbers.E164))
 		add(digitsOnly(phonenumbers.Format(num, phonenumbers.NATIONAL)))
 	}
@@ -4572,7 +4610,7 @@ func hasBookingOnDate(ctx context.Context, negocioID, phone string, requested ti
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	count := 0
-	for _, key := range phoneQueryKeys(phone) {
+	for _, key := range phoneQueryKeys(phone, regionNegocio(ctx, negocioID)) {
 		docs, err := firestoreClient.Collection("reservas").
 			Where("user_phone", "==", key).
 			Where("negocio_id", "==", negocioID).
@@ -4625,7 +4663,7 @@ func yaTieneLugar(ctx context.Context, slug, recursoID string, evento time.Time,
 			return true
 		}
 		if phone != "" {
-			for _, key := range phoneQueryKeys(phone) {
+			for _, key := range phoneQueryKeys(phone, regionNegocio(ctx, slug)) {
 				if b.UserPhone == key {
 					return true
 				}

@@ -39,6 +39,37 @@ func TestSanitizePhone(t *testing.T) {
 	}
 }
 
+func TestSanitizePhonePorPais(t *testing.T) {
+	// México: 55 1234 5678 es válido en MX pero no como móvil CO.
+	if got, err := sanitizePhone("5512345678", "MX"); err != nil || got != "+525512345678" {
+		t.Errorf("MX got=%q err=%v, esperaba +525512345678", got, err)
+	}
+	if _, err := sanitizePhone("5512345678", "CO"); err == nil {
+		t.Errorf("mismo número en CO debió fallar")
+	}
+	// Con prefijo explícito la región no importa.
+	if got, err := sanitizePhone("+525512345678", "CO"); err != nil || got != "+525512345678" {
+		t.Errorf("+52 con región CO got=%q err=%v", got, err)
+	}
+	// normalizarPais: soportados pasan, resto cae a CO.
+	for iso, want := range map[string]string{"MX": "MX", "mx": "MX", "PE": "PE", "XX": "CO", "": "CO"} {
+		if got := normalizarPais(iso); got != want {
+			t.Errorf("normalizarPais(%q) = %q, esperaba %q", iso, got, want)
+		}
+	}
+	// Variantes MX incluyen su E.164.
+	keys := phoneQueryKeys("5512345678", "MX")
+	found := false
+	for _, k := range keys {
+		if k == "+525512345678" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("phoneQueryKeys MX sin +525512345678: %v", keys)
+	}
+}
+
 func TestParsePriceVal(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -69,7 +100,7 @@ func TestPhoneQueryKeys(t *testing.T) {
 		{"", 0},
 	}
 	for _, c := range cases {
-		keys := phoneQueryKeys(c.phone)
+		keys := phoneQueryKeys(c.phone, "")
 		if len(keys) < c.min {
 			t.Errorf("phoneQueryKeys(%q) devolvió %d variantes, mínimo esperado %d", c.phone, len(keys), c.min)
 		}
@@ -81,8 +112,8 @@ func TestPhoneQueryKeys(t *testing.T) {
 		}
 	}
 	// Verificar que +57 y sin prefijo generan la misma clave E.164
-	keys1 := phoneQueryKeys("3001234567")
-	keys2 := phoneQueryKeys("+573001234567")
+	keys1 := phoneQueryKeys("3001234567", "")
+	keys2 := phoneQueryKeys("+573001234567", "")
 	for _, k := range keys2 {
 		found := false
 		for _, k2 := range keys1 {

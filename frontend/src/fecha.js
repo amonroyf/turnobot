@@ -75,13 +75,19 @@ export function horaEnZona(ms, timezone) {
 
 // formatearTelefono: '+573001234567' -> '300 123 4567' (solo visual;
 // para enlaces wa.me se sigue usando el valor crudo con dígitos).
-export function formatearTelefono(tel) {
+// El prefijo es configurable por país (default Colombia, compat).
+export function formatearTelefono(tel, prefijo = '57') {
   const d = (tel || '').replace(/\D/g, '');
-  if (d.length === 12 && d.startsWith('57')) {
-    return `${d.slice(2, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
+  const pref = (prefijo || '').replace(/\D/g, '') || '57';
+  const local = d.startsWith(pref) ? d.slice(pref.length) : d;
+  if (local.length === 10) {
+    return `${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
   }
-  if (d.length === 10) {
-    return `${d.slice(0, 3)} ${d.slice(3, 6)} ${d.slice(6)}`;
+  if (local.length === 9) {
+    return `${local.slice(0, 3)} ${local.slice(3, 6)} ${local.slice(6)}`;
+  }
+  if (local.length === 8) {
+    return `${local.slice(0, 4)} ${local.slice(4)}`;
   }
   return tel || '';
 }

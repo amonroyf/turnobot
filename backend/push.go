@@ -423,7 +423,7 @@ func registerClientPushTokenHandler(w http.ResponseWriter, r *http.Request, slug
 	// nacionales y el backend guarda E.164.
 	match := false
 	if want := digitsOnly(req.Phone); want != "" {
-		for _, key := range phoneQueryKeys(b.UserPhone) {
+		for _, key := range phoneQueryKeys(b.UserPhone, regionNegocio(ctx, slug)) {
 			if digitsOnly(key) == want {
 				match = true
 				break

@@ -46,6 +46,13 @@ describe('formatearTelefono', () => {
     expect(formatearTelefono('')).toBe('');
     expect(formatearTelefono('123')).toBe('123');
   });
+  it('prefijo por país (MX)', () => {
+    expect(formatearTelefono('+525512345678', '52')).toBe('551 234 5678');
+    expect(formatearTelefono('5512345678', '52')).toBe('551 234 5678');
+  });
+  it('9 dígitos (PE)', () => {
+    expect(formatearTelefono('+51999888777', '51')).toBe('999 888 777');
+  });
 });
 
 describe('fechaHoraAUtc (Bogotá UTC-5 sin DST)', () => {
