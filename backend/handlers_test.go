@@ -2769,6 +2769,88 @@ func TestBookMexicoValidaRegion(t *testing.T) {
 	}
 }
 
+// Borrado total del tenant: sin huérfanos (recursos, privado, reservas,
+// clientes, servicios, empleados, doc). El usuario Auth se conserva.
+func TestDeleteNegocioBorraTodo(t *testing.T) {
+	testFirestoreClient(t)
+	testAuthClient(t)
+	ctx := context.Background()
+	slug := slugUnico("test-delneg")
+	if _, err := firestoreClient.Collection("negocios").Doc(slug).Set(ctx, map[string]interface{}{
+		"name": "Borrar", "owner_uid": "owner-test", "timezone": "America/Bogota",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []string{"servicios", "empleados", "recursos", "privado"} {
+		if _, err := firestoreClient.Collection("negocios").Doc(slug).Collection(c).Doc("d1").Set(ctx, map[string]interface{}{
+			"name": "x",
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := firestoreClient.Collection("reservas").Add(ctx, map[string]interface{}{
+		"negocio_id": slug, "date_time": time.Now().Add(48 * time.Hour),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := firestoreClient.Collection("clientes").Add(ctx, map[string]interface{}{
+		"negocio_id": slug, "cliente_phone": "+573001111111",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// Token con el UID super-admin vía custom token del emulador.
+	custom, err := firebaseAuth.CustomToken(ctx, "0FF1nrcBnSPIdB1rMgYocmRnYUb2")
+	if err != nil {
+		t.Fatalf("custom token: %v", err)
+	}
+	host := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
+	res, err := http.Post(
+		fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake", host),
+		"application/json",
+		strings.NewReader(fmt.Sprintf(`{"token":%q,"returnSecureToken":true}`, custom)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	b, _ := io.ReadAll(res.Body)
+	var out map[string]interface{}
+	_ = json.Unmarshal(b, &out)
+	superTok, _ := out["idToken"].(string)
+	if superTok == "" {
+		t.Fatalf("sin idToken super-admin: %s", b)
+	}
+	req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug, nil)
+	req.Header.Set("Authorization", "Bearer "+superTok)
+	rec := httptest.NewRecorder()
+	apiRouter(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("delete code=%d body=%s, esperaba 200", rec.Code, rec.Body.String())
+	}
+	if doc, _ := firestoreClient.Collection("negocios").Doc(slug).Get(ctx); doc.Exists() {
+		t.Fatalf("el doc del negocio sigue existiendo")
+	}
+	for _, c := range []string{"servicios", "empleados", "recursos", "privado"} {
+		docs, _ := firestoreClient.Collection("negocios").Doc(slug).Collection(c).Documents(ctx).GetAll()
+		if len(docs) != 0 {
+			t.Fatalf("huérfanos en %s: %d docs", c, len(docs))
+		}
+	}
+	for _, col := range []string{"reservas", "clientes"} {
+		docs, _ := firestoreClient.Collection(col).Where("negocio_id", "==", slug).Documents(ctx).GetAll()
+		if len(docs) != 0 {
+			t.Fatalf("huérfanos en %s: %d docs", col, len(docs))
+		}
+	}
+	// Sin token: 403.
+	req2 := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug, nil)
+	rec2 := httptest.NewRecorder()
+	apiRouter(rec2, req2)
+	if rec2.Code != http.StatusForbidden {
+		t.Fatalf("sin auth code=%d, esperaba 403", rec2.Code)
+	}
+}
+
 // Reglas puras (sin emulador): horarios, marca y zona horaria.
 func TestReglasHorarioYMarca(t *testing.T) {
 	h := &HorarioSemanal{Lunes: DiaHorario{Activo: true, Turnos: []Turno{{Inicio: "09:00", Fin: "13:00"}}}}

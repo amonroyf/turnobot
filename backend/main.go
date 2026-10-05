@@ -3420,9 +3420,15 @@ func deleteNegocioHandler(w http.ResponseWriter, r *http.Request, slug string) {
 	deleteQuery(firestoreClient.Collection("reservas").Where("negocio_id", "==", slug))
 	deleteQuery(firestoreClient.Collection("clientes").Where("negocio_id", "==", slug))
 
-	// 2. Borrar las subcolecciones del negocio
+	// 2. Borrar las subcolecciones del negocio (servicios, empleados,
+	// recursos —canchas, clases, eventos— y privado con los push tokens;
+	// sin esto quedaban huérfanos bajo un negocio inexistente).
+	// El usuario Auth del dueño se conserva a propósito: puede registrar
+	// otro negocio y borrarlo sería irreversible.
 	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("servicios"))
 	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("empleados"))
+	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("recursos"))
+	deleteCollection(firestoreClient.Collection("negocios").Doc(slug).Collection("privado"))
 
 	// 3. Borrar el documento principal del negocio
 	_, err := firestoreClient.Collection("negocios").Doc(slug).Delete(ctx)
