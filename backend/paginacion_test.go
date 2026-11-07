@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"turnobot-test-learn/sandbox"
 )
 
 // postBookComo reserva como un cliente explícito (mismo UID en varias).
@@ -19,11 +21,15 @@ func postBookComo(t *testing.T, slug, email string, payload map[string]interface
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
-	rec := httptest.NewRecorder()
-	bookHandler(rec, req, slug)
-	var out map[string]interface{}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	return rec.Code, out
+
+	handlerWrapper := func(w http.ResponseWriter, r *http.Request) {
+		bookHandler(w, r, slug)
+	}
+	report := sandbox.Intercept(context.Background(), t, handlerWrapper, req, firestoreClient, []string{"reservas", "clientes"}, "negocio_id", slug)
+	reportJSON, _ := json.Marshal(report)
+	t.Logf("sandbox report: %s", string(reportJSON))
+
+	return report.Response.StatusCode, report.Response.Body
 }
 
 // getCitasCliente llama GET /citas con el token del cliente.

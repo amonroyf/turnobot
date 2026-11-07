@@ -2,6 +2,10 @@ module turnobot
 
 go 1.25.0
 
+require turnobot-test-learn v0.0.0
+
+replace turnobot-test-learn => ../turnobot-test-learn
+
 require (
 	cloud.google.com/go/firestore v1.22.0
 	firebase.google.com/go/v4 v4.21.0
