@@ -1,0 +1,8 @@
+.gcloudignore
+.git
+.gitignore
+node_modules/
+frontend/node_modules/
+frontend/dist/
+**/.firebase/
+*.log

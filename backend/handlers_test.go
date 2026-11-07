@@ -485,11 +485,13 @@ func TestBookMuyProntoRechazado(t *testing.T) {
 	}
 
 	// Slot hoy: siguiente fracción de 30 min (siempre < 120 min de aviso).
-	now := time.Now()
+	loc, _ := time.LoadLocation("America/Bogota")
+	now := time.Now().In(loc)
 	hora := now.Truncate(30 * time.Minute)
 	if !hora.After(now) {
 		hora = hora.Add(30 * time.Minute)
 	}
+	hora = hora.In(loc)
 	fecha := hora.Format("2006-01-02")
 
 	code, out := postBook(t, slug, map[string]string{

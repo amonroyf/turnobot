@@ -23,31 +23,30 @@ func postBookComo(t *testing.T, slug, email string, payload map[string]interface
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
 
-	ctx := context.Background()
-
+	// 1. Envolver el handler original de TurnoBot
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		bookHandler(w, r, slug)
 	}
 
-	coleccionesMonitoreadas := []string{"reservas", "clientes"}
-	report := sandbox.Intercept(ctx, t, handler, req, firestoreClient, coleccionesMonitoreadas, "negocio_id", slug)
+	// 2. Interceptar la ejecución y capturar snapshots de Firestore antes/después
+	ctx := context.Background()
+	colecciones := []string{"reservas", "clientes"}
+	report := sandbox.Intercept(ctx, t, handler, req, firestoreClient, colecciones, "negocio_id", slug)
 
-	reportarASandbox(report)
+	// 3. Despachar asíncronamente el reporte al backend del TMS
+	go func() {
+		url := os.Getenv("TMS_BACKEND_URL")
+		if url == "" {
+			// Asume que el backend del TMS corre en el puerto 8080
+			url = "http://localhost:8080/api/reports"
+		}
+		data, _ := json.Marshal(report)
+		client := &http.Client{Timeout: 3 * time.Second}
+		_, _ = client.Post(url, "application/json", bytes.NewBuffer(data))
+	}()
 
+	// 4. Retornar los valores originales interceptados para que el test continúe
 	return report.Response.StatusCode, report.Response.Body
-}
-
-func reportarASandbox(report sandbox.TestRun) {
-	url := os.Getenv("SANDBOX_BACKEND_URL")
-	if url == "" {
-		url = "https://turnobot-test-learn-backend-850305350371.us-central1.run.app/api/reports"
-	}
-	data, err := json.Marshal(report)
-	if err != nil {
-		return
-	}
-	client := &http.Client{Timeout: 3 * time.Second}
-	_, _ = client.Post(url, "application/json", bytes.NewBuffer(data))
 }
 
 // getCitasCliente llama GET /citas con el token del cliente.

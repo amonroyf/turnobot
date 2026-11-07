@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"os"
 	"time"
 
@@ -39,6 +40,46 @@ func main() {
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/api/tests/run", runTestsHandler)
 	mux.HandleFunc("/api/reports", receiveReportHandler)
+
+	mux.HandleFunc("/api/requirements", requirementsHandler)
+	mux.HandleFunc("/api/requirements/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/requirements/" || r.URL.Path == "/api/requirements" {
+			requirementsHandler(w, r)
+			return
+		}
+		requirementItemHandler(w, r)
+	})
+	mux.HandleFunc("/api/test-cases", testCasesHandler)
+	mux.HandleFunc("/api/test-cases/", func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/execute") {
+			executeTestCaseHandler(w, r)
+			return
+		}
+		if r.URL.Path == "/api/test-cases/" || r.URL.Path == "/api/test-cases" {
+			testCasesHandler(w, r)
+			return
+		}
+		testCaseItemHandler(w, r)
+	})
+	mux.HandleFunc("/api/test-suites", testSuitesHandler)
+	mux.HandleFunc("/api/test-suites/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/test-suites/" || r.URL.Path == "/api/test-suites" {
+			testSuitesHandler(w, r)
+			return
+		}
+		testSuiteItemHandler(w, r)
+	})
+	mux.HandleFunc("/api/defects", defectsHandler)
+	mux.HandleFunc("/api/defects/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/defects/" || r.URL.Path == "/api/defects" {
+			defectsHandler(w, r)
+			return
+		}
+		defectItemHandler(w, r)
+	})
+	mux.HandleFunc("/api/reports/summary", reportsSummaryHandler)
+	mux.HandleFunc("/api/traceability", traceabilityHandler)
+	mux.HandleFunc("/api/manual-runs", manualRunsHandler)
 
 	log.Printf("turnobot-test-learn backend listening on :%s", port)
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,9 +123,9 @@ func runTestsHandler(w http.ResponseWriter, r *http.Request) {
 		Steps: []*cloudbuild.BuildStep{
 			{Name: "gcr.io/cloud-builders/git", Args: []string{"clone", "https://github.com/amonroyf/turnobot.git", "."}},
 			{
-				Name:       "golang:1.25",
+				Name:       "golang:1.26",
 				Entrypoint: "bash",
-				Args: []string{"-c", "apt-get update && apt-get install -y nodejs npm && npm i -g firebase-tools && firebase emulators:exec --only firestore,auth 'cd backend && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 go test ./...'"},
+				Args: []string{"-c", "apt-get update && apt-get install -y nodejs npm openjdk-21-jre-headless && npm i -g firebase-tools && firebase emulators:exec --only firestore,auth 'cd backend && FIRESTORE_EMULATOR_HOST=127.0.0.1:8080 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 go test ./...'"},
 			},
 		},
 	}
