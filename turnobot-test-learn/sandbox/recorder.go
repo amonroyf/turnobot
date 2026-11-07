@@ -77,5 +77,6 @@ func Intercept(ctx context.Context, t interface{ Helper(); Name() string }, hand
 		DBAfter:  after,
 	}
 	report.DBDelta = Delta(before, after)
+
 	return report
 }

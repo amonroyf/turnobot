@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "site": "turnobot-test-learn",
+    "public": "dist",
+    "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
+  }
+}

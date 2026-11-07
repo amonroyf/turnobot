@@ -214,5 +214,15 @@ service cloud.firestore {
       );
       allow update, delete: if request.auth != null && resource.data.owner_uid == request.auth.uid;
     }
+
+    // 4. Sandbox educativo (solo lectura para usuarios autenticados)
+    match /test_runs/{doc} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    match /test_concepts/{doc} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
   }
 }

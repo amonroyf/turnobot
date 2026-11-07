@@ -1,7 +1,7 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: ["build", "-f", "backend/Dockerfile", "-t", "gcr.io/$PROJECT_ID/turnobot-test-learn-backend:$COMMIT_SHA", "."]
+    args: ["build", "-f", "backend/Dockerfile", "-t", "gcr.io/$PROJECT_ID/turnobot-test-learn-backend:latest", "."]
   - name: gcr.io/cloud-builders/docker
-    args: ["push", "gcr.io/$PROJECT_ID/turnobot-test-learn-backend:$COMMIT_SHA"]
+    args: ["push", "gcr.io/$PROJECT_ID/turnobot-test-learn-backend:latest"]
 images:
-  - gcr.io/$PROJECT_ID/turnobot-test-learn-backend:$COMMIT_SHA
+  - gcr.io/$PROJECT_ID/turnobot-test-learn-backend:latest

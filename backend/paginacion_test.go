@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -22,14 +23,31 @@ func postBookComo(t *testing.T, slug, email string, payload map[string]interface
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
 
-	handlerWrapper := func(w http.ResponseWriter, r *http.Request) {
+	ctx := context.Background()
+
+	handler := func(w http.ResponseWriter, r *http.Request) {
 		bookHandler(w, r, slug)
 	}
-	report := sandbox.Intercept(context.Background(), t, handlerWrapper, req, firestoreClient, []string{"reservas", "clientes"}, "negocio_id", slug)
-	reportJSON, _ := json.Marshal(report)
-	t.Logf("sandbox report: %s", string(reportJSON))
+
+	coleccionesMonitoreadas := []string{"reservas", "clientes"}
+	report := sandbox.Intercept(ctx, t, handler, req, firestoreClient, coleccionesMonitoreadas, "negocio_id", slug)
+
+	reportarASandbox(report)
 
 	return report.Response.StatusCode, report.Response.Body
+}
+
+func reportarASandbox(report sandbox.TestRun) {
+	url := os.Getenv("SANDBOX_BACKEND_URL")
+	if url == "" {
+		url = "https://turnobot-test-learn-backend-850305350371.us-central1.run.app/api/reports"
+	}
+	data, err := json.Marshal(report)
+	if err != nil {
+		return
+	}
+	client := &http.Client{Timeout: 3 * time.Second}
+	_, _ = client.Post(url, "application/json", bytes.NewBuffer(data))
 }
 
 // getCitasCliente llama GET /citas con el token del cliente.
