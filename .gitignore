@@ -1,5 +1,7 @@
 # Node modules del frontend
 frontend/node_modules/
+turnobot-test-learn/frontend/node_modules/
+turnobot-test-learn/frontend/dist/
 
 # Build artifacts del frontend
 frontend/dist/
