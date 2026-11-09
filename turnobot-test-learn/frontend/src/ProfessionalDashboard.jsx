@@ -80,7 +80,7 @@ export default function ProfessionalDashboard({ user }) {
           <div style={css.logo}>TB</div>
           <div>
             <div style={css.brandTitle}>TURNOBOT QA PLATFORM</div>
-            <div style={css.brandSubtitle}>Automated Testing Engine & Traceability Matrix</div>
+            <div style={css.brandSubtitle} title="Plataforma unificada de ejecución, trazabilidad y depuración de pruebas.">Automated Testing Engine & Traceability Matrix</div>
           </div>
         </div>
 
@@ -101,26 +101,26 @@ export default function ProfessionalDashboard({ user }) {
 
       <section style={css.kpiBar}>
         <div style={css.kpiItem}>
-          <span style={css.kpiLabel}>PASS RATE</span>
+          <span style={css.kpiLabel} title="Porcentaje de ejecuciones exitosas (pass) sobre el total de runs registrados.">PASS RATE ⓘ</span>
           <span style={{ ...css.kpiValue, color: stats.passRate > 90 ? "#16a34a" : "#dc2626" }}>
             {stats.passRate}%
           </span>
           <span style={css.kpiSub}>{stats.passed} pass / {stats.failed} fail</span>
         </div>
         <div style={css.kpiItem}>
-          <span style={css.kpiLabel}>AVG RUNTIME</span>
+          <span style={css.kpiLabel} title="Tiempo medio de ejecución de las pruebas en milisegundos.">AVG RUNTIME ⓘ</span>
           <span style={css.kpiValue}>{stats.avgTime} ms</span>
           <span style={css.kpiSub}>latency target &lt; 50ms</span>
         </div>
         <div style={css.kpiItem}>
-          <span style={css.kpiLabel}>FLAKY RISKS</span>
+          <span style={css.kpiLabel} title="Cantidad de pruebas con resultados mixtos pass/fail (inestables).">FLAKY RISKS ⓘ</span>
           <span style={{ ...css.kpiValue, color: stats.flaky > 0 ? "#ea580c" : "#16a34a" }}>
             {stats.flaky}
           </span>
           <span style={css.kpiSub}>unstable test signatures</span>
         </div>
         <div style={css.kpiItem}>
-          <span style={css.kpiLabel}>ENGINE MODE</span>
+          <span style={css.kpiLabel} title="Modo de ejecución determinista, sin IA ni tokens.">ENGINE MODE ⓘ</span>
           <span style={css.kpiValue}>Deterministic</span>
           <span style={css.kpiSub}>No-AI zero token overhead</span>
         </div>
@@ -131,7 +131,7 @@ export default function ProfessionalDashboard({ user }) {
           <div style={css.explorerToolbar}>
             <input
               type="text"
-              placeholder="Filter test cases..."
+              placeholder="Filter test cases..." title="Filtra la lista de ejecuciones por nombre de prueba."
               value={searchFilter}
               onChange={(e) => setSearchFilter(e.target.value)}
               style={css.searchInput}
