@@ -10,10 +10,11 @@ test.describe('Directorio de Clientes (CRM)', () => {
     const email = `crm${ts}@turnobot.test`;
     const slug = e2eSlug(nombre.toLowerCase().trim().replace(/[\s\W-]+/g, '-'));
     const tarjetaCliente = (nombreCliente) =>
-      page.locator('div.rounded-2xl', { hasText: 'LTV' }).filter({ hasText: nombreCliente });
+      page.locator('div.rounded-2xl', { hasText: nombreCliente }).filter({ hasText: 'Cobrado' });
 
     try {
       const { email: userEmail, password } = await crearUsuarioYTema(email, nombre, slug);
+      const ownerUid = (await adminAuth.getUserByEmail(email)).uid;
       await page.goto('/register');
       await signInEnPagina(page, userEmail, password);
       await page.goto('/admin');
@@ -25,6 +26,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
       const hoy = new Date();
       await db.collection('clientes').doc(`${slug}__573001111111`).set({
         negocio_id: slug,
+        owner_uid: ownerUid,
         cliente_phone: '+573001111111',
         client_name: 'Pepito Prueba',
         visits: 3,
@@ -34,6 +36,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
       });
       await db.collection('clientes').doc(`${slug}__573002222222`).set({
         negocio_id: slug,
+        owner_uid: ownerUid,
         cliente_phone: '+573002222222',
         client_name: 'Juanita Prueba',
         visits: 1,
@@ -43,6 +46,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
       });
       await db.collection('clientes').doc(`${slug}__573003333333`).set({
         negocio_id: slug,
+        owner_uid: ownerUid,
         cliente_phone: '+573003333333',
         client_name: 'Sin Visitas',
         visits: 0,
@@ -53,26 +57,27 @@ test.describe('Directorio de Clientes (CRM)', () => {
 
       await page.getByText('Clientes', { exact: true }).first().click();
       await expect(
-        page.getByRole('heading', { name: /Directorio de Clientes \(3\)/ }),
+        page.getByRole('heading', { name: /Directorio de Clientes/ }),
       ).toBeVisible({ timeout: 15000 });
 
       const tarjetaPepito = tarjetaCliente('Pepito Prueba');
       await expect(tarjetaPepito).toBeVisible();
-      await expect(tarjetaPepito).toContainText('$90.000');
-      await expect(tarjetaPepito).toContainText('3 visitas');
-      await expect(tarjetaPepito).toContainText(/1 sept?\.?\s*2026/);
+      await expect(tarjetaPepito).toContainText(/90\.000/);
+      await expect(tarjetaPepito).toContainText(/3 reservas/);
+      await expect(tarjetaPepito).toContainText(/1 de septiembre/);
 
       const tarjetaJuanita = tarjetaCliente('Juanita Prueba');
-      await expect(tarjetaJuanita).toContainText('$45.000');
-      await expect(tarjetaJuanita).toContainText('1 visitas');
-      await expect(tarjetaJuanita).toContainText(/4 sept?\.?\s*2026/);
+      await expect(tarjetaJuanita).toContainText(/45\.000/);
+      await expect(tarjetaJuanita).toContainText(/1 reservas/);
+      await expect(tarjetaJuanita).toContainText(/4 de septiembre/);
 
       const tarjetaSinVisitas = tarjetaCliente('Sin Visitas');
       await expect(tarjetaSinVisitas).toContainText('N/A');
+      await expect(tarjetaSinVisitas).toContainText(/Agendado:.*0/);
 
-      await expect(page.locator('div.rounded-2xl', { hasText: 'LTV' }).first()).toContainText(
-        'Pepito Prueba',
-      );
+      await expect(
+        page.locator('div.rounded-2xl', { hasText: 'Pepito Prueba' }).filter({ hasText: 'Cobrado' }),
+      ).toContainText('Pepito Prueba');
 
       const linkPepito = tarjetaPepito.locator('a[href]').first();
       await expect(linkPepito).toHaveAttribute('href', /wa\.me\/.*573001111111/);

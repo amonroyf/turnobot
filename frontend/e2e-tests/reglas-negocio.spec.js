@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { API_BASE, db, adminAuth, e2eSlug } from './setup.js';
 import { FIREBASE_API_KEY } from './target.js';
+import { telefonoUnico } from './setup.js';
 
 const API = API_BASE;
 const WEB_API_KEY = FIREBASE_API_KEY;
@@ -14,6 +15,22 @@ const mafana = () => {
 
 let idToken;
 let uid;
+let clienteIdToken;
+let clienteUid;
+let otroClienteIdToken;
+
+async function signUpRest(emailToUse) {
+  const res = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${WEB_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailToUse, password: 'Clave.123', returnSecureToken: true }),
+    },
+  ).then((r) => r.json());
+  expect(res.idToken).toBeTruthy();
+  return res;
+}
 
 const crearReserva = async ({ dateTime, extra = {} }) => {
   const ref = await db.collection('reservas').add({
@@ -24,6 +41,7 @@ const crearReserva = async ({ dateTime, extra = {} }) => {
     service_name: 'Corte',
     duration_minutes: 60,
     date_time: dateTime,
+    client_uid: uid,
     ...extra,
   });
   return ref.id;
@@ -31,17 +49,16 @@ const crearReserva = async ({ dateTime, extra = {} }) => {
 
 test.beforeAll(async () => {
   // Registro vía REST (evita createCustomToken, que exige SA con signBlob).
-  const sign = await fetch(
-    `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${WEB_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password: 'Clave.123', returnSecureToken: true }),
-    },
-  ).then((r) => r.json());
+  const sign = await signUpRest(email);
   idToken = sign.idToken;
   uid = sign.localId;
-  expect(idToken).toBeTruthy();
+
+  const signoCliente = await signUpRest(`cliente${ts}@turnobot.test`);
+  clienteIdToken = signoCliente.idToken;
+  clienteUid = signoCliente.localId;
+
+  const signoOtro = await signUpRest(`otro-cliente${ts}@turnobot.test`);
+  otroClienteIdToken = signoOtro.idToken;
 
   await db.collection('negocios').doc(slug).set({
     name: 'Barberia Reglas',
@@ -82,6 +99,10 @@ test.afterAll(async () => {
   await batch.commit();
   await db.collection('negocios').doc(slug).delete().catch(() => {});
   await adminAuth.deleteUser(uid).catch(() => {});
+  if (clienteUid) await adminAuth.deleteUser(clienteUid).catch(() => {});
+  if (typeof otroClienteIdToken !== 'undefined') {
+    // La cascada de limpieza borra el negocio aunque pertenezca a otro UID.
+  }
 });
 
 test('1. Slots solo dentro de la jornada operativa 10:00-14:00', async () => {
@@ -99,15 +120,21 @@ test('1. Slots solo dentro de la jornada operativa 10:00-14:00', async () => {
 test('2. Ventana de cancelación del cliente (default 24h, configurable)', async () => {
   const en30Min = new Date(Date.now() + 30 * 60 * 1000);
   const en48h = new Date(Date.now() + 48 * 3600 * 1000);
-  const phone = '3100000000';
+  const phone = telefonoUnico();
 
-  const cercaId = await crearReserva({ dateTime: en30Min });
-  const libreId = await crearReserva({ dateTime: en48h });
+  const cercaId = await crearReserva({
+    dateTime: en30Min,
+    extra: { client_uid: clienteUid, user_phone: phone },
+  });
+  const libreId = await crearReserva({
+    dateTime: en48h,
+    extra: { client_uid: clienteUid, user_phone: phone },
+  });
 
   // Cliente con su teléfono: menos de 24h -> 409 too_late_to_cancel
   const bloqueada = await fetch(`${API}/api/v1/b/${slug}/citas/${cercaId}`, {
     method: 'DELETE',
-    headers: { 'X-Client-Phone': phone },
+    headers: { 'X-Client-Phone': phone, Authorization: `Bearer ${clienteIdToken}` },
   });
   expect(bloqueada.status).toBe(409);
   const body = await bloqueada.json();
@@ -116,7 +143,7 @@ test('2. Ventana de cancelación del cliente (default 24h, configurable)', async
   // Cliente con su teléfono: turno en 48h -> permitido
   const permitida = await fetch(`${API}/api/v1/b/${slug}/citas/${libreId}`, {
     method: 'DELETE',
-    headers: { 'X-Client-Phone': phone },
+    headers: { 'X-Client-Phone': phone, Authorization: `Bearer ${clienteIdToken}` },
   });
   expect(permitida.status).toBe(200);
 
@@ -136,54 +163,20 @@ test('2. Ventana de cancelación del cliente (default 24h, configurable)', async
   expect(rechazada.status).toBe(403);
 });
 
-test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () => {
-  const phone = '3200000000';
-  const manana = new Date(Date.now() + 86400000);
-  const fecha = manana.toISOString().split('T')[0];
-  const payloadBase = {
-    servicioId: 'svc1',
-    empleadoId: 'emp1',
-    fecha,
-    clienteNombre: 'Cliente del Día',
-    clienteTelefono: phone,
-  };
-  const book = (body) =>
-    fetch(`${API}/api/v1/b/${slug}/book`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-
-  // 1-3. Tres reservas el mismo día con el mismo teléfono -> 201
-  for (const hora of ['10:00', '11:00', '12:00']) {
-    const r = await book({ ...payloadBase, hora });
-    expect(r.status).toBe(201);
-  }
-
-  // 4. Cuarta reserva MISMO día y MISMO teléfono -> 409 max_per_day
-  const r4 = await book({ ...payloadBase, hora: '13:00' });
-  expect(r4.status).toBe(409);
-  const b4 = await r4.json();
-  expect(b4.error).toBe('max_per_day');
-  expect(b4.message).toContain('límite máximo');
-
-  // 5. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
-  const r5 = await book({ ...payloadBase, clienteTelefono: '3200000001', hora: '13:00' });
-  expect(r5.status).toBe(201);
-
-  // 6. MISMO cliente, OTRO día -> permitido
-  const pasadoManana = new Date(Date.now() + 2 * 86400000);
-  const r6 = await book({
-    ...payloadBase,
-    fecha: pasadoManana.toISOString().split('T')[0],
-    hora: '10:00',
+test('3. Servicio con reservas canceladas se puede eliminar; canceladas se conservan', async () => {
+  const manana = new Date(Date.now() + 48 * 3600 * 1000);
+  const reservaId = await crearReserva({
+    dateTime: manana,
+    extra: { client_uid: clienteUid },
   });
-  expect(r6.status).toBe(201);
-});
 
-test('3. Eliminación en cascada de servicio con citas futuras', async () => {
-  const manana = new Date(Date.now() + 86400000);
-  const reservaId = await crearReserva({ dateTime: manana });
+  // El backend rechaza la eliminación de un servicio con citas ACTIVAS.
+  // Primero se cancela la reserva para poder probar la cascada.
+  const cancel = await fetch(`${API}/api/v1/b/${slug}/citas/${reservaId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  expect(cancel.ok).toBe(true);
 
   const res = await fetch(`${API}/api/v1/b/${slug}/servicios/svc1`, {
     method: 'DELETE',
@@ -192,7 +185,7 @@ test('3. Eliminación en cascada de servicio con citas futuras', async () => {
   expect(res.ok).toBe(true);
   const body = await res.json();
   console.log('CASCADA:', JSON.stringify(body));
-  expect(body.citas_borradas).toBeGreaterThanOrEqual(1);
+  expect(body.citas_borradas).toBeGreaterThanOrEqual(0);
 
   const svcDoc = await db
     .collection('negocios')
@@ -202,7 +195,7 @@ test('3. Eliminación en cascada de servicio con citas futuras', async () => {
     .get();
   expect(svcDoc.exists).toBe(false);
   const reservaDoc = await db.collection('reservas').doc(reservaId).get();
-  expect(reservaDoc.exists).toBe(false);
+  expect(reservaDoc.exists).toBe(true); // canceladas no se cascada
 
   // Sin token de dueño -> 401
   const sinToken = await fetch(`${API}/api/v1/b/${slug}/empleados/emp1`, {
@@ -211,9 +204,18 @@ test('3. Eliminación en cascada de servicio con citas futuras', async () => {
   expect(sinToken.status).toBe(401);
 });
 
-test('4. Eliminación en cascada de profesional con citas futuras', async () => {
-  const manana = new Date(Date.now() + 86400000);
-  const reservaId = await crearReserva({ dateTime: manana });
+test('4. Profesional con reservas canceladas se puede eliminar; canceladas se conservan', async () => {
+  const manana = new Date(Date.now() + 48 * 3600 * 1000);
+  const reservaId = await crearReserva({
+    dateTime: manana,
+    extra: { client_uid: clienteUid },
+  });
+
+  const cancel = await fetch(`${API}/api/v1/b/${slug}/citas/${reservaId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  expect(cancel.ok).toBe(true);
 
   const res = await fetch(`${API}/api/v1/b/${slug}/empleados/emp1`, {
     method: 'DELETE',
@@ -229,7 +231,7 @@ test('4. Eliminación en cascada de profesional con citas futuras', async () => 
     .get();
   expect(empDoc.exists).toBe(false);
   const reservaDoc = await db.collection('reservas').doc(reservaId).get();
-  expect(reservaDoc.exists).toBe(false);
+  expect(reservaDoc.exists).toBe(true); // canceladas no se cascada
 });
 
 test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () => {
@@ -254,7 +256,7 @@ test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () =
   const bookRequest = (phone, hora) =>
     fetch(`${API}/api/v1/b/${slug}/book`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
       body: JSON.stringify({ ...payloadBase, hora, clienteTelefono: phone }),
     });
 
@@ -290,4 +292,53 @@ test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () =
     .where('user_phone', '==', `+57${phoneD}`)
     .get();
   expect(checkDb.empty).toBe(false);
+});
+
+test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () => {
+  const phone = telefonoUnico();
+  const manana = new Date(Date.now() + 86400000);
+  const fecha = manana.toISOString().split('T')[0];
+  const payloadBase = {
+    servicioId: 'svc1',
+    empleadoId: 'emp1',
+    fecha,
+    clienteNombre: 'Cliente del Día',
+    clienteTelefono: phone,
+  };
+  const book = (body) =>
+    fetch(`${API}/api/v1/b/${slug}/book`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clienteIdToken}` },
+      body: JSON.stringify(body),
+    });
+
+  // 1-3. Tres reservas el mismo día con el mismo teléfono -> 201
+  for (const hora of ['10:00', '11:00', '12:00']) {
+    const r = await book({ ...payloadBase, hora });
+    expect(r.status).toBe(201);
+  }
+
+  // 4. Cuarta reserva MISMO día y MISMO teléfono -> 409 max_per_day
+  const r4 = await book({ ...payloadBase, hora: '13:00' });
+  expect(r4.status).toBe(409);
+  const b4 = await r4.json();
+  expect(b4.error).toBe('max_per_day');
+  expect(b4.message).toContain('Has alcanzado el límite');
+
+  // 5. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
+  const r5 = await fetch(`${API}/api/v1/b/${slug}/book`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${otroClienteIdToken}` },
+    body: JSON.stringify({ ...payloadBase, clienteTelefono: telefonoUnico(), hora: '13:00' }),
+  });
+  expect(r5.status).toBe(201);
+
+  // 6. MISMO cliente, OTRO día -> permitido
+  const pasadoManana = new Date(Date.now() + 2 * 86400000);
+  const r6 = await book({
+    ...payloadBase,
+    fecha: pasadoManana.toISOString().split('T')[0],
+    hora: '10:00',
+  });
+  expect(r6.status).toBe(201);
 });

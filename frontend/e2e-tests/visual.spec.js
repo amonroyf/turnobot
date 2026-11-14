@@ -58,7 +58,7 @@ test.describe('Regresión visual', () => {
   test('mis citas: estado inicial', async ({ page }) => {
     await page.goto(`/shop/${SLUG}`);
     await page.getByRole('button', { name: /Mis Citas/ }).click();
-    await expect(page.getByText('Consultar o cancelar citas')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Tus citas' })).toBeVisible();
     await expect(page).toHaveScreenshot('mis-citas.png', { animations: 'disabled' });
   });
 

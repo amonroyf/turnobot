@@ -46,6 +46,12 @@ export async function garantizarClienteE2E() {
   }
 }
 
+export async function crearUsuarioE2E(email) {
+  const password = 'Clave.123';
+  await adminAuth.createUser({ email, password, emailVerified: true });
+  return { email, password };
+}
+
 export async function crearUsuarioYTema(email, nombre, slug) {
   const password = 'Clave.123';
   const userRecord = await adminAuth.createUser({ email, password, emailVerified: true });

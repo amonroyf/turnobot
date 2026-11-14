@@ -43,9 +43,11 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
       timeout: 30000,
     });
 
+    await page.getByRole('button', { name: 'Ajustes' }).click();
+
     // 3. Crear servicio en Firestore real (selectores vigentes de AdminDashboard.jsx)
     await page.getByPlaceholder('Ej. Corte, Uñas, Limpieza').fill('Consulta Premium');
-    await page.getByPlaceholder('Ej. 30').fill('45');
+    await page.getByPlaceholder('Ej. 30', { exact: true }).fill('45');
     await page.getByPlaceholder('Ej. 20000').fill('35000');
     await page.getByRole('button', { name: /Agregar Servicio/ }).click();
     await expect(page.getByText('Consulta Premium')).toBeVisible({ timeout: 20000 });
@@ -53,7 +55,9 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     // 4. Crear profesional en Firestore real
     await page.getByPlaceholder('Ej. Camila, Andrés…').fill('Profesional E2E');
     await page.getByRole('button', { name: '+ Añadir al equipo' }).click();
-    await expect(page.getByText('Profesional E2E')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Profesional E2E').first()).toBeVisible({
+      timeout: 20000,
+    });
 
     // Verificación directa en la BD
     const doc = await db.collection('negocios').doc(SLUG_REAL).get();
@@ -121,7 +125,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await p2.getByText('Consulta Premium').first().click();
     await p2.getByText('Profesional E2E', { exact: true }).first().click();
     await elegirDiaEnCalendario(p2, mañana());
-    await p2.locator('.grid button').first().click();
+    await p2.locator('div.grid-cols-3 button').first().click();
     await p2.getByPlaceholder('Tu Nombre completo').fill('Usuario Lento');
     await p2.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefonoUnico());
 
@@ -135,7 +139,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
       { timeout: 15000 },
     );
     await p2.getByRole('button', { name: 'Confirmar Reserva' }).click();
-    await expect(p2.getByText(/acaba de ser reservado por alguien más/)).toBeVisible();
+    await expect(p2.getByText(/Ese horario ya no está libre/)).toBeVisible();
     await expect(p2.getByText(/Horarios para el/)).toBeVisible();
     await refetch;
   });
