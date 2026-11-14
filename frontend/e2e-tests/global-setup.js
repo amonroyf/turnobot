@@ -1,20 +1,18 @@
-import admin from 'firebase-admin';
-import { garantizarTiendaE2E, limpiarReservasE2E } from './setup.js';
+import { assertTargetReady, IS_GCP, PROJECT_ID } from './target.js';
+import {
+  garantizarClienteE2E,
+  garantizarNegocioDemo,
+  garantizarTiendaE2E,
+  limpiarReservasE2E,
+} from './setup.js';
 
 export default async function globalSetup() {
-  await garantizarTiendaE2E();
-  await limpiarReservasE2E();
+  assertTargetReady();
+  console.log(`[E2E] target=${IS_GCP ? 'gcp' : 'local'} proyecto=${PROJECT_ID}`);
 
-  const negocioRef = admin.firestore().collection('negocios').doc('mi-negocio');
-  await negocioRef.set({
-    name: 'Mi Negocio Duplicada',
-    owner_uid: 'e2e-owner',
-    whatsapp: '',
-    direccion: '',
-    horario: '',
-    telefono: '',
-    calendar_id: 'primary',
-    timezone: 'America/Bogota',
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  // Datos base de las specs. Son idempotentes y usan merge.
+  await garantizarNegocioDemo();
+  await garantizarTiendaE2E();
+  await garantizarClienteE2E();
+  await limpiarReservasE2E();
 }

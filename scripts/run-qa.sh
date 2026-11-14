@@ -8,6 +8,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 echo "=== Backend (Go) ==="
 cd "$ROOT/backend"
 set -a; source /tmp/turnobot.env 2>/dev/null || true; set +a
+# El emulador usa --project demo-test; Auth y Firestore deben coincidir.
+export GCP_PROJECT_ID="${QA_GCP_PROJECT_ID:-demo-test}"
 go test ./... -count=1 -coverprofile=coverage.out
 go tool cover -func=coverage.out | tail -3
 

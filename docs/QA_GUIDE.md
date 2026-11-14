@@ -44,7 +44,7 @@ Requiere emulador Firestore/Auth levantado (ver README principal).
 cd backend
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8090
 export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9098
-export GCP_PROJECT_ID=stalwart-coast-439901-d0
+export GCP_PROJECT_ID=demo-test   # el mismo --project con el que arranca el emulador
 export EMPLOYEE_TOKEN_KEY=dev-employee-token-key-minimum-32-chars!!
 go test ./... -v -count=1 -coverprofile=coverage.out
 go tool cover -html=coverage.out -o coverage.html   # reporte HTML

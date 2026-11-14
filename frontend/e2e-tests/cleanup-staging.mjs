@@ -13,10 +13,15 @@ import admin from 'firebase-admin';
 //
 // NUNCA toca slugs fuera del prefijo (negocios reales).
 
+const PROJECT_ID =
+  process.env.GCP_PROJECT_ID ||
+  process.env.E2E_PROJECT_ID ||
+  (process.env.FIRESTORE_EMULATOR_HOST ? 'demo-test' : 'stalwart-coast-439901-d0');
+
 if (!admin.apps.length) {
   admin.initializeApp({
     credential: admin.credential.applicationDefault(),
-    projectId: 'stalwart-coast-439901-d0',
+    projectId: PROJECT_ID,
   });
 }
 const db = admin.firestore();

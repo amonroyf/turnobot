@@ -28,7 +28,7 @@ jobs:
       - name: Run Go tests
         working-directory: backend
         env:
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
           EMPLOYEE_TOKEN_KEY: ci-employee-token-key-minimum-32-chars!!
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
@@ -54,7 +54,7 @@ jobs:
       - working-directory: frontend
         run: |
           npm ci
-          npx vitest run --coverage
+          npm run test
 
   api:
     name: API tests (Newman)
@@ -80,7 +80,7 @@ jobs:
       - name: Seed data
         working-directory: backend
         env:
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
           EMPLOYEE_TOKEN_KEY: ci-employee-token-key-minimum-32-chars!!
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
@@ -89,7 +89,7 @@ jobs:
       - name: Build & run backend
         working-directory: backend
         env:
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
           EMPLOYEE_TOKEN_KEY: ci-employee-token-key-minimum-32-chars!!
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
@@ -104,7 +104,7 @@ jobs:
         working-directory: tests/api
         env:
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
         run: |
           node get-token.mjs > /tmp/token.txt
           echo "TOKEN=$(cat /tmp/token.txt)" >> $GITHUB_ENV
@@ -145,7 +145,7 @@ jobs:
       - name: Seed data
         working-directory: backend
         env:
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
           EMPLOYEE_TOKEN_KEY: ci-employee-token-key-minimum-32-chars!!
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
@@ -156,7 +156,7 @@ jobs:
       - name: Build & run backend
         working-directory: backend
         env:
-          GCP_PROJECT_ID: stalwart-coast-439901-d0
+          GCP_PROJECT_ID: demo-test
           EMPLOYEE_TOKEN_KEY: ci-employee-token-key-minimum-32-chars!!
           FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
           FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
@@ -171,6 +171,8 @@ jobs:
         working-directory: frontend
         env:
           PLAYWRIGHT_BASE_URL: http://localhost:5173
+          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8090
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9098
         run: npx playwright test
       - name: Generate Allure report
         if: always()

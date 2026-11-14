@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { limpiarEntornoReal, elegirDiaEnCalendario, db, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
+import {
+  CLIENTE_E2E,
+  limpiarEntornoReal,
+  elegirDiaEnCalendario,
+  db,
+  crearUsuarioYTema,
+  signInEnPagina,
+} from './setup.js';
 
 const SLUG_REAL = 'e2e-shop-test';
 const EMAIL_REAL = 'owner-e2e@turnobot.com';
@@ -8,6 +15,12 @@ const mañana = () => {
   const d = new Date(Date.now() + 86400000);
   return d.toISOString().slice(0, 10);
 };
+
+async function iniciarSesionCliente(page, slug) {
+  await page.goto(`/shop/${slug}`);
+  await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);
+  await page.reload();
+}
 
 test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
   test.beforeAll(async () => {
@@ -20,7 +33,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     // igual que smoke-prod.spec.js y crm.spec.js.
     const { email: userEmail, password } = await crearUsuarioYTema(EMAIL_REAL, 'Negocio E2E', SLUG_REAL);
     await page.goto('/register');
-    await signInWithCustomToken(page, userEmail, password);
+    await signInEnPagina(page, userEmail, password);
     await page.goto('/admin');
 
     // 2. Acceso al Dashboard con el negocio pre-creado por crearUsuarioYTema
@@ -60,7 +73,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
   });
 
   test('El cliente agenda exitosamente a través del embudo público', async ({ page }) => {
-    await page.goto(`/shop/${SLUG_REAL}`);
+    await iniciarSesionCliente(page, SLUG_REAL);
     await page.getByRole('button', { name: /Agendar/ }).click();
 
     await expect(page.getByText('Consulta Premium').first()).toBeVisible();
@@ -91,7 +104,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     const p2 = await ctx2.newPage();
 
     async function hastaConfirmacion(page) {
-      await page.goto(`/shop/${SLUG_REAL}`);
+      await iniciarSesionCliente(page, SLUG_REAL);
       await page.getByRole('button', { name: /Agendar/ }).click();
       await page.getByText('Consulta Premium').first().click();
       await page.getByText('Profesional E2E', { exact: true }).first().click();
@@ -102,7 +115,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     }
 
     await hastaConfirmacion(p1);
-    await p2.goto(`/shop/${SLUG_REAL}`);
+    await iniciarSesionCliente(p2, SLUG_REAL);
     await p2.getByRole('button', { name: /Agendar/ }).click();
     await p2.getByText('Consulta Premium').first().click();
     await p2.getByText('Profesional E2E', { exact: true }).first().click();

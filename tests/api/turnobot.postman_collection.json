@@ -10,11 +10,13 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "const d = new Date(); d.setDate(d.getDate()+1);",
+          "const d = new Date(); d.setDate(d.getDate()+2);",
           "const yyyy = d.getFullYear();",
           "const mm = String(d.getMonth()+1).padStart(2,'0');",
           "const dd = String(d.getDate()).padStart(2,'0');",
-          "pm.collectionVariables.set('fecha', `${yyyy}-${mm}-${dd}`);"
+          "pm.environment.set('fecha', `${yyyy}-${mm}-${dd}`);",
+          "const phone = String(1000000 + Math.floor(Math.random() * 9000000));",
+          "pm.environment.set('telefono', `+57300${phone}`);"
         ]
       }
     }
@@ -65,7 +67,7 @@
         "pm.test('status 201', () => pm.response.to.have.status(201));",
         "const j = pm.response.json();",
         "pm.test('success true', () => pm.expect(j.success).to.eql(true));",
-        "pm.collectionVariables.set('citaId', j.cita_id);"
+        "pm.environment.set('citaId', j.cita_id);"
       ], "type": "text/javascript" } }]
     },
     {

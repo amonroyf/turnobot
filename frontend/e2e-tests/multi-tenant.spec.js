@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
-import { limpiarReservasE2E, crearReservaE2E, db, e2eSlug } from './setup.js';
+import {
+  CLIENTE_E2E,
+  limpiarNegocioE2E,
+  crearReservaE2E,
+  db,
+  e2eSlug,
+  signInEnPagina,
+} from './setup.js';
 
 const TIENDA_A = e2eSlug('alfa');
 const TIENDA_B = e2eSlug('beta');
@@ -16,6 +23,7 @@ async function garantizarTienda(slug, servicios, empleado) {
       telefono: '3000000000',
       calendar_id: 'primary',
       timezone: 'America/Bogota',
+      cancel_window_hours: 0,
     },
     { merge: true },
   );
@@ -79,6 +87,8 @@ test.describe('Módulo 4: Aislamiento Multi-Tenant', () => {
 
     // El mismo teléfono consultado en la tienda equivocada no debe aparecer
     await page.goto(`/shop/${TIENDA_A}`);
+    await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);
+    await page.reload();
     await page.getByText('Mis citas', { exact: false }).click();
     await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill(phone);
     await page.getByRole('button', { name: 'Ver mis citas' }).click();
@@ -93,7 +103,7 @@ test.describe('Módulo 4: Aislamiento Multi-Tenant', () => {
   });
 
   test.afterAll(async () => {
-    await limpiarReservasE2E(TIENDA_A);
-    await limpiarReservasE2E(TIENDA_B);
+    await limpiarNegocioE2E(TIENDA_A);
+    await limpiarNegocioE2E(TIENDA_B);
   });
 });

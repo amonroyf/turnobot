@@ -40,3 +40,4 @@ frontend/allure-results/
 frontend/allure-report/
 backend/coverage.out
 backend/coverage.html
+newman-report.json

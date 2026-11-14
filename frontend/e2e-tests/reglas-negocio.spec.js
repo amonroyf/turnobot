@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth, e2eSlug } from './setup.js';
+import { API_BASE, db, adminAuth, e2eSlug } from './setup.js';
+import { FIREBASE_API_KEY } from './target.js';
 
-const API = process.env.API_BASE || 'http://localhost:8080';
-const WEB_API_KEY = 'AIzaSyAr_XqzCCNvkVivrsOMd_vtm6lgZ5OSWqU';
+const API = API_BASE;
+const WEB_API_KEY = FIREBASE_API_KEY;
 const ts = Date.now();
 const slug = e2eSlug(`reglas-${ts}`);
 const email = `owner${ts}@turnobot.test`;

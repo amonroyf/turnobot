@@ -9,6 +9,10 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:e2e:gcp": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 playwright test",
+    "test:e2e:gcp:safe": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 playwright test booking-pom.spec.js booking.spec.js multi-tenant.spec.js demo-reserva.spec.js",
+    "test:e2e:gcp:smoke": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 SMOKE_PROD=1 playwright test smoke-prod.spec.js",
+    "test:e2e:seed": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 node e2e-tests/seed-gcp.mjs",
     "test:e2e:clean": "node e2e-tests/cleanup-staging.mjs",
     "test:unit": "vitest run"
   },

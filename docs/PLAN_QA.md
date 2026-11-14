@@ -13,7 +13,7 @@
 - **15 h/semana:** lunes a jueves 2,5 h, viernes libre, sábado 4 h, domingo 1 h de cierre.
 - **Una semana = un entregable.** Si no está hecho, no avanzás; repetís o usás el colchón.
 - **Tu primer bug real ya está resuelto:** faltaba `npm run test`; se agregó en el commit `d434434`. En la semana 1 lo estudiás y pasás al riesgo #2 (E2E contra producción).
-- **Antes de cualquier E2E:** emulador encendido y variables exportadas. Si están vacías, no corras.
+- **Antes de cualquier E2E:** elegí modo. Local = emulador encendido y variables exportadas. GCP = ADC configurada y `E2E_TARGET=gcp`. Si no sabés en qué modo estás, no corras.
 - **No leas todo:** abrí la semana actual y hacé el primer ítem sin marcar.
 
 ---
@@ -44,7 +44,7 @@
 | Unitarios frontend | 5 archivos Vitest | **43 tests pasan** en ~5 s | `cd frontend && npx vitest run` |
 | Unitarios backend | 7 archivos Go | Corren; los de integración se **omiten** sin emulador | `cd backend && go test ./...` |
 | Integración Go | `handlers_test.go` | Requiere emulador Firestore + Auth | ver §9 |
-| E2E | 12 specs, **33 tests** | Listan bien, pero **no son herméticos** (ver semáforo) | `npx playwright test --list` |
+| E2E | 12 specs, **33 tests GCP / 5 locales** | Local usa emulador; GCP usa el proyecto de práctica con ADC (ver semáforo) | `npx playwright test --list` |
 | API | Colección Postman + Newman | Necesita backend + seed + token | ver §9 |
 | Performance | `tests/perf/load.js` | Script listo; **k6 no está instalado** | ver semana 13 |
 | CI | `.github/workflows/qa.yml` | Existe; el job E2E es dudoso (auth real) | revisar semana 11 |
@@ -59,28 +59,37 @@ No son fracasos: son bugs y riesgos reales. Algunos ya están resueltos; los dem
 | # | Archivo | Problema | Impacto | Estado |
 |---|---------|----------|---------|--------|
 | 1 | `frontend/package.json` + `scripts/run-qa.sh` | No existía `npm run test`, pero el script lo llamaba | `./scripts/run-qa.sh` fallaba siempre | ✅ Resuelto en `d434434` (alias `test`) |
-| 2 | `frontend/e2e-tests/global-setup.js` y `setup.js` | Admin SDK apunta al proyecto real, sin guardia de emulador | Si tenés credenciales de Google, **puede escribir en producción** | Pendiente · semana 8 |
-| 3 | `frontend/e2e-tests/horarios.spec.js` | `API_BASE` por defecto es la URL de producción | Un test local pega contra prod | Pendiente · semana 11 |
-| 4 | `frontend/e2e-tests/reglas-negocio.spec.js`, `admin.spec.js`, `real-flow.spec.js`, `crm.spec.js` | Login contra `identitytoolkit.googleapis.com` real con API key hardcodeada | No son reproducibles en CI; tocan Auth real | Pendiente · semana 11 |
-| 5 | `frontend/e2e-tests/visual.spec.js` | Espera el servicio “Corte y Barba”, pero el seed crea “Consulta General” | Falla en local | Pendiente · semana 12 |
+| 2 | `frontend/e2e-tests/global-setup.js` y `setup.js` | Admin SDK apunta al proyecto real, sin guardia de emulador | Si tenés credenciales de Google, **puede escribir en producción** | ✅ Mitigado: `E2E_TARGET=local/gcp` + `E2E_ALLOW_GCP=1` + ADC obligatoria en GCP (ver `docs/QA_ENTORNOS.md`) |
+| 3 | `frontend/e2e-tests/horarios.spec.js` | `API_BASE` por defecto es la URL de producción | Un test local pega contra prod | ✅ Resuelto: `API_BASE` sale de `target.js` (local en local, GCP en GCP) |
+| 4 | `frontend/e2e-tests/reglas-negocio.spec.js`, `admin.spec.js`, `real-flow.spec.js`, `crm.spec.js` | Login contra `identitytoolkit.googleapis.com` real con API key hardcodeada | No son reproducibles en CI; tocan Auth real | ✅ Resuelto: specs de Auth solo en modo GCP; local los ignora y usa `signInEnPagina` |
+| 5 | `frontend/e2e-tests/visual.spec.js` | Esperaba el servicio “Corte y Barba”, pero el seed creaba “Consulta General” | Fallaba en local | ✅ Resuelto: el seed de `e2e-tienda` crea “Corte y Barba” y `booking.spec` usa el mismo servicio |
 | 6 | `frontend/playwright.config.js` | `workers: 1` y `retries: 1` | Puede ocultar colisiones y flakiness | Pendiente · semana 10–11 |
 | 7 | `docs/QA_GUIDE.md` | Decía `npm run test`, que no existía | Confundía al que empieza | ✅ Resuelto: el alias ya existe y la guía es correcta |
+| 8 | `frontend/e2e-tests/smoke-prod.spec.js` | Corría contra producción por defecto | Escribía/borraba datos reales sin querer | ✅ Resuelto: exige `SMOKE_PROD=1` y modo GCP |
+| 9 | `frontend/e2e-tests/admin.spec.js` | Al probar slug duplicado borraba `mi-negocio` | Podía dejar la tienda demo sin datos | ✅ Resuelto: solo borra el negocio temporal `e2e-dupe-*` |
 
 ### 1.2. Semáforo de specs E2E (importante)
 
 | Semáforo | Specs | Regla |
 |----------|-------|-------|
-| 🟢 Seguros con emulador | `booking-pom.spec.js`, `booking.spec.js`, `demo-reserva.spec.js`, `multi-tenant.spec.js` | Podés correrlos desde la semana 8 |
-| 🟡 Con cuidado | `horarios.spec.js` (exige `API_BASE=http://localhost:8080`), `visual.spec.js` (falla por seed), `demo-admin.spec.js` | Semana 10–12 |
-| 🔴 No correr | `admin.spec.js`, `real-flow.spec.js`, `crm.spec.js`, `reglas-negocio.spec.js`, `smoke-prod.spec.js` | Hasta arreglar auth/entorno |
-| ⛔ Nunca en aprendizaje | `barberia-vip-prod.mjs`, `settings-prod.mjs`, `cleanup-staging.mjs` | Son scripts de producción |
+| 🟢 Local/emulador | `booking-pom.spec.js`, `horarios.spec.js` | Rápidos y sin login. Es la suite que corre por defecto en CI. |
+| 🔵 GCP práctica | `booking.spec.js`, `multi-tenant.spec.js`, `demo-reserva.spec.js`, `admin.spec.js`, `crm.spec.js`, `real-flow.spec.js`, `reglas-negocio.spec.js`, `demo-admin.spec.js`, `visual.spec.js` | Requieren ADC y `E2E_TARGET=gcp`. Escriben datos reales de práctica. |
+| 🟡 Visual | `visual.spec.js` | Compara snapshots; si cambia el seed/UI, revisá el diff antes de actualizar la base. |
+| 🔴 Solo explícito | `smoke-prod.spec.js` | Exige `SMOKE_PROD=1`; no corre en CI. |
+| ⛔ Nunca en aprendizaje | `barberia-vip-prod.mjs`, `settings-prod.mjs` | Son scripts de producción, no tests. |
 
-**Antes de cualquier E2E, verificá esto (si está vacío, NO corras):**
+**Antes de cualquier E2E, elegí un modo:**
 
 ```bash
+# Local: el emulador debe estar encendido
 echo "FIRESTORE_EMULATOR_HOST=$FIRESTORE_EMULATOR_HOST"
 echo "FIREBASE_AUTH_EMULATOR_HOST=$FIREBASE_AUTH_EMULATOR_HOST"
+
+# GCP: ADC configurada y sin variables de emulador
+gcloud auth application-default login
 ```
+
+La guía completa de entornos está en `docs/QA_ENTORNOS.md`.
 
 ---
 
@@ -189,9 +198,9 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 2. Creá `docs/BITACORA.md` con la plantilla de §8.
 3. `cd frontend && npx vitest run` → verificá 43 tests. Abrí `src/fecha.test.js` y marcá en un test dónde está Arrange, Act y Assert.
 4. `cd backend && go test ./... -count=1` → anotá cuántos se omiten y por qué (leé `testFirestoreClient` en `handlers_test.go`).
-5. `cd frontend && npx playwright test --list` → 33 tests. Clasificá cada spec con el semáforo de §1.2.
+5. `cd frontend && npx playwright test --list` → 5 tests en modo local (emulador) o 33 en modo GCP. Clasificá cada spec con el semáforo de §1.2.
 6. `npm run test` → deben pasar 43 tests. El bug del script faltante ya se corrigió en `d434434`; mirá el cambio con `git show d434434 -- frontend/package.json` y anotá por qué `run-qa.sh` fallaba.
-7. Leé `frontend/e2e-tests/global-setup.js` y `setup.js`: identificá por qué un E2E local puede escribir en el proyecto real. **No lo corras**; solo analizalo. Ese es el bug #2, que vas a arreglar en la semana 8.
+7. Leé `frontend/e2e-tests/target.js`, `global-setup.js` y `setup.js`: identificá la guardia que impide mezclar emulador con GCP. **No corras E2E contra GCP todavía**; solo analizalo. El bug #2 ya está mitigado; en la semana 8 vas a probar la guardia.
 8. Leé `docs/QA_GUIDE.md` §1–3 y escribí en la bitácora: pirámide, un ejemplo de cada capa en Turnobot, y qué capa es más cara de mantener.
 
 **Verificá:** `npm run test` corre y pasan 43 tests.
@@ -398,9 +407,9 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 **Práctica (11 h):**
 
-1. **Guardia de seguridad:** agregá en `frontend/e2e-tests/global-setup.js` (y idealmente en `setup.js`) un `throw` si `FIRESTORE_EMULATOR_HOST` o `FIREBASE_AUTH_EMULATOR_HOST` están vacíos. Probá correr sin variables: debe fallar rápido, no escribir nada.
+1. **Guardia de seguridad:** revisá `frontend/e2e-tests/target.js`. Ya valida emulador vs GCP; probá correr sin variables y con variables mezcladas: debe fallar rápido, no escribir nada. Si encontrás un caso no cubierto, agregalo.
 2. Levantá emulador + backend + frontend + seed.
-3. Corré solo los specs 🟢: `npx playwright test e2e-tests/booking-pom.spec.js e2e-tests/booking.spec.js`.
+3. Corré solo los specs 🟢 locales: `npx playwright test e2e-tests/booking-pom.spec.js e2e-tests/horarios.spec.js`.
 4. Leé `e2e-tests/pages/BookingPage.js` y explicá cada locator: ¿por qué texto, por qué placeholder, por qué role?
 5. Escribí `e2e-tests/mi-primer.spec.js` desde cero: abrir `/shop/mi-negocio`, verificar servicio, seleccionar, verificar el siguiente paso. Sin `waitForTimeout`; usá role/placeholder.
 6. Forzá un fallo (esperá un texto que no existe), abrí el trace con `npx playwright show-trace` y anotá qué viste.
@@ -491,11 +500,11 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 **Práctica (11 h):**
 
 1. Leé el job `e2e` de `.github/workflows/qa.yml` y explicá cada paso.
-2. Arreglá dos riesgos: en `smoke-prod.spec.js` exigí `SMOKE_PROD=1` para correr; en `horarios.spec.js` cambiá el default de `API_BASE` a `http://localhost:8080` (o exigí la variable).
-3. Corré 3 veces el subconjunto 🟢. Registrá duración, fallos y flakes.
+2. Verificá las dos guardias ya implementadas: `smoke-prod.spec.js` exige `SMOKE_PROD=1`; `horarios.spec.js` toma `API_BASE` de `target.js`. Si encontrás una combinación que escriba en GCP sin querer, agregá el `throw` que falta.
+3. Corré 3 veces el subconjunto 🟢 local. Registrá duración, fallos y flakes.
 4. Arreglá 1 flaky: reemplazá texto por role, agregá datos únicos o esperá el estado correcto.
 5. Generá reporte HTML y Allure; abrí el test más lento.
-6. Pusheá la rama y abrí un PR. Mirá el CI. Si el job E2E falla por auth real, documentalo como limitación y dejá el subconjunto seguro en verde.
+6. Pusheá la rama y abrí un PR. Mirá el CI. El job E2E corre solo el subconjunto local con emulador; no necesita secretos.
 
 **Verificá:** 3 corridas verdes seguidas del subconjunto seguro.
 
@@ -677,7 +686,7 @@ La primera vez descarga el emulador. Requiere Java (ya lo tenés).
 ```bash
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8090
 export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9098
-export GCP_PROJECT_ID=stalwart-coast-439901-d0
+export GCP_PROJECT_ID=demo-test   # el mismo --project con el que arranca el emulador
 export EMPLOYEE_TOKEN_KEY=dev-employee-token-key-minimum-32-chars!!
 export CRON_SECRET=dev-cron
 export FRONTEND_URL=http://localhost:5173
@@ -738,18 +747,26 @@ export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9098
 export PLAYWRIGHT_BASE_URL=http://localhost:5173
 
 npx playwright test e2e-tests/booking-pom.spec.js
-npx playwright test e2e-tests/booking.spec.js --trace on
+npx playwright test e2e-tests/horarios.spec.js --trace on
 npx playwright show-trace test-results/.../trace.zip
 ```
 
-**No corras `npx playwright test` completo** hasta la semana 11 y solo con las guardias puestas.
+Para el flujo completo con login, usá GCP y la suite segura:
+
+```bash
+cd frontend
+npm run test:e2e:gcp:safe
+```
+
+**No corras la suite GCP completa** hasta la semana 11 y solo con ADC + guardias puestas.
 
 ---
 
 ## 10. Seguridad y ética (leer antes de tocar Firestore)
 
-- **Nunca** corras `smoke-prod.spec.js`, `barberia-vip-prod.mjs`, `settings-prod.mjs` ni `cleanup-staging.mjs` mientras aprendés.
-- **Nunca** ejecutes el seed sin `FIRESTORE_EMULATOR_HOST`. El script escribe con `Set` (sobrescribe).
+- **Nunca** corras `smoke-prod.spec.js` sin `SMOKE_PROD=1`; `barberia-vip-prod.mjs` y `settings-prod.mjs` son scripts de producción, no tests.
+- `cleanup-staging.mjs` es seguro por defecto: es dry-run y solo borra prefijos `e2e`. Revisá la lista antes de agregar `--yes`.
+- **Nunca** ejecutes `backend/seed.go` sin `FIRESTORE_EMULATOR_HOST`. Ese script usa `Set` y sobrescribe. Para GCP, la suite usa `garantizarNegocioDemo()` con `merge`; si insistís con `seed.go`, hacelo con `SEED_ALLOW_PROD=1` y ADC, sabiendo que pisa `mi-negocio`.
 - **Nunca** subas claves, tokens ni archivos `.env` al repo.
 - Usá datos ficticios: nombres y teléfonos inventados.
 - Si un test necesita credenciales reales, no es un test: es una integración manual. Aparcala.

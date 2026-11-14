@@ -12,7 +12,12 @@ import (
 
 func main() {
 	ctx := context.Background()
-	projectID := "stalwart-coast-439901-d0"
+	projectID := os.Getenv("GCP_PROJECT_ID")
+	if projectID == "" {
+		// El emulador local se inicia con --project demo-test. Para GCP,
+		// exportá GCP_PROJECT_ID=stalwart-coast-439901-d0 explícitamente.
+		projectID = "demo-test"
+	}
 
 	// Guardia: este script hace Set SIN merge (sobrescribe el negocio).
 	// Nunca correr contra producción sin confirmación explícita.

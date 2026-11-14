@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth, e2eSlug, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
+import { db, adminAuth, e2eSlug, crearUsuarioYTema, signInEnPagina } from './setup.js';
 
 test.setTimeout(300_000);
 
@@ -24,7 +24,7 @@ test.describe('Register + Admin Panel', () => {
     const { email: userEmail, password } = await crearUsuarioYTema(email, nombre, slug);
 
     await page.goto('/register');
-    await signInWithCustomToken(page, userEmail, password);
+    await signInEnPagina(page, userEmail, password);
     await page.goto('/admin');
 
     await expect(page).toHaveURL(/\/admin$/);
@@ -84,11 +84,16 @@ test.describe('Register + Admin Panel', () => {
     const ts = Date.now();
     const email = `dupe${ts}@turnobot.test`;
     const slug = 'mi-negocio';
+    const slugTemporal = `e2e-dupe-${ts}`;
 
-    const { email: userEmail, password } = await crearUsuarioYTema(email, 'Usuario Dupe', `e2e-dupe-${ts}`);
+    const { email: userEmail, password } = await crearUsuarioYTema(
+      email,
+      'Usuario Dupe',
+      slugTemporal,
+    );
 
     await page.goto('/register');
-    await signInWithCustomToken(page, userEmail, password);
+    await signInEnPagina(page, userEmail, password);
     await page.goto('/admin');
     await page.goto('/register');
 
@@ -99,7 +104,9 @@ test.describe('Register + Admin Panel', () => {
     await expect(page.getByText('Este enlace ya está en uso. Por favor, elige otro.')).toBeVisible();
     await expect(page).toHaveURL(/\/register$/);
 
-    await db.collection('negocios').doc(slug).delete().catch(() => {});
+    // No borrar `mi-negocio`: es la tienda demo. Solo se limpia el negocio
+    // temporal que creó este test.
+    await db.collection('negocios').doc(slugTemporal).delete().catch(() => {});
     const userRecord = await adminAuth.getUserByEmail(email);
     await adminAuth.deleteUser(userRecord.uid).catch(() => {});
   });

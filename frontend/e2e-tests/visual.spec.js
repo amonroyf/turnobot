@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
-import { e2eSlug, elegirDiaEnCalendario } from './setup.js';
+import {
+  CLIENTE_E2E,
+  db,
+  e2eSlug,
+  elegirDiaEnCalendario,
+  signInEnPagina,
+} from './setup.js';
 
 // Pruebas visuales de regresión: comparan screenshots contra la línea base
 // (e2e-tests/visual.spec.js-snapshots/). Si cambia algo visual sin querer,
@@ -73,6 +79,8 @@ test.describe('Regresión visual', () => {
 
   test('booking éxito: pantalla de confirmación', async ({ page }) => {
     await page.goto(`/shop/${SLUG}`);
+    await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);
+    await page.reload();
     await page.getByRole('button', { name: /Agendar/ }).click();
     await page.getByText('Corte y Barba').first().click();
     await page.getByText('Alejandro', { exact: true }).click();
@@ -94,5 +102,17 @@ test.describe('Regresión visual', () => {
         page.locator('h2', { hasText: 'Horarios para el' }),
       ],
     });
+  });
+
+  test.afterAll(async () => {
+    const snapshot = await db
+      .collection('reservas')
+      .where('negocio_id', '==', SLUG)
+      .get();
+    const visuales = snapshot.docs.filter((doc) => doc.data().client_name === 'Visual Test');
+    if (!visuales.length) return;
+    const batch = db.batch();
+    visuales.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
   });
 });

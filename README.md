@@ -94,7 +94,7 @@ TOKEN=$(gcloud auth print-access-token) firebase --project stalwart-coast-439901
 
 | Variable | Descripción |
 |----------|-------------|
-| `GCP_PROJECT_ID` | ID del proyecto GCP (default: stalwart-coast-439901-d0) |
+| `GCP_PROJECT_ID` | ID del proyecto GCP (default: stalwart-coast-439901-d0; en emulador usá `demo-test`) |
 | `GOOGLE_CLIENT_ID` | Client ID de Google OAuth |
 | `GOOGLE_CLIENT_SECRET` | Client Secret de Google OAuth |
 | `REDIRECT_URL` | URL de callback OAuth |

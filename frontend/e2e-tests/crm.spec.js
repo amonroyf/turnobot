@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth, limpiarEntornoReal, e2eSlug, crearUsuarioYTema, signInWithCustomToken } from './setup.js';
+import { db, adminAuth, limpiarEntornoReal, e2eSlug, crearUsuarioYTema, signInEnPagina } from './setup.js';
 
 test.setTimeout(300_000);
 
@@ -15,7 +15,7 @@ test.describe('Directorio de Clientes (CRM)', () => {
     try {
       const { email: userEmail, password } = await crearUsuarioYTema(email, nombre, slug);
       await page.goto('/register');
-      await signInWithCustomToken(page, userEmail, password);
+      await signInEnPagina(page, userEmail, password);
       await page.goto('/admin');
 
       await expect(page).toHaveURL(/\/admin$/);

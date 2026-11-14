@@ -1,9 +1,18 @@
 import { test, expect } from '@playwright/test';
-import { db, adminAuth, crearUsuarioYTema, signInEnPagina } from './setup.js';
+import { API_BASE, WEB_BASE, db, adminAuth, crearUsuarioYTema, signInEnPagina } from './setup.js';
 
-const BASE = 'https://turnobot-web.web.app';
-const API = 'https://turnobot-850305350371.us-central1.run.app';
+const BASE = WEB_BASE;
+const API = API_BASE;
 const ts = Date.now();
+
+// Este spec escribe y borra datos reales. Nunca debe correr en CI por
+// accidente: se habilita con SMOKE_PROD=1 (y E2E_TARGET=gcp).
+test.beforeEach(() => {
+  test.skip(
+    process.env.SMOKE_PROD !== '1',
+    'Smoke contra producción deshabilitado. Usá SMOKE_PROD=1 E2E_TARGET=gcp.',
+  );
+});
 const slug = `e2e-smokeprod${ts}`;
 const email = `smoke${ts}@turnobot.test`;
 let uid;

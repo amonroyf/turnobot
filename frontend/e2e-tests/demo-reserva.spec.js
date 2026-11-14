@@ -1,13 +1,19 @@
 import { test, expect } from '@playwright/test';
+import { CLIENTE_E2E, db, signInEnPagina } from './setup.js';
+
+let clienteDemo;
 
 test('Grabar demo de reserva', async ({ page }) => {
   test.setTimeout(60000);
   const screenshotPath = (step) => `${process.cwd()}/test-results/demo-cliente-${step}.png`;
   const suffix = Math.floor(100 + Math.random() * 900);
   const cliente = `Cliente Demo ${suffix}`;
+  clienteDemo = cliente;
   const telefono = `300123${String(suffix).padStart(4, '0')}`;
 
   await page.goto('/shop/mi-negocio');
+  await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);
+  await page.reload();
 
   await page.getByText('Consulta General', { exact: true }).click();
   await page.screenshot({ path: screenshotPath('01-servicio'), fullPage: true });
@@ -35,4 +41,17 @@ test('Grabar demo de reserva', async ({ page }) => {
   await expect(page.getByText('¡Cita confirmada!')).toBeVisible({ timeout: 10000 });
   await page.screenshot({ path: screenshotPath('06-confirmada'), fullPage: true });
   await page.waitForTimeout(3000);
+});
+
+test.afterAll(async () => {
+  if (!clienteDemo) return;
+  const snapshot = await db
+    .collection('reservas')
+    .where('negocio_id', '==', 'mi-negocio')
+    .get();
+  const propias = snapshot.docs.filter((doc) => doc.data().client_name === clienteDemo);
+  if (!propias.length) return;
+  const batch = db.batch();
+  propias.forEach((doc) => batch.delete(doc.ref));
+  await batch.commit();
 });
