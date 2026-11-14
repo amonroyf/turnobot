@@ -6,6 +6,11 @@ export default defineConfig({
   retries: 1,
   workers: 1, // 1 worker para evitar colisiones en la tienda estática de pruebas
   globalSetup: './e2e-tests/global-setup.js',
+  reporter: [
+    ['list'],
+    ['html', { outputFolder: 'playwright-report', open: 'never' }],
+    ['allure-playwright', { outputFolder: 'allure-results' }],
+  ],
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5173', // Frontend en desarrollo (Vite + proxy /api -> backend local)
     trace: 'on-first-retry',

@@ -1,0 +1,96 @@
+{
+  "info": {
+    "name": "Turnobot API",
+    "description": "Colección de pruebas de API para Turnobot (backend Go). Ejecutar con Newman en CI.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const d = new Date(); d.setDate(d.getDate()+1);",
+          "const yyyy = d.getFullYear();",
+          "const mm = String(d.getMonth()+1).padStart(2,'0');",
+          "const dd = String(d.getDate()).padStart(2,'0');",
+          "pm.collectionVariables.set('fecha', `${yyyy}-${mm}-${dd}`);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/health" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));",
+        "pm.test('status ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Existe slug",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/b/{{slug}}/existe" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));",
+        "pm.test('exists boolean', () => pm.expect(pm.response.json()).to.have.property('exists'));"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Datos del negocio",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/b/{{slug}}" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));",
+        "pm.test('tiene servicios', () => pm.expect(pm.response.json().servicios).to.be.an('array'));",
+        "pm.test('tiene empleados', () => pm.expect(pm.response.json().empleados).to.be.an('array'));"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Slots disponibles",
+      "request": { "method": "GET", "header": [], "url": "{{baseUrl}}/api/v1/b/{{slug}}/slots?emp_id=any&servicio_id={{servicioId}}&fecha={{fecha}}" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));",
+        "pm.test('tiene slots', () => pm.expect(pm.response.json().slots).to.be.an('array'));"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Crear reserva",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{idToken}}" }],
+        "body": { "mode": "raw", "raw": "{\n  \"servicioId\": \"{{servicioId}}\",\n  \"empleadoId\": \"{{empleadoId}}\",\n  \"fecha\": \"{{fecha}}\",\n  \"hora\": \"10:00\",\n  \"clienteNombre\": \"QA Test\",\n  \"clienteTelefono\": \"{{telefono}}\"\n}" },
+        "url": "{{baseUrl}}/api/v1/b/{{slug}}/book"
+      },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 201', () => pm.response.to.have.status(201));",
+        "const j = pm.response.json();",
+        "pm.test('success true', () => pm.expect(j.success).to.eql(true));",
+        "pm.collectionVariables.set('citaId', j.cita_id);"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Listar citas del cliente",
+      "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{idToken}}" }], "url": "{{baseUrl}}/api/v1/b/{{slug}}/citas?telefono={{telefono}}" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));"
+      ], "type": "text/javascript" } }]
+    },
+    {
+      "name": "Cancelar cita",
+      "request": { "method": "DELETE", "header": [{ "key": "Authorization", "value": "Bearer {{idToken}}" }, { "key": "X-Client-Phone", "value": "{{telefono}}" }], "url": "{{baseUrl}}/api/v1/b/{{slug}}/citas/{{citaId}}" },
+      "event": [{ "listen": "test", "script": { "exec": [
+        "pm.test('status 200', () => pm.response.to.have.status(200));"
+      ], "type": "text/javascript" } }]
+    }
+  ],
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "slug", "value": "mi-negocio" },
+    { "key": "servicioId", "value": "svc_consulta" },
+    { "key": "empleadoId", "value": "emp_alejandro" },
+    { "key": "telefono", "value": "+573001234567" },
+    { "key": "fecha", "value": "" },
+    { "key": "idToken", "value": "" },
+    { "key": "citaId", "value": "" }
+  ]
+}

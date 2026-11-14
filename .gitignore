@@ -34,3 +34,9 @@ Thumbs.DB
 
 # Archivos temporales
 /tmp/
+
+# QA: artefactos generados (se regeneran en cada corrida)
+frontend/allure-results/
+frontend/allure-report/
+backend/coverage.out
+backend/coverage.html
