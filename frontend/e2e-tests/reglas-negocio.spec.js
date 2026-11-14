@@ -6,18 +6,20 @@ import { telefonoUnico } from './setup.js';
 const API = API_BASE;
 const WEB_API_KEY = FIREBASE_API_KEY;
 const ts = Date.now();
-const slug = e2eSlug(`reglas-${ts}`);
 const email = `owner${ts}@turnobot.test`;
 const mafana = () => {
   const d = new Date(Date.now() + 86400000);
   return d.toISOString().split('T')[0];
 };
 
+const negociosCreados = [];
+
 let idToken;
 let uid;
 let clienteIdToken;
 let clienteUid;
 let otroClienteIdToken;
+let otroClienteUid;
 
 async function signUpRest(emailToUse) {
   const res = await fetch(
@@ -32,11 +34,61 @@ async function signUpRest(emailToUse) {
   return res;
 }
 
-const crearReserva = async ({ dateTime, extra = {} }) => {
+async function crearNegocioAislado(etiqueta) {
+  const testSlug = e2eSlug(`reglas-${etiqueta}-${ts}`);
+  await db.collection('negocios').doc(testSlug).set({
+    name: `Barbería Reglas ${etiqueta}`,
+    owner_uid: uid,
+    whatsapp: '3100000000',
+    direccion: '',
+    horario: '',
+    telefono: '3000000000',
+    timezone: 'America/Bogota',
+    open_time: '10:00',
+    close_time: '14:00',
+    cancel_window_hours: 24,
+  });
+  await db
+    .collection('negocios')
+    .doc(testSlug)
+    .collection('servicios')
+    .doc('svc1')
+    .set({ name: 'Corte', duration_minutes: 60, price: '30000' });
+  await db
+    .collection('negocios')
+    .doc(testSlug)
+    .collection('empleados')
+    .doc('emp1')
+    .set({ name: 'Sandra', calendar_id: '' });
+  negociosCreados.push(testSlug);
+  return testSlug;
+}
+
+async function borrarNegocioAislado(testSlug) {
+  const reservas = await db
+    .collection('reservas')
+    .where('negocio_id', '==', testSlug)
+    .get();
+  const batch = db.batch();
+  reservas.docs.forEach((d) => batch.delete(d.ref));
+  const emps = await db.collection(`negocios/${testSlug}/empleados`).get();
+  emps.docs.forEach((d) => batch.delete(d.ref));
+  const svcs = await db.collection(`negocios/${testSlug}/servicios`).get();
+  svcs.docs.forEach((d) => batch.delete(d.ref));
+  const clientes = await db
+    .collection('clientes')
+    .where('negocio_id', '==', testSlug)
+    .get();
+  clientes.docs.forEach((d) => batch.delete(d.ref));
+  await batch.commit();
+  await db.collection('negocios').doc(testSlug).delete().catch(() => {});
+}
+
+const crearReserva = async ({ negocio: testSlug, dateTime, extra = {} }) => {
   const ref = await db.collection('reservas').add({
-    negocio_id: slug,
+    negocio_id: testSlug,
     emp_id: 'emp1',
-    user_phone: '3100000000',
+    user_phone: telefonoUnico(),
     client_name: 'Cliente Pruebas',
     service_name: 'Corte',
     duration_minutes: 60,
@@ -59,80 +111,49 @@ test.beforeAll(async () => {
 
   const signoOtro = await signUpRest(`otro-cliente${ts}@turnobot.test`);
   otroClienteIdToken = signoOtro.idToken;
-
-  await db.collection('negocios').doc(slug).set({
-    name: 'Barberia Reglas',
-    owner_uid: uid,
-    whatsapp: '3100000000',
-    direccion: '',
-    horario: '',
-    telefono: '',
-    timezone: 'America/Bogota',
-    open_time: '10:00',
-    close_time: '14:00',
-  });
-  await db
-    .collection('negocios')
-    .doc(slug)
-    .collection('servicios')
-    .doc('svc1')
-    .set({ name: 'Corte', duration_minutes: 60, price: '30000' });
-  await db
-    .collection('negocios')
-    .doc(slug)
-    .collection('empleados')
-    .doc('emp1')
-    .set({ name: 'Sandra', calendar_id: '' });
+  otroClienteUid = signoOtro.localId;
 });
 
 test.afterAll(async () => {
-  const reservas = await db
-    .collection('reservas')
-    .where('negocio_id', '==', slug)
-    .get();
-  const batch = db.batch();
-  reservas.docs.forEach((d) => batch.delete(d.ref));
-  const emps = await db.collection(`negocios/${slug}/empleados`).get();
-  emps.docs.forEach((d) => batch.delete(d.ref));
-  const svcs = await db.collection(`negocios/${slug}/servicios`).get();
-  svcs.docs.forEach((d) => batch.delete(d.ref));
-  await batch.commit();
-  await db.collection('negocios').doc(slug).delete().catch(() => {});
+  for (const testSlug of new Set(negociosCreados)) {
+    await borrarNegocioAislado(testSlug);
+  }
   await adminAuth.deleteUser(uid).catch(() => {});
   if (clienteUid) await adminAuth.deleteUser(clienteUid).catch(() => {});
-  if (typeof otroClienteIdToken !== 'undefined') {
-    // La cascada de limpieza borra el negocio aunque pertenezca a otro UID.
-  }
+  if (otroClienteUid) await adminAuth.deleteUser(otroClienteUid).catch(() => {});
 });
 
 test('1. Slots solo dentro de la jornada operativa 10:00-14:00', async () => {
+  const testSlug = await crearNegocioAislado('slots');
   const res = await fetch(
-    `${API}/api/v1/b/${slug}/slots?emp_id=emp1&servicio_id=svc1&fecha=${mafana()}`,
+    `${API}/api/v1/b/${testSlug}/slots?emp_id=emp1&servicio_id=svc1&fecha=${mafana()}`,
   );
   expect(res.ok).toBe(true);
   const slots = await res.json();
   expect(slots.length).toBeGreaterThan(0);
   const dentroJornada = slots.every((h) => h >= '10:00' && h < '14:00');
   expect(dentroJornada).toBe(true);
-  console.log('SLOTS:', slots.join(','));
 });
 
 test('2. Ventana de cancelación del cliente (default 24h, configurable)', async () => {
+  const testSlug = await crearNegocioAislado('ventana');
   const en30Min = new Date(Date.now() + 30 * 60 * 1000);
   const en48h = new Date(Date.now() + 48 * 3600 * 1000);
   const phone = telefonoUnico();
 
   const cercaId = await crearReserva({
+    negocio: testSlug,
     dateTime: en30Min,
     extra: { client_uid: clienteUid, user_phone: phone },
   });
   const libreId = await crearReserva({
+    negocio: testSlug,
     dateTime: en48h,
     extra: { client_uid: clienteUid, user_phone: phone },
   });
 
   // Cliente con su teléfono: menos de 24h -> 409 too_late_to_cancel
-  const bloqueada = await fetch(`${API}/api/v1/b/${slug}/citas/${cercaId}`, {
+  const bloqueada = await fetch(`${API}/api/v1/b/${testSlug}/citas/${cercaId}`, {
     method: 'DELETE',
     headers: { 'X-Client-Phone': phone, Authorization: `Bearer ${clienteIdToken}` },
   });
@@ -141,22 +162,22 @@ test('2. Ventana de cancelación del cliente (default 24h, configurable)', async
   expect(body.error).toBe('too_late_to_cancel');
 
   // Cliente con su teléfono: turno en 48h -> permitido
-  const permitida = await fetch(`${API}/api/v1/b/${slug}/citas/${libreId}`, {
+  const permitida = await fetch(`${API}/api/v1/b/${testSlug}/citas/${libreId}`, {
     method: 'DELETE',
     headers: { 'X-Client-Phone': phone, Authorization: `Bearer ${clienteIdToken}` },
   });
   expect(permitida.status).toBe(200);
 
   // Dueño con token: puede cancelar incluso dentro de la ventana
-  const adminOk = await fetch(`${API}/api/v1/b/${slug}/citas/${cercaId}`, {
+  const adminOk = await fetch(`${API}/api/v1/b/${testSlug}/citas/${cercaId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   expect(adminOk.status).toBe(200);
 
   // Petición maliciosa: token inválido y sin teléfono NO debe cancelar
-  const otraCerca = await crearReserva({ dateTime: en30Min });
-  const rechazada = await fetch(`${API}/api/v1/b/${slug}/citas/${otraCerca}`, {
+  const otraCerca = await crearReserva({ negocio: testSlug, dateTime: en30Min });
+  const rechazada = await fetch(`${API}/api/v1/b/${testSlug}/citas/${otraCerca}`, {
     method: 'DELETE',
     headers: { Authorization: 'Bearer token-invalido' },
   });
@@ -164,32 +185,33 @@ test('2. Ventana de cancelación del cliente (default 24h, configurable)', async
 });
 
 test('3. Servicio con reservas canceladas se puede eliminar; canceladas se conservan', async () => {
+  const testSlug = await crearNegocioAislado('servicio');
   const manana = new Date(Date.now() + 48 * 3600 * 1000);
   const reservaId = await crearReserva({
+    negocio: testSlug,
     dateTime: manana,
     extra: { client_uid: clienteUid },
   });
 
   // El backend rechaza la eliminación de un servicio con citas ACTIVAS.
   // Primero se cancela la reserva para poder probar la cascada.
-  const cancel = await fetch(`${API}/api/v1/b/${slug}/citas/${reservaId}`, {
+  const cancel = await fetch(`${API}/api/v1/b/${testSlug}/citas/${reservaId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   expect(cancel.ok).toBe(true);
 
-  const res = await fetch(`${API}/api/v1/b/${slug}/servicios/svc1`, {
+  const res = await fetch(`${API}/api/v1/b/${testSlug}/servicios/svc1`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   expect(res.ok).toBe(true);
   const body = await res.json();
-  console.log('CASCADA:', JSON.stringify(body));
   expect(body.citas_borradas).toBeGreaterThanOrEqual(0);
 
   const svcDoc = await db
     .collection('negocios')
-    .doc(slug)
+    .doc(testSlug)
     .collection('servicios')
     .doc('svc1')
     .get();
@@ -198,26 +220,28 @@ test('3. Servicio con reservas canceladas se puede eliminar; canceladas se conse
   expect(reservaDoc.exists).toBe(true); // canceladas no se cascada
 
   // Sin token de dueño -> 401
-  const sinToken = await fetch(`${API}/api/v1/b/${slug}/empleados/emp1`, {
+  const sinToken = await fetch(`${API}/api/v1/b/${testSlug}/empleados/emp1`, {
     method: 'DELETE',
   });
   expect(sinToken.status).toBe(401);
 });
 
 test('4. Profesional con reservas canceladas se puede eliminar; canceladas se conservan', async () => {
+  const testSlug = await crearNegocioAislado('empleado');
   const manana = new Date(Date.now() + 48 * 3600 * 1000);
   const reservaId = await crearReserva({
+    negocio: testSlug,
     dateTime: manana,
     extra: { client_uid: clienteUid },
   });
 
-  const cancel = await fetch(`${API}/api/v1/b/${slug}/citas/${reservaId}`, {
+  const cancel = await fetch(`${API}/api/v1/b/${testSlug}/citas/${reservaId}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
   expect(cancel.ok).toBe(true);
 
-  const res = await fetch(`${API}/api/v1/b/${slug}/empleados/emp1`, {
+  const res = await fetch(`${API}/api/v1/b/${testSlug}/empleados/emp1`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${idToken}` },
   });
@@ -225,7 +249,7 @@ test('4. Profesional con reservas canceladas se puede eliminar; canceladas se co
 
   const empDoc = await db
     .collection('negocios')
-    .doc(slug)
+    .doc(testSlug)
     .collection('empleados')
     .doc('emp1')
     .get();
@@ -235,17 +259,7 @@ test('4. Profesional con reservas canceladas se puede eliminar; canceladas se co
 });
 
 test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () => {
-  // Los tests 3 y 4 eliminan svc1/emp1 en cascada: recrearlos para aislar este test.
-  await db.collection('negocios').doc(slug).collection('servicios').doc('svc1').set({
-    name: 'Corte',
-    duration_minutes: 60,
-    price: '30000',
-  });
-  await db.collection('negocios').doc(slug).collection('empleados').doc('emp1').set({
-    name: 'Sandra',
-    calendar_id: '',
-  });
-
+  const testSlug = await crearNegocioAislado('phone');
   const payloadBase = {
     servicioId: 'svc1',
     empleadoId: 'emp1',
@@ -254,7 +268,7 @@ test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () =
   };
 
   const bookRequest = (phone, hora) =>
-    fetch(`${API}/api/v1/b/${slug}/book`, {
+    fetch(`${API}/api/v1/b/${testSlug}/book`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
       body: JSON.stringify({ ...payloadBase, hora, clienteTelefono: phone }),
@@ -288,13 +302,14 @@ test('5. Validación estricta de teléfono (libphonenumber + E.164)', async () =
   // Verificación en Firestore de que se guardó normalizado a E.164 (+57...)
   const checkDb = await db
     .collection('reservas')
-    .where('negocio_id', '==', slug)
+    .where('negocio_id', '==', testSlug)
     .where('user_phone', '==', `+57${phoneD}`)
     .get();
   expect(checkDb.empty).toBe(false);
 });
 
-test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () => {
+test('6. Límite de 3 reservas por cliente al día (por teléfono)', async () => {
+  const testSlug = await crearNegocioAislado('limite');
   const phone = telefonoUnico();
   const manana = new Date(Date.now() + 86400000);
   const fecha = manana.toISOString().split('T')[0];
@@ -306,7 +321,7 @@ test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () =
     clienteTelefono: phone,
   };
   const book = (body) =>
-    fetch(`${API}/api/v1/b/${slug}/book`, {
+    fetch(`${API}/api/v1/b/${testSlug}/book`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clienteIdToken}` },
       body: JSON.stringify(body),
@@ -326,7 +341,7 @@ test('2b. Límite de 3 reservas por cliente al día (por teléfono)', async () =
   expect(b4.message).toContain('Has alcanzado el límite');
 
   // 5. OTRO cliente, mismo día -> permitido (la regla es por teléfono)
-  const r5 = await fetch(`${API}/api/v1/b/${slug}/book`, {
+  const r5 = await fetch(`${API}/api/v1/b/${testSlug}/book`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${otroClienteIdToken}` },
     body: JSON.stringify({ ...payloadBase, clienteTelefono: telefonoUnico(), hora: '13:00' }),
