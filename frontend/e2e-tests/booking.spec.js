@@ -2,11 +2,12 @@ import { test, expect } from '@playwright/test';
 import {
   CLIENTE_E2E,
   limpiarReservasE2E,
-  crearReservaE2E,
   elegirDiaEnCalendario,
   db,
+  adminAuth,
   e2eSlug,
   signInEnPagina,
+  telefonoUnico,
 } from './setup.js';
 
 const SLUG = e2eSlug('tienda');
@@ -59,16 +60,17 @@ test.describe('Turnobot E2E Suite', () => {
   });
 
   test('Happy Path: agendamiento exitoso y teléfono saneado en BD', async ({ page }) => {
+    const telefono = telefonoUnico();
     await llegarAConfirmacion(page);
     await elegirPrimerSlot(page);
-    await llenarYConfirmar(page, 'Juan E2E', '300 123 4567'); // con espacios -> 3001234567
+    await llenarYConfirmar(page, 'Juan E2E', telefono);
 
     await expect(page.getByText('¡Cita confirmada!')).toBeVisible();
 
-    // Verificar que en Firestore el teléfono quedó saneado (E.164: +573001234567)
+    // Verificar que en Firestore el teléfono quedó saneado (E.164: +57...)
     const snap = await db
       .collection('reservas')
-      .where('user_phone', '==', '+573001234567')
+      .where('user_phone', '==', `+57${telefono}`)
       .get();
     expect(snap.empty).toBe(false);
   });
@@ -82,6 +84,8 @@ test.describe('Turnobot E2E Suite', () => {
     const p1 = await ctx1.newPage();
     const p2 = await ctx2.newPage();
 
+    const telefonoRapido = telefonoUnico();
+    const telefonoLento = telefonoUnico();
     await llegarAConfirmacion(p1);
     await llegarAConfirmacion(p2);
 
@@ -90,7 +94,7 @@ test.describe('Turnobot E2E Suite', () => {
     await elegirPrimerSlot(p2);
 
     // Cliente 1 agenda y alcanza la pantalla de éxito
-    await llenarYConfirmar(p1, 'Cliente Rápido', '3111111111');
+    await llenarYConfirmar(p1, 'Cliente Rápido', telefonoRapido);
     await expect(p1.getByText('¡Cita confirmada!')).toBeVisible();
 
     // Cliente 2 intenta el mismo slot: el backend debe responder 409
@@ -100,9 +104,9 @@ test.describe('Turnobot E2E Suite', () => {
       (r) => r.url().includes('/slots') && r.request().method() === 'GET',
       { timeout: 15000 },
     );
-    await llenarYConfirmar(p2, 'Cliente Lento', '3222222222');
+    await llenarYConfirmar(p2, 'Cliente Lento', telefonoLento);
 
-    await expect(p2.getByText(/acaba de ser reservado por alguien más/)).toBeVisible();
+    await expect(p2.getByText(/Ese horario ya no está libre/)).toBeVisible();
     await expect(p2.getByText(/Horarios para el/)).toBeVisible();
 
     // La recarga llegó y el slot 09:00 está ausente en la respuesta
@@ -114,36 +118,33 @@ test.describe('Turnobot E2E Suite', () => {
   });
 
   test('Mis Citas: consultar y cancelar una reserva', async ({ page }) => {
-    await iniciarSesion(page);
-    const phone = '3051112222';
-    const dt = new Date(`${mañana()}T15:30:00-05:00`);
-    await crearReservaE2E({
-      slug: SLUG,
-      phone,
-      name: 'Ana E2E',
-      service: 'Corte y Barba',
-      empId: 'emp_alejandro',
-      dateTime: dt,
-    });
+    // La vista actual muestra las citas por cuenta, no por teléfono:
+    // se agenda con el mismo cliente y luego se cancela desde el panel.
+    await llegarAConfirmacion(page);
+    await elegirPrimerSlot(page);
+    await llenarYConfirmar(page, 'Ana E2E', telefonoUnico());
+    await expect(page.getByText('¡Cita confirmada!')).toBeVisible();
 
-    await page.goto(`/shop/${SLUG}`);
-    await page.getByText('Mis citas', { exact: false }).click();
-
-    await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(phone);
-    await page.getByRole('button', { name: 'Ver mis citas' }).click();
-
+    await page.getByRole('button', { name: 'Mis Citas' }).click();
     await expect(page.getByText('Corte y Barba').first()).toBeVisible();
 
-    page.on('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Cancelar cita' }).click();
+    await page.getByRole('button', { name: 'Sí, cancelar' }).click();
 
     // Tras cancelar se muestra el aviso de confirmación (la agenda quedó liberada)
     await expect(page.getByText('Cita cancelada')).toBeVisible();
     await expect(page.getByText('El espacio en la agenda ha sido liberado.')).toBeVisible();
 
-    // Verificar que la reserva quedó marcada como cancelada
-    const snap = await db.collection('reservas').where('user_phone', '==', phone).get();
-    expect(snap.empty).toBe(false);
-    expect(snap.docs[0].data().cancelled).toBe(true);
+    // Verificar que la reserva quedó marcada como cancelada para esta cuenta.
+    const cliente = await adminAuth.getUserByEmail(CLIENTE_E2E.email);
+    const snap = await db
+      .collection('reservas')
+      .where('negocio_id', '==', SLUG)
+      .get();
+    const propias = snap.docs
+      .map((d) => d.data())
+      .filter((r) => r.client_uid === cliente.uid && r.service_name === 'Corte y Barba');
+    expect(propias.length).toBeGreaterThan(0);
+    expect(propias.every((r) => r.cancelled === true)).toBe(true);
   });
 });

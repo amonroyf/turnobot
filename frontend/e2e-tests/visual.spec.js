@@ -5,6 +5,7 @@ import {
   e2eSlug,
   elegirDiaEnCalendario,
   signInEnPagina,
+  telefonoUnico,
 } from './setup.js';
 
 // Pruebas visuales de regresión: comparan screenshots contra la línea base
@@ -89,7 +90,7 @@ test.describe('Regresión visual', () => {
     await expect(page.locator('div.grid-cols-3 button').first()).toBeVisible();
     await page.locator('div.grid-cols-3 button').first().click();
     await page.getByPlaceholder('Tu Nombre completo').fill('Visual Test');
-    await page.getByPlaceholder(/Tu WhatsApp/).fill('300 123 4567');
+    await page.getByPlaceholder(/Tu WhatsApp/).fill(telefonoUnico());
     await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
     const exito = page.locator('#step-success');
     await expect(exito).toBeVisible({ timeout: 20000 });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { CLIENTE_E2E, db, signInEnPagina } from './setup.js';
+import { CLIENTE_E2E, db, signInEnPagina, telefonoUnico } from './setup.js';
 
 let clienteDemo;
 
@@ -9,7 +9,7 @@ test('Grabar demo de reserva', async ({ page }) => {
   const suffix = Math.floor(100 + Math.random() * 900);
   const cliente = `Cliente Demo ${suffix}`;
   clienteDemo = cliente;
-  const telefono = `300123${String(suffix).padStart(4, '0')}`;
+  const telefono = telefonoUnico();
 
   await page.goto('/shop/mi-negocio');
   await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);

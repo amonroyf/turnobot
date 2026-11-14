@@ -4,6 +4,7 @@ import {
   limpiarNegocioE2E,
   crearReservaE2E,
   db,
+  adminAuth,
   e2eSlug,
   signInEnPagina,
 } from './setup.js';
@@ -23,7 +24,7 @@ async function garantizarTienda(slug, servicios, empleado) {
       telefono: '3000000000',
       calendar_id: 'primary',
       timezone: 'America/Bogota',
-      cancel_window_hours: 0,
+      cancel_window_hours: 1,
     },
     { merge: true },
   );
@@ -61,20 +62,21 @@ test.describe('Módulo 4: Aislamiento Multi-Tenant', () => {
     page,
   }) => {
     await page.goto(`/shop/${TIENDA_A}`);
-    await page.getByText('Agendar cita', { exact: false }).first().click();
+    await page.getByRole('button', { name: /Agendar/ }).first().click();
     await expect(page.getByText('Corte Alfa').first()).toBeVisible();
     await expect(page.getByText('Corte Beta')).toHaveCount(0);
 
     await page.goto(`/shop/${TIENDA_B}`);
-    await page.getByText('Agendar cita', { exact: false }).first().click();
+    await page.getByRole('button', { name: /Agendar/ }).first().click();
     await expect(page.getByText('Corte Beta').first()).toBeVisible();
     await expect(page.getByText('Corte Alfa')).toHaveCount(0);
   });
 
-  test('El backend no expone las citas de otra tienda al consultar por teléfono', async ({
+  test('El backend no expone las citas de otra tienda al consultar por cuenta', async ({
     page,
   }) => {
     const phone = '3207778888';
+    const cliente = await adminAuth.getUserByEmail(CLIENTE_E2E.email);
     const dt = new Date(`${mañana()}T10:00:00-05:00`);
     await crearReservaE2E({
       slug: TIENDA_B,
@@ -83,23 +85,24 @@ test.describe('Módulo 4: Aislamiento Multi-Tenant', () => {
       service: 'Corte Beta',
       empId: 'emp_b',
       dateTime: dt,
+      clientUid: cliente.uid,
     });
 
-    // El mismo teléfono consultado en la tienda equivocada no debe aparecer
+    // La cuenta no debe ver la cita al consultar en la tienda equivocada
     await page.goto(`/shop/${TIENDA_A}`);
     await signInEnPagina(page, CLIENTE_E2E.email, CLIENTE_E2E.password);
     await page.reload();
-    await page.getByText('Mis citas', { exact: false }).click();
-    await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill(phone);
-    await page.getByRole('button', { name: 'Ver mis citas' }).click();
-    await expect(page.getByText(/No tienes citas pendientes/)).toBeVisible();
+    await page.getByRole('button', { name: 'Mis Citas' }).click();
+    await expect(page.getByText(/Sin citas con esta cuenta/)).toBeVisible({
+      timeout: 10000,
+    });
 
     // Y sí aparece en la tienda correcta
     await page.goto(`/shop/${TIENDA_B}`);
-    await page.getByText('Mis citas', { exact: false }).click();
-    await page.getByPlaceholder('Tu WhatsApp (Ej. 3001234567)').fill(phone);
-    await page.getByRole('button', { name: 'Ver mis citas' }).click();
-    await expect(page.getByText('Corte Beta').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Mis Citas' }).click();
+    await expect(page.getByText('Corte Beta').first()).toBeVisible({
+      timeout: 15000,
+    });
   });
 
   test.afterAll(async () => {

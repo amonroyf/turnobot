@@ -6,6 +6,7 @@ import {
   db,
   crearUsuarioYTema,
   signInEnPagina,
+  telefonoUnico,
 } from './setup.js';
 
 const SLUG_REAL = 'e2e-shop-test';
@@ -90,7 +91,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await page.locator('div.grid-cols-3 button').first().click();
 
     await page.getByPlaceholder('Tu Nombre completo').fill('Cliente Automatizado');
-    await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('300 123 4567');
+    await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefonoUnico());
     await page.getByRole('button', { name: 'Confirmar Reserva' }).click();
 
     await expect(page.getByText('¡Cita confirmada!')).toBeVisible({ timeout: 15000 });
@@ -111,7 +112,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
       await elegirDiaEnCalendario(page, mañana());
       await page.locator('div.grid-cols-3 button').first().click();
       await page.getByPlaceholder('Tu Nombre completo').fill('Usuario Rápido');
-      await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('3000000001');
+      await page.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefonoUnico());
     }
 
     await hastaConfirmacion(p1);
@@ -122,7 +123,7 @@ test.describe('E2E Real (sin mocks): registro, catálogo y reservas', () => {
     await elegirDiaEnCalendario(p2, mañana());
     await p2.locator('.grid button').first().click();
     await p2.getByPlaceholder('Tu Nombre completo').fill('Usuario Lento');
-    await p2.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill('3000000002');
+    await p2.getByPlaceholder('Tu WhatsApp (Ej. 300 123 4567)').fill(telefonoUnico());
 
     // El primero reserva y bloquea el slot
     await p1.getByRole('button', { name: 'Confirmar Reserva' }).click();

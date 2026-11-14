@@ -24,6 +24,12 @@ export const CLIENTE_E2E = {
   password: process.env.E2E_CLIENT_PASSWORD || 'Clave.123',
 };
 
+// Los límites del backend son por teléfono (5 reservas/hora) y por día
+// (3/teléfono/día). Las specs generan números nuevos para no heredar el
+// cupo agotado por corridas anteriores.
+export const telefonoUnico = () =>
+  `300${String(Math.floor(Math.random() * 10_000_000)).padStart(7, '0')}`;
+
 // Cliente que usa el embudo público (booking.spec.js, demo-reserva.spec.js,
 // multi-tenant.spec.js). El backend exige login para confirmar una cita.
 export async function garantizarClienteE2E() {
@@ -55,7 +61,7 @@ export async function crearUsuarioYTema(email, nombre, slug) {
     telefono: '',
     calendar_id: 'primary',
     timezone: 'America/Bogota',
-    cancel_window_hours: 0,
+    cancel_window_hours: 1,
     updated_at: admin.firestore.FieldValue.serverTimestamp(),
   });
 
@@ -136,7 +142,7 @@ export const garantizarTiendaE2E = async (slug = SLUG_E2E) => {
       timezone: 'America/Bogota',
       open_time: '09:00',
       close_time: '18:00',
-      cancel_window_hours: 0,
+      cancel_window_hours: 1,
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -178,7 +184,8 @@ export const garantizarNegocioDemo = async (slug = 'mi-negocio') => {
       close_time: '18:00',
       booking_window_days: 60,
       max_bookings_per_phone_per_day: 3,
-      cancel_window_hours: 0,
+      cancel_window_hours: 1,
+      calendar_id: '',
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true },
@@ -195,18 +202,33 @@ export const garantizarNegocioDemo = async (slug = 'mi-negocio') => {
   const empleados = negocioRef.collection('empleados');
   await empleados
     .doc('emp_alejandro')
-    .set({ name: 'Alejandro', calendar_id: 'primary' }, { merge: true });
+    .set({ name: 'Alejandro', calendar_id: '' }, { merge: true });
   await empleados
     .doc('emp_carlos')
-    .set({ name: 'Carlos', calendar_id: 'primary' }, { merge: true });
+    .set({ name: 'Carlos', calendar_id: '' }, { merge: true });
 };
 
-export const crearReservaE2E = async ({ slug = SLUG_E2E, phone, name, service, empId, dateTime }) => {
-  await db.collection('reservas').add({
-    negocio_id: slug, emp_id: empId, user_phone: phone, client_name: name,
-    service_name: service, duration_minutes: 30, date_time: dateTime,
+export const crearReservaE2E = async ({
+  slug = SLUG_E2E,
+  phone,
+  name,
+  service,
+  empId,
+  dateTime,
+  clientUid,
+}) => {
+  const reserva = {
+    negocio_id: slug,
+    emp_id: empId,
+    user_phone: phone,
+    client_name: name,
+    service_name: service,
+    duration_minutes: 30,
+    date_time: dateTime,
     created_at: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
+  if (clientUid) reserva.client_uid = clientUid;
+  await db.collection('reservas').add(reserva);
 };
 
 export const elegirDiaEnCalendario = async (page, yyyymmdd) => {
