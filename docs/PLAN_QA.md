@@ -12,7 +12,7 @@
 - **14 semanas, 4 fases:** fundamentos + unitarios → API → E2E + CI → no funcionales + portfolio.
 - **15 h/semana:** lunes a jueves 2,5 h, viernes libre, sábado 4 h, domingo 1 h de cierre.
 - **Una semana = un entregable.** Si no está hecho, no avanzás; repetís o usás el colchón.
-- **Tu primer bug real ya existe:** `npm run test` no está definido y `run-qa.sh` lo llama. Lo arreglás en la semana 1.
+- **Tu primer bug real ya está resuelto:** faltaba `npm run test`; se agregó en el commit `d434434`. En la semana 1 lo estudiás y pasás al riesgo #2 (E2E contra producción).
 - **Antes de cualquier E2E:** emulador encendido y variables exportadas. Si están vacías, no corras.
 - **No leas todo:** abrí la semana actual y hacé el primer ítem sin marcar.
 
@@ -54,17 +54,17 @@
 
 ### 1.1. Hallazgos reales (tu primer material de QA)
 
-No son fracasos: son bugs y riesgos que vas a documentar y arreglar. Un junior que detecta esto se destaca.
+No son fracasos: son bugs y riesgos reales. Algunos ya están resueltos; los demás son tus ejercicios.
 
-| # | Archivo | Problema | Impacto | Se trabaja |
-|---|---------|----------|---------|------------|
-| 1 | `frontend/package.json` + `scripts/run-qa.sh` | No existe `npm run test`, pero el script lo llama | `./scripts/run-qa.sh` falla siempre | Semana 1 |
-| 2 | `frontend/e2e-tests/global-setup.js` y `setup.js` | Admin SDK apunta al proyecto real, sin guardia de emulador | Si tenés credenciales de Google, **puede escribir en producción** | Semana 8 |
-| 3 | `frontend/e2e-tests/horarios.spec.js` | `API_BASE` por defecto es la URL de producción | Un test local pega contra prod | Semana 11 |
-| 4 | `frontend/e2e-tests/reglas-negocio.spec.js`, `admin.spec.js`, `real-flow.spec.js`, `crm.spec.js` | Login contra `identitytoolkit.googleapis.com` real con API key hardcodeada | No son reproducibles en CI; tocan Auth real | Semana 11 |
-| 5 | `frontend/e2e-tests/visual.spec.js` | Espera el servicio “Corte y Barba”, pero el seed crea “Consulta General” | Falla en local | Semana 12 |
-| 6 | `frontend/playwright.config.js` | `workers: 1` y `retries: 1` | Puede ocultar colisiones y flakiness | Semana 10–11 |
-| 7 | `docs/QA_GUIDE.md` | Dice `npm run test` (coincide con el bug #1) | Confunde al que empieza | Semana 1 |
+| # | Archivo | Problema | Impacto | Estado |
+|---|---------|----------|---------|--------|
+| 1 | `frontend/package.json` + `scripts/run-qa.sh` | No existía `npm run test`, pero el script lo llamaba | `./scripts/run-qa.sh` fallaba siempre | ✅ Resuelto en `d434434` (alias `test`) |
+| 2 | `frontend/e2e-tests/global-setup.js` y `setup.js` | Admin SDK apunta al proyecto real, sin guardia de emulador | Si tenés credenciales de Google, **puede escribir en producción** | Pendiente · semana 8 |
+| 3 | `frontend/e2e-tests/horarios.spec.js` | `API_BASE` por defecto es la URL de producción | Un test local pega contra prod | Pendiente · semana 11 |
+| 4 | `frontend/e2e-tests/reglas-negocio.spec.js`, `admin.spec.js`, `real-flow.spec.js`, `crm.spec.js` | Login contra `identitytoolkit.googleapis.com` real con API key hardcodeada | No son reproducibles en CI; tocan Auth real | Pendiente · semana 11 |
+| 5 | `frontend/e2e-tests/visual.spec.js` | Espera el servicio “Corte y Barba”, pero el seed crea “Consulta General” | Falla en local | Pendiente · semana 12 |
+| 6 | `frontend/playwright.config.js` | `workers: 1` y `retries: 1` | Puede ocultar colisiones y flakiness | Pendiente · semana 10–11 |
+| 7 | `docs/QA_GUIDE.md` | Decía `npm run test`, que no existía | Confundía al que empieza | ✅ Resuelto: el alias ya existe y la guía es correcta |
 
 ### 1.2. Semáforo de specs E2E (importante)
 
@@ -158,7 +158,7 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 | Sem | Fechas | Foco | Capa | Entregable |
 |-----|--------|------|------|------------|
-| 1 | 16–22 nov | Arranque, diagnóstico y mapa | Todas | Suite corrida + bug #1 arreglado + bitácora |
+| 1 | 16–22 nov | Arranque, diagnóstico y mapa | Todas | Suite corrida + bug #1 estudiado + riesgo #2 identificado + bitácora |
 | 2 | 23–29 nov | Unitarios JS y diseño de casos | Unit frontend | 3 tests nuevos (8+ casos) |
 | 3 | 30 nov–6 dic | Unitarios Go y tabla de casos | Unit backend | 2 tests Go + `go vet` limpio |
 | 4 | 7–13 dic | Integración con emulador | Integración | 1 test de handler + diagrama |
@@ -185,13 +185,14 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 **Práctica (11 h):**
 
-1. Commiteá o stasheá lo pendiente y creá la rama: `git switch -c qa-learning`.
+1. Creá la rama: `git switch -c qa-learning` (la base ya quedó commiteada en `d434434`).
 2. Creá `docs/BITACORA.md` con la plantilla de §8.
 3. `cd frontend && npx vitest run` → verificá 43 tests. Abrí `src/fecha.test.js` y marcá en un test dónde está Arrange, Act y Assert.
 4. `cd backend && go test ./... -count=1` → anotá cuántos se omiten y por qué (leé `testFirestoreClient` en `handlers_test.go`).
 5. `cd frontend && npx playwright test --list` → 33 tests. Clasificá cada spec con el semáforo de §1.2.
-6. `./scripts/run-qa.sh` → va a fallar en `npm run test`. Encontrá la causa, arreglala (agregá `"test": "vitest run"` en `package.json` o corregí el script) y commiteá. Ese es tu primer bug real.
-7. Leé `docs/QA_GUIDE.md` §1–3 y escribí en la bitácora: pirámide, un ejemplo de cada capa en Turnobot, y qué capa es más cara de mantener.
+6. `npm run test` → deben pasar 43 tests. El bug del script faltante ya se corrigió en `d434434`; mirá el cambio con `git show d434434 -- frontend/package.json` y anotá por qué `run-qa.sh` fallaba.
+7. Leé `frontend/e2e-tests/global-setup.js` y `setup.js`: identificá por qué un E2E local puede escribir en el proyecto real. **No lo corras**; solo analizalo. Ese es el bug #2, que vas a arreglar en la semana 8.
+8. Leé `docs/QA_GUIDE.md` §1–3 y escribí en la bitácora: pirámide, un ejemplo de cada capa en Turnobot, y qué capa es más cara de mantener.
 
 **Verificá:** `npm run test` corre y pasan 43 tests.
 
@@ -199,7 +200,8 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 - [ ] Rama `qa-learning`.
 - [ ] `docs/BITACORA.md` con tres listas: qué corre, qué no, qué no entiendo.
-- [ ] Bug #1 arreglado y commiteado.
+- [ ] Bug #1 documentado como caso resuelto (commit `d434434`).
+- [ ] Bug #2 identificado por escrito (sin correr E2E).
 - [ ] Semáforo de specs completo.
 
 **Búsqueda laboral (1 h):** abrí 10 ofertas de QA Jr. en Colombia y volcá en una hoja: stack, años, inglés, salario si aparece, herramientas. No te postules todavía. **Entregable:** top 3 requisitos repetidos.
@@ -292,7 +294,7 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 - [ ] Diagrama de 5 líneas del flujo.
 - [ ] Autoevaluación ISTQB (20 preguntas) y decisión: ¿examen en la semana 14 o después?
 
-**Búsqueda laboral (1 h):** escribí en formato STAR la historia del bug #1 (“qué encontré, cómo lo reproduje, cómo lo arreglé”).
+**Búsqueda laboral (1 h):** escribí en formato STAR la historia del bug #1 (ya resuelto): qué encontré, cómo lo reproduje y cómo lo arreglé.
 
 **Inglés:** 10 términos de integración (seed, fixture, teardown, isolation).
 
@@ -365,7 +367,7 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 **Práctica (9 h):**
 
-1. Escribí `docs/bugs/BUG-001.md` con el bug #1 (script inexistente): pasos, esperado, actual, evidencia, severidad, prioridad.
+1. Escribí `docs/bugs/BUG-001.md` con el bug #1 (script inexistente, ya resuelto en `d434434`): pasos, esperado, actual, evidencia, severidad, prioridad. Sirve como caso real de bug encontrado y corregido.
 2. Escribí `docs/bugs/BUG-002.md` con el riesgo de E2E (#2): archivos, por qué puede escribir en prod, impacto, propuesta.
 3. ○ `BUG-003.md` con el desajuste de seed de `visual.spec.js` (#5).
 4. Re-corré lo seguro (Vitest, Go unitarios, Newman) y actualizá la bitácora.
@@ -818,7 +820,7 @@ En una entrevista, decir “aprendí los conceptos en Playwright y los transfer�
 1. **30 min:** leé §0, §2 y §3 de este plan.
 2. **30 min:** `cd frontend && npx vitest run` → mirá los 43 tests.
 3. **30 min:** abrí `src/fecha.test.js` y marcá AAA en un test; escribí 3 líneas en `docs/BITACORA.md`.
-4. **30 min:** corré `./scripts/run-qa.sh`, mirá el fallo y anotá la causa. No lo arregles todavía si no querés: mañana es la semana 1.
+4. **30 min:** corré `cd frontend && npm run test` (43 tests) y mirá `git show d434434 -- frontend/package.json` para entender el bug #1 que ya corregimos.
 
 > Si hacés solo esto, ya empezaste. El plan no se falla por un día malo; se falla por no volver al día siguiente.
 
