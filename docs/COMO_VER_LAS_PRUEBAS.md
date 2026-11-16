@@ -12,7 +12,7 @@
 
 | Quiero… | Herramienta | Comando |
 |----------|-------------|---------|
-| **Ver el test corriendo en vivo**, paso a paso, poder parar y probar | Playwright **UI mode** | `npm run test:e2e:ui` |
+| **Ver el test corriendo en vivo**, paso a paso, poder parar y probar | Playwright **UI mode** | `npm run test:e2e:ui` → **apretá ▶ "Run all — F5"** |
 | **Depurar un test**, avanzar paso a paso, ver el DOM | Playwright **Inspector** | `npm run test:e2e:debug` |
 | **Ver el navegador real** working (headed) | Playwright headed | `npm run test:e2e:headed` |
 | **Revisar una corrida terminada**, con video, capturas y errores | Playwright **HTML report** | `npm run test:e2e:report` |
@@ -21,6 +21,12 @@
 Y el que **no es navegador pero es el mejor para aprender**: el **trace viewer**
 (ver §3), que te deja rebobinar la ejecución como un video con el DOM
 congelado en cada paso.
+
+> **Los dos motivos por los que "no veía un proceso completo":**
+> 1. El UI mode **no corre solo** — apretá **"Run all — F5"**.
+> 2. En **local** solo hay **5 tests** (2 specs). Los otros 10 spec files se
+>    ignoran a propósito (`testIgnore`), porque necesitan Auth real de GCP.
+>    `E2E_TARGET=local` → 5 tests · `E2E_TARGET=gcp` → 33 tests.
 
 ---
 
@@ -77,9 +83,49 @@ Se abre `http://localhost:9323` con:
 - **Watch mode**: guardás el spec y los tests se re-corren solos.
 - **Steps**: cada `expect` aparece como un paso con su resultado.
 
-**Ejercicio para vos:** abrí `booking-pom.spec.js`, activá "Pick locator",
-hacé clic en el botón de reservar y anotá el locator que te da. Después leé
-`pages/BookingPage.js` y compará: ¿coincide con el del POM? Si no, ¿por qué?
+### ⚠️ El UI mode NO corre solo
+
+**Tenés que apretar el botón verde ▶ "Run all — F5"** (en el header de TESTS) o
+la tecla **F5**. Si no lo apretás, el panel queda con la lista y los tests sin
+icono de estado — parece que "no pasa nada".
+
+Verificado: recién después de clickear, el status pasa a
+`5/5 (100%) — 5 passed` y aparecen los ✓ verdes.
+
+### ⚠️ En local solo hay 5 tests, no 33
+
+`playwright.config.js` tiene:
+
+```js
+testIgnore: IS_GCP ? [] : SPECS_SOLO_GCP,
+```
+
+En modo **local** se ignoran 10 spec files (los que necesitan Auth real de GCP):
+`booking`, `crm`, `admin`, `multi-tenant`, `real-flow`, `reglas-negocio`,
+`visual`, `demo-admin`, `demo-reserva`, `smoke-prod`.
+
+```
+E2E_TARGET=local →  5 tests en  2 archivos
+E2E_TARGET=gcp   → 33 tests en 12 archivos
+```
+
+**Está bien así**: evita que un test local pegue contra Auth de producción.
+Para ver los 33 hay que reiniciar el UI mode en modo GCP:
+
+```bash
+cd frontend
+E2E_TARGET=gcp E2E_ALLOW_GCP=1 npx playwright test --ui --ui-port 9323 --ui-host 0.0.0.0
+```
+
+⚠️ Ahí vas a **ver** los 33, pero si apretás F5 **escribe datos de práctica** en
+`stalwart-coast-439901-d0`. El plan de la semana 1 dice *"no corras E2E contra
+GCP todavía; solo analizalo"*.
+
+### ⚠️ El banner "Playwright browsers are missing" no es un problema
+
+Aparece arriba a la derecha y dice "Install". Asusta pero **no bloquea nada**:
+el config usa `channel: 'chrome'` (Chrome del sistema), no el Chromium
+descargado por Playwright. La corrida funciona igual. Es cosmético.
 
 ### Limitación
 
