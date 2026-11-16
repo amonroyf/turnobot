@@ -26,13 +26,18 @@
 ```
 turnobot/
 ├── backend/*_test.go          # Go: unitarios + integración (emulador)
+├── backend/harness_test.go    # arnés: delta de Firestore por llamada
 ├── frontend/src/*.test.js(x)  # Vitest: lógica y componentes
 ├── frontend/e2e-tests/        # Playwright: E2E + visuales
 ├── frontend/e2e-tests/pages/  # Page Object Model
 ├── tests/api/                 # Postman + Newman
 ├── tests/perf/                # k6
 ├── docs/QA_GUIDE.md           # esta guía
+├── docs/BITACORA.md           # bitácora de aprendizaje
+├── docs/NOTAS_CODIGO.md       # reglas de negocio extraídas del código
+├── docs/bugs/                 # bug reports
 ├── scripts/run-qa.sh          # ejecuta todo local
+├── harness.sh                 # orquestador local (emulador + backend + vite + Playwright)
 └── .github/workflows/qa.yml   # CI/CD
 ```
 
@@ -74,6 +79,54 @@ npm run test:e2e:gcp:safe           # GCP, subconjunto de bajo riesgo
 npm run test:e2e:local              # emulador (PRs/TDD)
 npx playwright show-report          # reporte HTML
 ```
+
+> ⚠️ `--list` **no** ejecuta el `globalSetup`, así que **no valida la guardia** de
+> entorno. Para probarla, ejecutá un spec de verdad: `npx playwright test
+> e2e-tests/booking-pom.spec.js`. La guardia (`assertTargetReady` en
+> `e2e-tests/target.js`) bloquea GCP sin `E2E_ALLOW_GCP=1`, bloquea GCP con
+> variables de emulador activas, y bloquea local sin emulador.
+
+### 3.3b Harness de tests Go (delta de Firestore)
+
+Los tests de handlers pasan por un arnés que graba el estado de Firestore antes
+y después de cada llamada, calcula el delta y deja un reporte JSON.
+
+```bash
+cd backend
+export FIRESTORE_EMULATOR_HOST=127.0.0.1:8090
+export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9098
+export GCP_PROJECT_ID=demo-test      # debe coincidir con el --project del emulador
+
+go test ./... -count=1
+ls test-reports/                    # un JSON por llamada al handler
+```
+
+| Variable | Default | Para qué |
+|----------|---------|----------|
+| `QA_TEST_REPORTS` | (activo) | `0` desactiva la escritura de reportes |
+| `QA_TEST_REPORT_DIR` | `test-reports` | Carpeta destino de los JSON |
+| `QA_EMULATOR_PROJECT_ID` | `demo-test` | Project ID del emulador (debe coincidir con el `--project`) |
+
+**El project ID tiene que ser el mismo en los tres lados**: emulador, backend y
+tests. Si no, el ID token de Auth llega con un `aud` distinto y `VerifyIDToken`
+responde 401. Es la causa raíz del BUG-003.
+
+Un reporte se ve así:
+
+```json
+{
+  "test_name": "TestBookHappyPath",
+  "status": "pass",
+  "response": { "status_code": 201 },
+  "db_delta": {
+    "reservas": { "GYv8tDnQiSlXsiGEL5hx": { "status": "added" } },
+    "clientes": { "test-book-...__+573001234567": { "status": "added" } }
+  }
+}
+```
+
+Un `delta` vacío en un caso de error es la prueba de que el handler **no
+escribió nada**: es evidencia que un assert de status code no da.
 
 ### 3.4 API (Newman)
 
@@ -192,10 +245,12 @@ Para medir cobertura frontend: `npx vitest run --coverage` (requiere `@vitest/co
 
 - **"sin emulador"**: para el modo local, asegúrate de que `FIRESTORE_EMULATOR_HOST=127.0.0.1:8090` esté exportado y el emulador corriendo. Para GCP, usá ADC y quitá esas variables.
 - **"Modo GCP bloqueado"**: falta `E2E_ALLOW_GCP=1`; los scripts `npm run test:e2e*` ya lo exportan.
-- **Tests Go fallan por auth**: verifica `FIREBASE_AUTH_EMULATOR_HOST` y que el proyecto sea `stalwart-coast-439901-d0` (o `demo-test` consistente).
+- **401 `invalid 'aud' claim`**: el project ID del emulador, el del backend y el de los tests **no coinciden**. Usá `demo-test` en los tres (o exportá `QA_EMULATOR_PROJECT_ID`). Es el BUG-003.
+- **Los tests Go se omiten en silencio**: el emulador de **Auth** no está corriendo o falta `FIREBASE_AUTH_EMULATOR_HOST`. Corré `go test -v` y contá los SKIP: "verde" con 85 omitidos no es verde.
 - **Playwright no encuentra navegador**: `npx playwright install chromium`.
 - **Newman 401**: el token expiró; vuelve a ejecutar `get-token.mjs`.
 - **Cobertura no sube**: los handlers de push/Calendar requieren mocks; céntrate en lógica pura y handlers de reservas.
+- **El harness crashea con `comparing uncomparable type`**: sería el BUG-002, ya corregido. Si vuelve, es que alguien reintrodujo un `==` en `equalDocs`.
 
 ## 9. Glosario rápido
 

@@ -73,12 +73,31 @@ No son fracasos: son bugs y riesgos reales. Algunos ya están resueltos; los dem
 | 7 | `docs/QA_GUIDE.md` | Decía `npm run test`, que no existía | Confundía al que empieza | ✅ Resuelto: el alias ya existe y la guía es correcta |
 | 8 | `frontend/e2e-tests/smoke-prod.spec.js` | Corría contra producción por defecto | Escribía/borraba datos reales sin querer | ✅ Resuelto: exige `SMOKE_PROD=1` y modo GCP |
 | 9 | `frontend/e2e-tests/admin.spec.js` | Al probar slug duplicado borraba `mi-negocio` | Podía dejar la tienda demo sin datos | ✅ Resuelto: solo borra el negocio temporal `e2e-dupe-*` |
+| 10 | `backend/gcp_test.go` | `testProjectID()` devolvía `test-turnobot` hardcodeado mientras **todo el repo usa `demo-test`** (docs, `seed.go`, `run-qa.sh`, `target.js`) | Con el emulador armado según la documentación, **77 de 104 tests de integración fallaban** con 401 `invalid 'aud' claim`. El síntoma parece un bug de auth | ✅ Resuelto en `48ff6d4`: default `demo-test`, override con `QA_EMULATOR_PROJECT_ID` → **0 fallos** |
+| 11 | `turnobot-test-learn/sandbox/delta.go` | `equalDocs` usaba `a == b`, que **entra en panic** con arrays | Los docs tienen arrays (`turnos`, `servicios_ids`): el harness crashea justo cuando hay algo que reportar | ✅ Resuelto en `48ff6d4` (`reflect.DeepEqual`) |
+| 12 | `harness.sh` | `cleanup()` borraba `firebase.emu.json`, que **está versionado en git** | Cada corrida dejaba el repo sucio | ✅ Resuelto en `48ff6d4`: guarda copia y restaura |
+| 13 | `harness.sh` | Levantaba **solo Firestore, sin Auth** y no exportaba `FIREBASE_AUTH_EMULATOR_HOST` | Los tests que requieren token se **omitían en silencio** y el harness decía "pasaron" | ✅ Resuelto en `48ff6d4`: levanta `firestore,auth` y exporta ambas variables |
+| 14 | `backend/paginacion_test.go` | Mandaba los reportes al TMS por `localhost:8080`, que **ocupa el backend de Turnobot** | El POST caía al servicio equivocado y se perdía en un 404 silencioso | ✅ Resuelto en `48ff6d4`: el TMS usa 8091 y el despacho es opcional |
 
 ### 1.2. Semáforo de specs E2E (importante)
 
+> ⚠️ **Actualizado el 16 nov 2026 (semana 1).** El semáforo de abajo clasifica por
+> "local vs GCP", pero **el código no lo respeta**. Verificado spec por spec:
+> el corte real es **"¿el spec necesita un cliente autenticado?"**. 9 de 12 specs
+> usan `signInEnPagina` (login real contra Auth) → requieren GCP.
+> Solo `booking-pom.spec.js` y `horarios.spec.js` no hacen login — **pero igual
+> dependen del `globalSetup`**, que siembra datos. **Ningún spec es autónomo.**
+>
+> Ojo extra: `booking-pom.spec.js` busca el negocio **`mi-negocio`**, mientras el
+> resto de la suite siembra **`e2e-tienda`**. Son dos negocios de prueba distintos.
+>
+> ⚠️ **`--list` NO ejecuta el `globalSetup`**, así que
+> `npm run test:e2e -- --list` **no valida la guardia**: lista sin comprobar nada.
+> Para probar la guardia hay que ejecutar un spec de verdad.
+
 | Semáforo | Specs | Regla |
 |----------|-------|-------|
-| 🟢 Local/emulador | `booking-pom.spec.js`, `horarios.spec.js` | Rápidos y sin login. Es la suite que corre por defecto en CI. |
+| 🟢 Local/emulador | `booking-pom.spec.js`, `horarios.spec.js` | Rápidos y sin login. Es la suite que corre por defecto en CI. **Ojo: ambos dependen del seed del `globalSetup`.** |
 | 🔵 GCP práctica | `booking.spec.js`, `multi-tenant.spec.js`, `demo-reserva.spec.js`, `admin.spec.js`, `crm.spec.js`, `real-flow.spec.js`, `reglas-negocio.spec.js`, `demo-admin.spec.js`, `visual.spec.js` | Requieren ADC y `E2E_TARGET=gcp`. Escriben datos reales de práctica. |
 | 🟡 Visual | `visual.spec.js` | Compara snapshots; si cambia el seed/UI, revisá el diff antes de actualizar la base. |
 | 🔴 Solo explícito | `smoke-prod.spec.js` | Exige `SMOKE_PROD=1`; no corre en CI. |
@@ -213,11 +232,35 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 **Entregable:**
 
-- [ ] Rama `qa-learning`.
-- [ ] `docs/BITACORA.md` con tres listas: qué corre, qué no, qué no entiendo.
-- [ ] Bug #1 documentado como caso resuelto (commit `d434434`).
-- [ ] Bug #2 identificado por escrito (sin correr E2E).
-- [ ] Semáforo de specs completo.
+- [x] Rama `qa-learning`.
+- [x] `docs/BITACORA.md` con tres listas: qué corre, qué no, qué no entiendo.
+- [x] Bug #1 documentado como caso resuelto (commit `d434434`).
+- [x] Bug #2 identificado por escrito (sin correr E2E).
+- [x] Semáforo de specs completo.
+
+> ### ✅ Estado real al 16 nov 2026 (fin de la sesión)
+>
+> | Ítem | Estado | Dato verificado |
+> |------|--------|-----------------|
+> | 1. Rama `qa-learning` | ⚠️ **No creada** | Se trabajó sobre `main` (decisión del usuario). |
+> | 2. `docs/BITACORA.md` | ✅ Hecho | + `docs/NOTAS_CODIGO.md` |
+> | 3. Vitest + AAA en `fecha.test.js` | ✅ Hecho | **43/43** en 5,4 s (5 archivos) |
+> | 4. `go test` + `testFirestoreClient` | ✅ Hecho | Sin emulador: **19 pasan / 85 omiten**. Con emulador: **104/104, 0 fallos** |
+> | 5. `--list` + semáforo | ✅ Hecho | **33 tests / 12 specs** GCP, **5 / 2** local. Semáforo **corregido** (ver §1.2) |
+> | 6. `npm run test` + bug #1 | ✅ Hecho | `git show d434434` confirma el alias faltante |
+> | 7. La guardia de emulador | ✅ Hecho | Probada con 3 escenarios: **falla rápido** en los 3. Ojo: `--list` no la dispara |
+> | 8. `QA_GUIDE.md` §1–3 + bitácora | ✅ Hecho | Pirámide documentada en la bitácora |
+> | Extra | ✅ | **Harness expandido** (commit `48ff6d4`): 3 bugs corregidos, 178 reportes JSON, 98 con delta real |
+> | Búsqueda laboral | ✅ Hecho | `docs/BUSQUEDA_LABORAL.md`: 10 ofertas, top 5 requisitos, gaps |
+>
+> **Entregables adicionales no pedidos que salieron de leer el código:**
+> - `docs/bugs/BUG-002.md` — el panic del harness con arrays.
+> - `docs/bugs/BUG-003.md` — el project ID inconsistente (77 tests rotos).
+> - **25 reglas de negocio sin cobertura** (extraídas de los `"error"` del backend) —
+>   es el insumo directo de la matriz de riesgo de la semana 10.
+>
+> **Lo que quedó para la semana 2:** la rama `qa-learning` (el trabajo se hizo en
+> `main` a pedido explícito) y el bloque de inglés.
 
 **Búsqueda laboral (1 h):** abrí 10 ofertas de QA Jr. en Colombia y volcá en una hoja: stack, años, inglés, salario si aparece, herramientas. No te postules todavía. **Entregable:** top 3 requisitos repetidos.
 
