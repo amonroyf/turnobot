@@ -39,13 +39,14 @@ func slugUnico(base string) string {
 
 func testFirestoreClient(t *testing.T) *firestore.Client {
 	t.Helper()
-	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" {
-		t.Skip("sin emulador (FIRESTORE_EMULATOR_HOST vacío), se omite")
+	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" && !testUsaGCP() {
+		t.Skip("sin emulador (FIRESTORE_EMULATOR_HOST vacío); definí GCP_TEST_PROJECT_ID + GCP_TEST_ALLOW_WRITES=1 para usar GCP")
 	}
+	testExigirEscrituraGCP(t)
 	ctx := context.Background()
-	c, err := firestore.NewClient(ctx, "test-turnobot")
+	c, err := firestore.NewClient(ctx, testProjectID())
 	if err != nil {
-		t.Fatalf("emulador no disponible: %v", err)
+		t.Fatalf("Firestore no disponible (%s): %v", testProjectID(), err)
 	}
 	firestoreClient = c
 	t.Cleanup(func() { c.Close() })
@@ -96,14 +97,15 @@ var authInitOnce sync.Once
 
 func testAuthClient(t *testing.T) {
 	t.Helper()
-	if os.Getenv("FIRESTORE_EMULATOR_HOST") == "" || os.Getenv("FIREBASE_AUTH_EMULATOR_HOST") == "" {
-		t.Skip("sin emuladores (Firestore/Auth), se omite")
+	if !testUsaGCP() && (os.Getenv("FIRESTORE_EMULATOR_HOST") == "" || os.Getenv("FIREBASE_AUTH_EMULATOR_HOST") == "") {
+		t.Skip("sin emuladores (Firestore/Auth); definí GCP_TEST_PROJECT_ID + GCP_TEST_ALLOW_WRITES=1 para usar GCP")
 	}
+	testExigirEscrituraGCP(t)
 	authInitOnce.Do(func() {
 		ctx := context.Background()
-		// Mismo ProjectID que el emulador (demo-test): si no, VerifyIDToken
-		// rechaza por 'aud' inválida.
-		app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: "demo-test"})
+		// El project ID debe coincidir con el de Firestore/Auth o
+		// VerifyIDToken rechaza por 'aud' inválida.
+		app, err := firebase.NewApp(ctx, &firebase.Config{ProjectID: testProjectID()})
 		if err != nil {
 			t.Fatalf("firebase app test: %v", err)
 		}
@@ -124,6 +126,9 @@ func tokenClienteTest(t *testing.T, email string) string {
 	testAuthClient(t)
 	if v, ok := clienteTokenCache.Load(email); ok {
 		return v.(string)
+	}
+	if testUsaGCP() {
+		return tokenClienteGCP(t, email)
 	}
 	host := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
 	authREST := func(op string, body string) (int, []byte) {
@@ -2800,27 +2805,33 @@ func TestDeleteNegocioBorraTodo(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	// Token con el UID super-admin vía custom token del emulador.
-	custom, err := firebaseAuth.CustomToken(ctx, "0FF1nrcBnSPIdB1rMgYocmRnYUb2")
-	if err != nil {
-		t.Fatalf("custom token: %v", err)
-	}
-	host := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
-	res, err := http.Post(
-		fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake", host),
-		"application/json",
-		strings.NewReader(fmt.Sprintf(`{"token":%q,"returnSecureToken":true}`, custom)),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	b, _ := io.ReadAll(res.Body)
-	var out map[string]interface{}
-	_ = json.Unmarshal(b, &out)
-	superTok, _ := out["idToken"].(string)
-	if superTok == "" {
-		t.Fatalf("sin idToken super-admin: %s", b)
+	// Token con el UID super-admin: custom token en emulador, usuario real
+	// con ese UID en GCP.
+	var superTok string
+	if testUsaGCP() {
+		superTok = tokenSuperAdmin(t)
+	} else {
+		custom, err := firebaseAuth.CustomToken(ctx, "0FF1nrcBnSPIdB1rMgYocmRnYUb2")
+		if err != nil {
+			t.Fatalf("custom token: %v", err)
+		}
+		host := os.Getenv("FIREBASE_AUTH_EMULATOR_HOST")
+		res, err := http.Post(
+			fmt.Sprintf("http://%s/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake", host),
+			"application/json",
+			strings.NewReader(fmt.Sprintf(`{"token":%q,"returnSecureToken":true}`, custom)),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		b, _ := io.ReadAll(res.Body)
+		var out map[string]interface{}
+		_ = json.Unmarshal(b, &out)
+		superTok, _ = out["idToken"].(string)
+		if superTok == "" {
+			t.Fatalf("sin idToken super-admin: %s", b)
+		}
 	}
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug, nil)
 	req.Header.Set("Authorization", "Bearer "+superTok)

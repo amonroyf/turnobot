@@ -817,8 +817,11 @@ cd backend && go build ./...
 # Frontend build
 cd frontend && npm run build
 
-# E2E tests (requiere backend + frontend corriendo)
-cd frontend && npx playwright test horarios.spec.js
+# E2E tests: GCP por defecto (requiere ADC; no levanta servidores locales)
+cd frontend && npm run test:e2e:gcp:safe
+
+# E2E local con emulador (requiere backend + frontend corriendo)
+cd frontend && npm run test:e2e:local -- horarios.spec.js
 ```
 
 ### Debug

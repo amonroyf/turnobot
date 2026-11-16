@@ -1,18 +1,19 @@
-# Entornos de QA: local/emulador vs GCP de práctica
+# Entornos de QA: GCP de práctica vs local/emulador
 
-> Turnobot tiene dos formas de correr E2E. Elegí una por corrida; no mezcles
+> **GCP es el modo por defecto.** El emulador queda como opción explícita para
+> PRs, TDD y fallback cuando no hay ADC. Elegí un modo por corrida; no mezcles
 > variables del emulador con el proyecto real.
 
 ## 1. Resumen
 
 | Entorno | `E2E_TARGET` | Firestore/Auth | Web/API | Specs que corren |
 |---|---|---|---|---|
-| Local/CI | `local` (default) | Emulador con `--project demo-test` | Vite `:5173` + Go `:8080` | `booking-pom`, `horarios` |
-| GCP práctica | `gcp` | Proyecto real `stalwart-coast-439901-d0` | Firebase Hosting + Cloud Run | Toda la suite |
+| GCP práctica (default) | `gcp` | Proyecto real `stalwart-coast-439901-d0` | Firebase Hosting + Cloud Run | Toda la suite |
+| Local/CI | `local` (explícito) | Emulador con `--project demo-test` | Vite `:5173` + Go `:8080` | `booking-pom`, `horarios` |
 
 El modo local es rápido y gratis, pero hoy el frontend apunta a Firebase real
 mientras el Admin SDK apunta al emulador. Por eso los flujos que exigen login
-se reservan para el modo GCP.
+se reservan para el modo GCP. El modo local se usa en los PRs y en TDD.
 
 El modo GCP usa el proyecto personal de práctica. **No es un ambiente
 productivo con clientes reales**, pero igual escribe datos: seed de
@@ -36,8 +37,8 @@ En otra terminal:
 
 ```bash
 cd frontend
-npm run test        # unitarios
-npx playwright test # booking-pom + horarios
+npm run test                 # unitarios
+npm run test:e2e:local       # booking-pom + horarios
 ```
 
 El Admin SDK, el backend y los tokens del emulador de Auth deben usar el mismo
@@ -90,11 +91,11 @@ npm run test:e2e:gcp:safe
 
 Corre `booking-pom`, `booking`, `multi-tenant` y `demo-reserva`.
 
-### Suite completa contra GCP
+### Suite completa contra GCP (default)
 
 ```bash
 cd frontend
-npm run test:e2e:gcp
+npm run test:e2e        # alias de test:e2e:gcp
 ```
 
 Incluye admin, CRM, reglas de negocio, visual y el flujo real. `smoke-prod`
@@ -158,17 +159,39 @@ teléfono.
 ### Atajos
 
 ```bash
+./scripts/run-qa.sh             # GCP: Go + Vitest + E2E
+./scripts/run-qa.sh --local     # emulador: Go + Vitest + E2E local
 ./scripts/run-qa-gcp.sh --safe
 ./scripts/run-qa-gcp.sh
 ./scripts/run-qa-gcp.sh --smoke
 ```
 
+### Integración Go contra GCP
+
+La suite Go solo escribe en GCP si definís un proyecto dedicado y confirmás
+las escrituras. La limpieza final borra negocios `test-*`, sus reservas/clientes
+y los usuarios `@test.com`:
+
+```bash
+cd backend
+export GCP_TEST_PROJECT_ID=mi-proyecto-de-pruebas
+export GCP_TEST_ALLOW_WRITES=1
+export GCP_TEST_FIREBASE_API_KEY=...   # API key web del proyecto
+go test ./... -count=1
+```
+
+Sin `GCP_TEST_PROJECT_ID`, la integración Go se omite y solo corren las
+unitarias. No uses este modo contra producción.
+
 ## 5. Guardias de seguridad
 
-- `E2E_TARGET=gcp` exige `E2E_ALLOW_GCP=1`; los npm scripts ya lo ponen.
+- `E2E_TARGET` vale `gcp` por defecto; el modo GCP exige `E2E_ALLOW_GCP=1`.
 - En GCP no deben estar definidas `FIRESTORE_EMULATOR_HOST` ni
   `FIREBASE_AUTH_EMULATOR_HOST`. La suite aborta si las encuentra.
-- En local, la suite aborta si faltan esas variables del emulador.
+- En local (`E2E_TARGET=local`), la suite aborta si faltan esas variables del
+  emulador.
+- La integración Go contra GCP exige `GCP_TEST_PROJECT_ID` **y**
+  `GCP_TEST_ALLOW_WRITES=1`; además rechaza project IDs que contengan "prod".
 - `smoke-prod.spec.js` exige `SMOKE_PROD=1` además de GCP.
 - `admin.spec.js` ya no borra `mi-negocio` al probar slug duplicado; solo limpia
   su negocio temporal `e2e-dupe-*`.
@@ -189,9 +212,12 @@ pisar campos que no administra la suite.
 
 ## 7. CI
 
-`.github/workflows/qa.yml` sigue usando **emulador** y variables dummy: no
-necesita secretos ni ADC. El modo GCP es para tu máquina o un nightly manual,
-no para cada pull request.
+- `.github/workflows/qa.yml` (push/PR) usa **emulador** y variables dummy:
+  fuerza `E2E_TARGET=local`, no necesita secretos ni ADC.
+- `.github/workflows/qa-gcp.yml` es **manual** (`workflow_dispatch`) y corre
+  E2E, Newman o la integración Go contra GCP con Workload Identity Federation.
+- El modo GCP no corre en cada pull request: escribe datos reales y es más
+  lento.
 
 ## 8. Troubleshooting
 
@@ -199,7 +225,9 @@ no para cada pull request.
 |---|---|---|
 | `Falta autenticación para el Admin SDK` | No hay ADC | `gcloud auth application-default login` |
 | `Modo GCP con variables de emulador activas` | La terminal quedó con exports viejos | `unset FIRESTORE_EMULATOR_HOST FIREBASE_AUTH_EMULATOR_HOST` |
-| `Modo local sin emulador` | Faltan exports | Exportá ambos hosts o usá `E2E_TARGET=gcp` |
+| `Modo local sin emulador` | Faltan exports | Exportá ambos hosts o quitá `E2E_TARGET=local` |
+| `Modo GCP bloqueado` | Falta `E2E_ALLOW_GCP=1` | Usá `npm run test:e2e` o `npm run test:e2e:gcp` |
+| `GCP_TEST_PROJECT_ID no definido` | La integración Go está en modo unitario | Definí el proyecto y `GCP_TEST_ALLOW_WRITES=1` |
 | `INVALID_LOGIN_CREDENTIALS` al confirmar | El cliente E2E no existe | `npm run test:e2e:seed` |
 | `INVALID_LOGIN_CREDENTIALS` en local | Emulador Project ID distinto de `demo-test` | `GCP_PROJECT_ID=demo-test` y mismo `--project` |
 | `ID token has invalid 'aud'` | Project ID del backend/Auth no es `demo-test` | Exportá `demo-test`, no el ID de GCP |

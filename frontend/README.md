@@ -29,11 +29,15 @@ Despliegue a Firebase Hosting desde la raíz: `ENV_FILE=... ./deploy.sh only-fro
 
 ## Tests E2E (Playwright)
 
+GCP es el modo por defecto; requiere `gcloud auth application-default login`.
+
 ```bash
 cd frontend
-npx playwright test                    # suite completa (requiere backend en :8080)
-npx playwright test e2e-tests/horarios.spec.js
-API_BASE=https://turnobot-850305350371.us-central1.run.app npx playwright test e2e-tests/reglas-negocio.spec.js
+npm run test:e2e                       # GCP, suite completa
+npm run test:e2e:gcp:safe              # GCP, subconjunto de bajo riesgo
+npm run test:e2e:local                 # emulador (PRs/TDD)
+npx playwright test e2e-tests/horarios.spec.js   # GCP
+E2E_TARGET=local npx playwright test e2e-tests/booking-pom.spec.js
 ```
 
 Los specs `horarios` y `reglas-negocio` validan el motor de turnos por empleado y las reglas de negocio contra el backend.
@@ -48,7 +52,7 @@ npm run test:e2e:clean                          # dry-run: lista lo borrable
 npm run test:e2e:clean -- --yes                 # borra datos e2e
 npm run test:e2e:clean -- --yes --include-legacy  # + basura histórica (revisar lista antes)
 E2E_SLUG_PREFIX=qa npm run test:e2e:clean -- --yes  # otro prefijo
-PLAYWRIGHT_BASE_URL=http://localhost:5174 npx playwright test  # otro front
+E2E_TARGET=local PLAYWRIGHT_BASE_URL=http://localhost:5174 npx playwright test  # otro front local
 ```
 
 Los usuarios de Auth de pruebas se borran por test (`limpiarEntornoReal`); el
@@ -65,10 +69,10 @@ visuales no intencionales (botones que desaparecen, layouts rotos, textos).
 firebase emulators:start --only firestore   # :8090
 PORT=8080 GCP_PROJECT_ID=<tu-proyecto> FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 go run .  # backend/
 npm run dev                                  # frontend/ :5173
-FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 npx playwright test visual.spec.js
+E2E_TARGET=local FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 npx playwright test visual.spec.js
 
-# Aceptar un cambio visual intencional:
-npx playwright test visual.spec.js --update-snapshots
+# Aceptar un cambio visual intencional (GCP por defecto):
+npm run test:e2e:gcp -- visual.spec.js --update-snapshots
 ```
 
 Las zonas con fecha/hora se enmascaran (`mask`) para que el test no falle a

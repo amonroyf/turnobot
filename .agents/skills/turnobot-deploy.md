@@ -59,11 +59,14 @@ sleep 4
 curl -s http://localhost:8080/health  # Debe decir "Turnobot API REST OK"
 curl -s -o /dev/null -w "%{http_code}" http://localhost:5173  # Debe ser 200
 
-# 3. Correr tests ( booking.spec.js es el más relevante para cambios de calendario/reservas )
-cd frontend && npx playwright test e2e-tests/booking.spec.js --reporter=line
+# 3. Correr tests locales ( booking.spec.js es el más relevante para cambios de calendario/reservas )
+cd frontend && E2E_TARGET=local npx playwright test e2e-tests/booking.spec.js --reporter=line
 
-# 4. O correr todos (tarda ~2-3 min)
-cd frontend && npx playwright test --reporter=line
+# 4. O correr todos en local (tarda ~2-3 min)
+cd frontend && npm run test:e2e:local -- --reporter=line
+
+# 4b. Contra GCP (requiere ADC y no usa los servidores locales)
+cd frontend && npm run test:e2e:gcp:safe
 
 # 5. Limpiar servidores después
 pkill -f "go run main.go" 2>/dev/null; pkill -f "vite" 2>/dev/null

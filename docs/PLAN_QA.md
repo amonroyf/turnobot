@@ -4,6 +4,12 @@
 > **Meta:** primer empleo como QA Automation Jr. en 3–4 meses, usando Turnobot como proyecto real.
 > **Inicio:** lunes 16 de noviembre de 2026 · **Fin:** domingo 21 de febrero de 2027.
 > **Regla base:** una semana a la vez. No leas el detalle de las semanas futuras hasta que te toque.
+>
+> **Actualización GCP-first:** la suite E2E/API apunta a GCP por defecto
+> (`npm run test:e2e`, `npm run test:e2e:gcp:safe`, `./scripts/run-api-gcp.sh`).
+> El emulador es el modo local explícito (`npm run test:e2e:local`,
+> `./scripts/run-qa.sh --local`) y es el que usan los PRs. Para la integración
+> Go contra GCP hacen falta `GCP_TEST_PROJECT_ID` y `GCP_TEST_ALLOW_WRITES=1`.
 
 ---
 
@@ -44,7 +50,7 @@
 | Unitarios frontend | 5 archivos Vitest | **43 tests pasan** en ~5 s | `cd frontend && npx vitest run` |
 | Unitarios backend | 7 archivos Go | Corren; los de integración se **omiten** sin emulador | `cd backend && go test ./...` |
 | Integración Go | `handlers_test.go` | Requiere emulador Firestore + Auth | ver §9 |
-| E2E | 12 specs, **33 tests GCP / 5 locales** | Local usa emulador; GCP usa el proyecto de práctica con ADC (ver semáforo) | `npx playwright test --list` |
+| E2E | 12 specs, **33 tests GCP / 5 locales** | GCP es el default; local usa emulador y es explícito (ver semáforo) | `npm run test:e2e -- --list` |
 | API | Colección Postman + Newman | Necesita backend + seed + token | ver §9 |
 | Performance | `tests/perf/load.js` | Script listo; **k6 no está instalado** | ver semana 13 |
 | CI | `.github/workflows/qa.yml` | Existe; el job E2E es dudoso (auth real) | revisar semana 11 |
@@ -198,7 +204,7 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 2. Creá `docs/BITACORA.md` con la plantilla de §8.
 3. `cd frontend && npx vitest run` → verificá 43 tests. Abrí `src/fecha.test.js` y marcá en un test dónde está Arrange, Act y Assert.
 4. `cd backend && go test ./... -count=1` → anotá cuántos se omiten y por qué (leé `testFirestoreClient` en `handlers_test.go`).
-5. `cd frontend && npx playwright test --list` → 5 tests en modo local (emulador) o 33 en modo GCP. Clasificá cada spec con el semáforo de §1.2.
+5. `cd frontend && npm run test:e2e -- --list` → 33 tests en GCP; `npm run test:e2e:local -- --list` → 5 en local (emulador). Clasificá cada spec con el semáforo de §1.2.
 6. `npm run test` → deben pasar 43 tests. El bug del script faltante ya se corrigió en `d434434`; mirá el cambio con `git show d434434 -- frontend/package.json` y anotá por qué `run-qa.sh` fallaba.
 7. Leé `frontend/e2e-tests/target.js`, `global-setup.js` y `setup.js`: identificá la guardia que impide mezclar emulador con GCP. **No corras E2E contra GCP todavía**; solo analizalo. El bug #2 ya está mitigado; en la semana 8 vas a probar la guardia.
 8. Leé `docs/QA_GUIDE.md` §1–3 y escribí en la bitácora: pirámide, un ejemplo de cada capa en Turnobot, y qué capa es más cara de mantener.
@@ -409,7 +415,7 @@ Cada bloque de estudio sigue este orden. No lo cambies.
 
 1. **Guardia de seguridad:** revisá `frontend/e2e-tests/target.js`. Ya valida emulador vs GCP; probá correr sin variables y con variables mezcladas: debe fallar rápido, no escribir nada. Si encontrás un caso no cubierto, agregalo.
 2. Levantá emulador + backend + frontend + seed.
-3. Corré solo los specs 🟢 locales: `npx playwright test e2e-tests/booking-pom.spec.js e2e-tests/horarios.spec.js`.
+3. Corré solo los specs 🟢 locales: `npm run test:e2e:local:safe` (o `E2E_TARGET=local npx playwright test e2e-tests/booking-pom.spec.js e2e-tests/horarios.spec.js`).
 4. Leé `e2e-tests/pages/BookingPage.js` y explicá cada locator: ¿por qué texto, por qué placeholder, por qué role?
 5. Escribí `e2e-tests/mi-primer.spec.js` desde cero: abrir `/shop/mi-negocio`, verificar servicio, seleccionar, verificar el siguiente paso. Sin `waitForTimeout`; usá role/placeholder.
 6. Forzá un fallo (esperá un texto que no existe), abrí el trace con `npx playwright show-trace` y anotá qué viste.
@@ -742,12 +748,13 @@ npx --yes newman run tests/api/turnobot.postman_collection.json \
 
 ```bash
 cd frontend
+export E2E_TARGET=local
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8090
 export FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9098
 export PLAYWRIGHT_BASE_URL=http://localhost:5173
 
-npx playwright test e2e-tests/booking-pom.spec.js
-npx playwright test e2e-tests/horarios.spec.js --trace on
+npm run test:e2e:local -- e2e-tests/booking-pom.spec.js
+npm run test:e2e:local -- e2e-tests/horarios.spec.js --trace on
 npx playwright show-trace test-results/.../trace.zip
 ```
 

@@ -16,7 +16,7 @@
 
 - **Unitarios (base)**: lógica pura y handlers aislados. Rápidos, baratos. Viven en `backend/*_test.go` y `frontend/src/*.test.js`.
 - **API/Contrato**: validan el contrato HTTP (status, JSON, campos). Viven en `tests/api/`.
-- **E2E**: flujos completos de usuario en navegador. Viven en `frontend/e2e-tests/`.
+- **E2E**: flujos completos de usuario en navegador. Viven en `frontend/e2e-tests/` y por defecto apuntan a GCP; el emulador es el modo local explícito.
 - **No funcionales**: performance (k6), seguridad (OWASP ZAP), accesibilidad (axe).
 
 **Regla de oro**: si un bug se puede detectar en un test unitario, no lo subas a E2E.
@@ -39,7 +39,14 @@ turnobot/
 ## 3. Cómo ejecutar cada capa
 
 ### 3.1 Backend (Go)
-Requiere emulador Firestore/Auth levantado (ver README principal).
+
+**Unitarias (siempre locales):** corren sin emulador y omiten la integración.
+```bash
+cd backend
+go test ./... -count=1
+```
+
+**Integración local:** requiere emulador Firestore/Auth levantado (ver README principal).
 ```bash
 cd backend
 export FIRESTORE_EMULATOR_HOST=127.0.0.1:8090
@@ -58,14 +65,25 @@ npm run test -- --watch   # modo watch (TDD)
 ```
 
 ### 3.3 E2E (Playwright)
+
+GCP es el modo por defecto. Requiere ADC (`gcloud auth application-default login`).
 ```bash
 cd frontend
-npx playwright test                 # toda la suite
-npx playwright test e2e-tests/horarios.spec.js
+npm run test:e2e                    # GCP, suite completa
+npm run test:e2e:gcp:safe           # GCP, subconjunto de bajo riesgo
+npm run test:e2e:local              # emulador (PRs/TDD)
 npx playwright show-report          # reporte HTML
 ```
 
 ### 3.4 API (Newman)
+
+**GCP (default):** siembra, obtiene un token real y corre la colección contra el
+backend desplegado.
+```bash
+./scripts/run-api-gcp.sh
+```
+
+**Local con emulador:**
 ```bash
 # 1. Obtener token del emulador
 cd tests/api
@@ -84,7 +102,8 @@ k6 run tests/perf/load.js -e BASE_URL=http://localhost:8080 -e SLUG=mi-negocio
 
 ### 3.6 Todo de una vez
 ```bash
-./scripts/run-qa.sh
+./scripts/run-qa.sh             # GCP (default)
+./scripts/run-qa.sh --local     # emulador
 ```
 
 ## 4. Cómo agregar un test nuevo (tutorial)
@@ -133,12 +152,16 @@ func TestEjemplo(t *testing.T) {
 
 ## 5. CI/CD (GitHub Actions)
 
-El workflow `.github/workflows/qa.yml` ejecuta en cada push/PR a `main`:
+El workflow `.github/workflows/qa.yml` ejecuta en cada push/PR a `main` con
+**emulador local** (sin secretos):
 1. **backend**: tests Go + cobertura.
 2. **frontend-unit**: Vitest.
 3. **api**: Newman (requiere backend + emulador).
-4. **e2e**: Playwright + reporte Allure.
+4. **e2e**: Playwright local (`E2E_TARGET=local`) + reporte Allure.
 5. **perf**: k6 (solo manual, `workflow_dispatch`).
+
+`.github/workflows/qa-gcp.yml` corre a demanda contra GCP: E2E seguro/completo,
+Newman o la integración Go, con WIF y `GCP_TEST_ALLOW_WRITES=1`.
 
 Los reportes (cobertura, Allure) se suben como artifacts descargables desde la pestaña "Actions".
 
@@ -167,7 +190,8 @@ Para medir cobertura frontend: `npx vitest run --coverage` (requiere `@vitest/co
 
 ## 8. Troubleshooting
 
-- **"sin emulador"**: asegúrate de que `FIRESTORE_EMULATOR_HOST=127.0.0.1:8090` esté exportado y el emulador corriendo.
+- **"sin emulador"**: para el modo local, asegúrate de que `FIRESTORE_EMULATOR_HOST=127.0.0.1:8090` esté exportado y el emulador corriendo. Para GCP, usá ADC y quitá esas variables.
+- **"Modo GCP bloqueado"**: falta `E2E_ALLOW_GCP=1`; los scripts `npm run test:e2e*` ya lo exportan.
 - **Tests Go fallan por auth**: verifica `FIREBASE_AUTH_EMULATOR_HOST` y que el proyecto sea `stalwart-coast-439901-d0` (o `demo-test` consistente).
 - **Playwright no encuentra navegador**: `npx playwright install chromium`.
 - **Newman 401**: el token expiró; vuelve a ejecutar `get-token.mjs`.

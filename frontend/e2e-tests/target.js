@@ -3,12 +3,14 @@ import { join } from 'node:path';
 
 // Entorno de ejecución de Playwright.
 //
-// E2E_TARGET=local (default): emulador Firestore/Auth + backend/frontend locales.
-// E2E_TARGET=gcp: proyecto real de práctica (stalwart-coast-439901-d0) y
-// servicios desplegados en Firebase Hosting / Cloud Run.
+// E2E_TARGET=gcp (default): proyecto real de práctica
+// (stalwart-coast-439901-d0) y servicios desplegados en Firebase Hosting /
+// Cloud Run. Es el modo principal de la suite.
+// E2E_TARGET=local: emulador Firestore/Auth + backend/frontend locales.
+// Se usa para PRs, TDD y como fallback cuando no hay ADC.
 //
 // El modo GCP exige E2E_ALLOW_GCP=1 para que no se active por accidente.
-export const TARGET = process.env.E2E_TARGET || 'local';
+export const TARGET = process.env.E2E_TARGET || 'gcp';
 export const IS_GCP = TARGET === 'gcp';
 
 // El emulador se inicia con `--project demo-test`; el Admin SDK, el backend y
@@ -72,7 +74,7 @@ export function assertTargetReady() {
   if (faltantes.length) {
     throw new Error(
       `Modo local sin emulador: faltan ${faltantes.join(', ')}. ` +
-        'Exportá las variables del emulador o usá E2E_TARGET=gcp con E2E_ALLOW_GCP=1.',
+        'Exportá las variables del emulador o quitá E2E_TARGET=local para usar GCP.',
     );
   }
 }

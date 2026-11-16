@@ -18,6 +18,10 @@
 
 set -euo pipefail
 
+# El harness siempre usa el emulador local; el modo GCP es explícito.
+export E2E_TARGET=local
+unset E2E_ALLOW_GCP
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EMU_PORT="${EMU_PORT:-8090}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"

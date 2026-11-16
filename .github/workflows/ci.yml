@@ -119,7 +119,7 @@ jobs:
           done
       - name: Tests visuales
         working-directory: frontend
-        run: FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 npx playwright test visual.spec.js
+        run: E2E_TARGET=local FIRESTORE_EMULATOR_HOST=127.0.0.1:8090 npx playwright test visual.spec.js
       - name: Subir reporte si falla
         if: failure()
         uses: actions/upload-artifact@v4
