@@ -33,11 +33,25 @@ func testUsaGCP() bool {
 		os.Getenv("GCP_TEST_PROJECT_ID") != ""
 }
 
+// testProjectID devuelve el project ID con el que se conecta el cliente.
+//
+// En modo GCP es el proyecto dedicado de pruebas (GCP_TEST_PROJECT_ID).
+// En modo emulador debe ser EXACTAMENTE el mismo con el que se arrancó el
+// emulador (`--project demo-test`), porque el ID token de Auth lleva el
+// `aud` con ese project ID y VerifyIDToken lo rechaza si no coincide.
+//
+// Antes devolvía "test-turnobot" hardcodeado, pero todo el resto del repo
+// (seed.go, scripts/run-qa.sh, e2e-tests/target.js, la documentación) usa
+// "demo-test". Con el emulador arrancado según la documentación, los tests
+// fallaban con 401 "invalid 'aud' (audience) claim".
 func testProjectID() string {
 	if testUsaGCP() {
 		return os.Getenv("GCP_TEST_PROJECT_ID")
 	}
-	return "test-turnobot"
+	if id := os.Getenv("QA_EMULATOR_PROJECT_ID"); id != "" {
+		return id
+	}
+	return "demo-test"
 }
 
 func testExigirEscrituraGCP(t *testing.T) {

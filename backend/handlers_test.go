@@ -78,17 +78,22 @@ func seedTienda(t *testing.T, ctx context.Context, slug string) {
 	}
 }
 
+// postBook reserva una cita contra el handler real.
+//
+// Pasa por el harness (ver harness_test.go): además del status y el body,
+// graba el delta de Firestore de la llamada y deja el reporte en
+// backend/test-reports/. Es el helper que usan casi todos los tests de
+// reserva: al pasar por acá, cada caso deja evidencia de qué escribió.
 func postBook(t *testing.T, slug string, payload map[string]string) (int, map[string]interface{}) {
 	t.Helper()
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	authClienteTest(t, req)
-	rec := httptest.NewRecorder()
-	bookHandler(rec, req, slug)
-	var out map[string]interface{}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	return rec.Code, out
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		bookHandler(w, r, slug)
+	}
+	return interceptarCodigo(t, slug, handler, req)
 }
 
 // testAuthClient inicializa el cliente Firebase Auth contra el emulador
@@ -372,12 +377,16 @@ func TestBookConcurrenteMismoSlot(t *testing.T) {
 	}
 }
 
+// deleteCita cancela una cita. Pasa por el harness: deja el delta de
+// Firestore (la reserva y sus contadores) en el reporte del test.
 func deleteCita(t *testing.T, slug, id string) int {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/b/"+slug+"/citas/"+id, nil)
-	rec := httptest.NewRecorder()
-	cancelCitaHandler(rec, req, slug, id)
-	return rec.Code
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		cancelCitaHandler(w, r, slug, id)
+	}
+	code, _ := interceptarCodigo(t, slug, handler, req)
+	return code
 }
 
 // deleteCitaComoCliente cancela con el header del cliente (flujo real de
@@ -389,9 +398,11 @@ func deleteCitaComoCliente(t *testing.T, slug, id, phone string) int {
 	// La cita se creó con el UID del test (postBook): el token manda.
 	email := strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "@test.com"
 	req.Header.Set("Authorization", "Bearer "+tokenClienteTest(t, email))
-	rec := httptest.NewRecorder()
-	cancelCitaHandler(rec, req, slug, id)
-	return rec.Code
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		cancelCitaHandler(w, r, slug, id)
+	}
+	code, _ := interceptarCodigo(t, slug, handler, req)
+	return code
 }
 
 func TestCancelIdempotenteYLiberaSlot(t *testing.T) {
@@ -3136,15 +3147,18 @@ func TestMoverSlotOcupadoYLibre(t *testing.T) {
 
 // bookRaw reserva con un cliente nuevo por llamado (login obligatorio; el
 // usuario único evita el tope diario por UID entre llamadas) y devuelve el código.
+// Pasa por el harness para dejar el delta de Firestore de la reserva.
 func bookRaw(t *testing.T, slug string, payload map[string]interface{}) int {
 	t.Helper()
 	body, _ := json.Marshal(payload)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/book", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	authClienteUnico(t, req)
-	rec := httptest.NewRecorder()
-	bookHandler(rec, req, slug)
-	return rec.Code
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		bookHandler(w, r, slug)
+	}
+	code, _ := interceptarCodigo(t, slug, handler, req)
+	return code
 }
 
 // seedInstructor crea un recurso tipo clase con instructor emp1.

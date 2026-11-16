@@ -24,6 +24,11 @@ unset E2E_ALLOW_GCP
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EMU_PORT="${EMU_PORT:-8090}"
+AUTH_PORT="${AUTH_PORT:-9098}"
+# El project ID del emulador DEBE coincidir con el que usan el backend y los
+# tests (GCP_PROJECT_ID / QA_EMULATOR_PROJECT_ID). Si no, el ID token de Auth
+# llega con un 'aud' distinto y VerifyIDToken responde 401.
+EMU_PROJECT="${EMU_PROJECT:-demo-test}"
 BACKEND_PORT="${BACKEND_PORT:-8080}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 EMU_LOG="$ROOT_DIR/.harness-emulator.log"
@@ -40,7 +45,12 @@ cleanup() {
       kill "$pid" 2>/dev/null || true
     fi
   done
-  rm -f "$ROOT_DIR/firebase.emu.json"
+  # NO borrar firebase.emu.json: está versionado en git. El harness reescribe
+  # su contenido con el puerto del emulador, pero el archivo debe sobrevivir
+  # a la corrida. Solo se restaura si el harness lo modificó.
+  if [[ -f "$ROOT_DIR/firebase.emu.json.orig" ]]; then
+    mv -f "$ROOT_DIR/firebase.emu.json.orig" "$ROOT_DIR/firebase.emu.json"
+  fi
 }
 trap cleanup EXIT
 
@@ -82,8 +92,14 @@ kill_port "$FRONTEND_PORT"
 # 2. Emulador Firestore en segundo plano con las rules reales del repo, para
 # que reglas-negocio.spec valide `firestore.rules` y no reglas abiertas.
 echo "📦 Iniciando Firestore Emulator (puerto $EMU_PORT)..."
-printf '{"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"},"emulators":{"firestore":{"port":%s},"ui":{"enabled":false}}}' "$EMU_PORT" > "$ROOT_DIR/firebase.emu.json"
-(npx firebase emulators:start --only firestore --project test-turnobot --config firebase.emu.json > "$EMU_LOG" 2>&1 &) 
+# firebase.emu.json está versionado: se guarda una copia y se restaura al
+# terminar (ver cleanup). Antes el harness lo BORRABA y dejaba el repo sucio.
+if [[ -f "$ROOT_DIR/firebase.emu.json" ]]; then
+  cp -f "$ROOT_DIR/firebase.emu.json" "$ROOT_DIR/firebase.emu.json.orig"
+fi
+printf '{"firestore":{"rules":"firestore.rules","indexes":"firestore.indexes.json"},"emulators":{"firestore":{"port":%s},"auth":{"port":%s},"ui":{"enabled":false}}}' \
+  "$EMU_PORT" "$AUTH_PORT" > "$ROOT_DIR/firebase.emu.json"
+(npx firebase emulators:start --only firestore,auth --project "$EMU_PROJECT" --config firebase.emu.json > "$EMU_LOG" 2>&1 &)
 EMU_PID=$!
 for _ in $(seq 1 30); do
   if grep -q "All emulators ready" "$EMU_LOG" 2>/dev/null; then
@@ -95,16 +111,25 @@ grep -q "All emulators ready" "$EMU_LOG" || { echo "✗ Emulador no arrancó. Ve
 echo "✅ Emulador listo."
 
 export FIRESTORE_EMULATOR_HOST="127.0.0.1:${EMU_PORT}"
-export GCP_PROJECT_ID="test-turnobot"
+export FIREBASE_AUTH_EMULATOR_HOST="127.0.0.1:${AUTH_PORT}"
+export GCP_PROJECT_ID="$EMU_PROJECT"
+export QA_EMULATOR_PROJECT_ID="$EMU_PROJECT"
 
 # 3. Backend Go: build + tests unitarios/concurrencia contra emulador
 echo "🐹 Ejecutando Backend Tests (Go)..."
-(cd "$ROOT_DIR/backend" && go build ./... && FIRESTORE_EMULATOR_HOST="127.0.0.1:${EMU_PORT}" go test ./... -count=1)
+(cd "$ROOT_DIR/backend" && go build ./... && \
+  FIRESTORE_EMULATOR_HOST="$FIRESTORE_EMULATOR_HOST" \
+  FIREBASE_AUTH_EMULATOR_HOST="$FIREBASE_AUTH_EMULATOR_HOST" \
+  GCP_PROJECT_ID="$GCP_PROJECT_ID" \
+  go test ./... -count=1)
 echo "✅ Backend tests pasaron."
 
 # 4. Backend temporal para E2E
 echo "🔌 Iniciando servidor Go local (puerto $BACKEND_PORT)..."
-(cd "$ROOT_DIR/backend" && PORT="$BACKEND_PORT" GCP_PROJECT_ID="test-turnobot" FIRESTORE_EMULATOR_HOST="127.0.0.1:${EMU_PORT}" nohup go run . > "$BACKEND_LOG" 2>&1 &) 
+(cd "$ROOT_DIR/backend" && PORT="$BACKEND_PORT" GCP_PROJECT_ID="$GCP_PROJECT_ID" \
+  FIRESTORE_EMULATOR_HOST="$FIRESTORE_EMULATOR_HOST" \
+  FIREBASE_AUTH_EMULATOR_HOST="$FIREBASE_AUTH_EMULATOR_HOST" \
+  nohup go run . > "$BACKEND_LOG" 2>&1 &)
 BACKEND_PID=$!
 wait_http "http://localhost:${BACKEND_PORT}/health" 24 || { echo "✗ Backend no respondió. Ver $BACKEND_LOG"; exit 1; }
 echo "✅ Backend E2E listo."

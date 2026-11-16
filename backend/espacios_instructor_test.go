@@ -33,16 +33,17 @@ func setupEspacioTest(t *testing.T, ctx context.Context, base, duenoEmail string
 }
 
 // postRecursoTest crea un espacio vía API. Retorna código y cuerpo.
+// Pasa por el harness: deja el delta de Firestore (subcolección recursos)
+// en el reporte del test.
 func postRecursoTest(t *testing.T, slug, duenoTok, payload string) (int, map[string]interface{}) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/b/"+slug+"/recursos", bytes.NewReader([]byte(payload)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+duenoTok)
-	rec := httptest.NewRecorder()
-	apiRouter(rec, req)
-	var out map[string]interface{}
-	_ = json.Unmarshal(rec.Body.Bytes(), &out)
-	return rec.Code, out
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		apiRouter(w, r)
+	}
+	return interceptarCodigo(t, slug, handler, req)
 }
 
 // slotsListaTest consulta slots y retorna la lista plana (array u objeto).

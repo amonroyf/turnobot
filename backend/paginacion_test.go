@@ -8,14 +8,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
-
-	"turnobot-test-learn/sandbox"
 )
 
 // postBookComo reserva como un cliente explícito (mismo UID en varias).
+// Pasa por el harness central (ver harness_test.go): elelta de Firestore,
+// reporte JSON local y, si el TMS está configurado, despacho del reporte.
 func postBookComo(t *testing.T, slug, email string, payload map[string]interface{}) (int, map[string]interface{}) {
 	t.Helper()
 	body, _ := json.Marshal(payload)
@@ -29,21 +28,11 @@ func postBookComo(t *testing.T, slug, email string, payload map[string]interface
 	}
 
 	// 2. Interceptar la ejecución y capturar snapshots de Firestore antes/después
-	ctx := context.Background()
-	colecciones := []string{"reservas", "clientes"}
-	report := sandbox.Intercept(ctx, t, handler, req, firestoreClient, colecciones, "negocio_id", slug)
+	report := interceptar(t, slug, handler, req)
 
-	// 3. Despachar asíncronamente el reporte al backend del TMS
-	go func() {
-		url := os.Getenv("TMS_BACKEND_URL")
-		if url == "" {
-			// Asume que el backend del TMS corre en el puerto 8080
-			url = "http://localhost:8080/api/reports"
-		}
-		data, _ := json.Marshal(report)
-		client := &http.Client{Timeout: 3 * time.Second}
-		_, _ = client.Post(url, "application/json", bytes.NewBuffer(data))
-	}()
+	// 3. Despachar asíncronamente el reporte al backend del TMS (opcional:
+	//    sin TMS_BACKEND_URL no se envía nada).
+	despacharReporteTMS(t, report)
 
 	// 4. Retornar los valores originales interceptados para que el test continúe
 	return report.Response.StatusCode, report.Response.Body
