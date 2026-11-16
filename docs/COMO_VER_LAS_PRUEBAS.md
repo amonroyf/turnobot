@@ -230,10 +230,41 @@ Abre `http://localhost:4173` con:
 | `201` + `reservas/…: added` + `clientes/…: added` | El handler escribió la reserva **y** el cliente. Correcto. |
 | `400` + **delta vacío** | El handler rechazó y **no escribió nada**. Correcto. |
 | `201` + **delta vacío** | ⚠️ **Sospechoso.** Un 201 que no escribió nada. Acá hay un bug o un honeypot. |
-| `409` + `reservas/…: added` | ⚠️ **Bug.** Rechazó la reserva pero **igual la escribió**. |
+| `4xx` + **delta con docs** | ⚠️ **Candidato a bug**, NO prueba. Hay que verificar (ver la nota de concurrencia abajo). |
 
-Ese último caso es exactamente el tipo de defecto que el harness detecta y un
-assert de status code no.
+### ⚠️ La trampa de los tests concurrentes (la descubrí hoy)
+
+El visor y el harness marcan 7 casos de `409` **con** delta en
+`TestBookConcurrenteMismoSlot`. **No son bugs.** Lo verifiqué comparando los IDs:
+
+```
+TestBookConcurrenteMismoSlot.json    http=201  reserva=['lEsPNebOh0onvI8iiFxw']
+TestBookConcurrenteMismoSlot_2.json  http=409  reserva=['lEsPNebOh0onvI8iiFxw']   ← misma
+TestBookConcurrenteMismoSlot_3.json  http=409  reserva=['lEsPNebOh0onvI8iiFxw']   ← misma
+...
+```
+
+**Los 8 reportes muestran la MISMA reserva: la del ganador.** Los handlers que
+devolvieron 409 no escribieron nada.
+
+**Por qué:** el test lanza 8 goroutines. Cada una toma el snapshot "antes" al
+mismo tiempo, **antes** de que ninguna ejecute el handler. Cuando la que gana
+escribe, todas las demás ven ese cambio en su snapshot "después".
+
+> El delta mide **"qué cambió en la base durante mi ventana"**, no
+> **"qué escribió mi llamada"**. Solo coinciden cuando el test es secuencial.
+
+**Cómo se verifica un candidato a bug:**
+
+1. Mirá el status HTTP y el delta.
+2. Buscá **otros reportes del mismo test** que tengan los mismos IDs de documento.
+3. Si el `409` y el `201` muestran la **misma** reserva → el 409 no escribió nada
+   → falso positivo.
+4. Si el `409` muestra una reserva **distinta** a la del `201` → ahí sí escribió →
+   **bug de producción**.
+
+El visor te avisa con una banda amarilla cuando un test tiene varias llamadas,
+para que no pierdas tiempo persiguiendo un falso positivo.
 
 ### Ejercicio (el mejor del repo)
 
@@ -246,6 +277,19 @@ assert de status code no.
 responde 201 sin escribir). Pero si aparece otro 201 sin delta que no sea
 honeypot, **es un bug de producción** y ya tenés tu evidencia.
 
+### Ejercicio 2 · el de pensar como QA (el que más rinde)
+
+1. Filtrá por **"con cambios en BD"**.
+2. Buscá los `4xx` **con** delta → salían 7 candidatos.
+3. **No los reportes como bugs.** Verificá comparando los IDs entre reportes.
+4. Anotá en la bitácora: *"el harness marcó 7 candidatos, los 7 eran falsos
+   positivos por concurrencia; la técnica para descartarlos es comparar IDs
+   entre llamadas del mismo test"*.
+
+Eso es **exactamente** el trabajo de un QA: la herramienta te da un candidato,
+vos tenés que descartar los falsos positivos con evidencia. Reportar 7 bugs
+falsos es peor que no reportar nada.
+
 ---
 
 ## 6. Ejercicios de aprendizaje (del más fácil al más difícil)
@@ -257,10 +301,12 @@ honeypot, **es un bug de producción** y ya tenés tu evidencia.
 | 3 | Corré un test con `--debug` y avanzá paso a paso | Inspector | Depuración real |
 | 4 | Abrí una traza y buscá el DOM de un paso | Trace viewer | Qué matchea un locator |
 | 5 | Corré los tests Go y filtrá el visor por "sin cambios en BD" | Visor harness | Evidencia de BD |
-| 6 | Buscá un 409 **con** delta (debería ser imposible) | Visor harness | Encontrar bugs |
+| 6 | Buscá un `4xx` **con** delta y **verificá** si es bug | Visor harness | Descartar falsos positivos |
 | 7 | Cambiá un `expect` a propósito y corré | Los 3 | Leer un error |
 
-El #6 es el que más se parece a un trabajo real de QA.
+El #6 es el que más se parece a un trabajo real de QA. Y tiene trampa: salen's
+7 candidatos que **no** son bugs (ver §5). El ejercicio no es "reportá los
+candidatos" sino **descartarlos con evidencia**.
 
 ---
 

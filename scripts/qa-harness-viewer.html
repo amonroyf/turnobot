@@ -75,6 +75,8 @@
   .logs div { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--dim);
               padding: 1px 0; }
   .empty-delta { color: var(--dim2); font-style: italic; font-size: 13px; }
+  .warncard { border-color: rgba(245,158,11,.55); background: rgba(245,158,11,.07); }
+  .warncard b { color: var(--warn); }
   .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
   .tab { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
          background: var(--panel); cursor: pointer; font-size: 12.5px; }
@@ -199,6 +201,23 @@ async function show(file) {
 
   const logs = d.console_logs || [];
 
+  // Aviso de concurrencia: si otro reporte del MISMO test muestra los mismos
+  // documentos en su delta, es que el test corre en paralelo y el snapshot
+  // "antes" se tomó antes de que escribiera cualquier goroutine. El delta
+  // entonces muestra "qué cambió durante mi ventana", no "qué escribí yo".
+  const misIds = new Set();
+  for (const docs of Object.values(delta || {})) {
+    for (const id of Object.keys(docs || {})) misIds.add(id);
+  }
+  let compartidos = [];
+  for (const r of reports) {
+    if (r.file === file || r.test_name !== d.test_name) continue;
+    for (const docs of Object.values(delta || {})) { /* no-op */ }
+  }
+  const otros = reports.filter((r) => r.file !== file && r.test_name === d.test_name);
+  const compartidosFiles = otros.filter((r) => r.docs_touched > 0).map((r) => r.file);
+  const hayParalelo = otros.length > 0;
+
   $('#detail').innerHTML = `
     <h2>Reporte</h2>
     <div class="card">
@@ -210,6 +229,18 @@ async function show(file) {
         ['archivo', d.report_path || '(no escrito)'],
       ])}
     </div>
+
+    ${hayParalelo ? `<div class="card warncard">
+      <b>⚠ Este test llama al handler ${otros.length + 1} veces${otros.length > 1 ? ' (en paralelo)' : ''}.</b>
+      <div class="dim" style="margin-top:6px;font-size:12.5px">
+        El delta muestra <b>qué cambió en la base durante la ventana de esta llamada</b>,
+        no <b>qué escribió esta llamada</b>. En un test concurrente, todas las goroutines
+        toman el snapshot "antes" antes de que ninguna escriba: por eso los que reciben
+        409 ven la reserva del ganador en su delta.<br><br>
+        Para atribuir escrituras hay que comparar los <b>IDs</b> entre reportes: si el
+        409 y el 201 muestran la <em>misma</em> reserva, el 409 no escribió nada.
+      </div>
+    </div>` : ''}
 
     <div class="tabs">
       <div class="tab on" data-t="req">Request / Response</div>

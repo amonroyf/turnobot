@@ -73,6 +73,7 @@ func Intercept(
 	t interface {
 		Helper()
 		Name() string
+		Logf(format string, args ...interface{})
 	},
 	handler http.HandlerFunc,
 	req *http.Request,
@@ -178,9 +179,9 @@ func Intercept(
 	report.DBDelta = Delta(before, after)
 
 	if cfg.reportDir != "" {
-		path, err := writeReport(cfg.reportDir, report)
-		if err == nil {
-			report.ReportPath = path
+		// writeReport deja la ruta en report.ReportPath antes de serializar.
+		if _, err := writeReport(cfg.reportDir, &report); err != nil {
+			t.Logf("harness: no se pudo escribir el reporte: %v", err)
 		}
 	}
 
@@ -202,7 +203,11 @@ var reportSeq sync.Mutex
 // otro que espera 400). Cada llamada es una ejecución distinta y merece su
 // propio archivo: si el nombre ya existe, se agrega un sufijo numérico en
 // vez de sobrescribir el reporte anterior.
-func writeReport(dir string, report TestRun) (string, error) {
+//
+// Recibe un puntero porque escribe la ruta en el reporte ANTES de serializar:
+// si se serializara después, el JSON del disco nunca tendría su propio
+// report_path.
+func writeReport(dir string, report *TestRun) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
@@ -216,6 +221,7 @@ func writeReport(dir string, report TestRun) (string, error) {
 		}
 		path = filepath.Join(dir, fmt.Sprintf("%s_%d.json", base, i))
 	}
+	report.ReportPath = path
 	data, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return "", err
