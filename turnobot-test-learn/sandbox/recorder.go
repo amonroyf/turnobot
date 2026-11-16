@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"cloud.google.com/go/firestore"
@@ -186,6 +187,15 @@ func Intercept(
 	return report
 }
 
+// reportSeq numera los reportes del mismo test para que cada llamada al
+// handler tenga su archivo.
+//
+// Un test puede llamar al handler varias veces (incluso en paralelo, como
+// TestBookConcurrenteMismoSlot). Calcular el sufijo con Stat+Write abría una
+// condición de carrera: dos llamadas concurrentes podían ver el mismo nombre
+// libre y pisarse. El mutex + contador lo hacen seguro.
+var reportSeq sync.Mutex
+
 // writeReport guarda el reporte como JSON y devuelve la ruta escrita.
 //
 // Un test puede llamar al handler varias veces (ej. un caso que espera 201 y
@@ -197,6 +207,8 @@ func writeReport(dir string, report TestRun) (string, error) {
 		return "", err
 	}
 	base := SanitizeFileName(report.TestName)
+	reportSeq.Lock()
+	defer reportSeq.Unlock()
 	path := filepath.Join(dir, base+".json")
 	for i := 2; ; i++ {
 		if _, err := os.Stat(path); os.IsNotExist(err) {

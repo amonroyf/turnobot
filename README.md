@@ -8,8 +8,20 @@ Aplicación web para reservas de citas, con sincronización automática a Google
 - `frontend/` — app web en React + Vite + Tailwind (Firebase Hosting). Ver `frontend/README.md`.
 - `firestore.rules` — reglas de seguridad de Firestore.
 - `firestore.indexes.json` — índices compuestos de Firestore.
-- `scripts/` — despliegues, reglas y backup manual de Firestore.
+- `scripts/` — despliegues, reglas, backup manual de Firestore y visor del harness de QA.
 - `deploy.sh` — despliegue completo (backend + frontend).
+
+## Pruebas
+
+| Capa | Comando | Qué hay |
+|------|---------|---------|
+| Unitarios frontend | `cd frontend && npm run test` | 43 tests (Vitest) |
+| Unitarios + integración backend | `cd backend && go test ./... -count=1` | 104 tests (Go). La integración necesita emulador |
+| E2E | `cd frontend && npm run test:e2e` | 33 tests (Playwright) |
+| API | `npx newman run tests/api/turnobot.postman_collection.json ...` | Colección Postman |
+| Performance | `k6 run tests/perf/load.js` | Script k6 (requiere instalar k6) |
+
+📖 **Para ver las pruebas en el navegador** (UI mode, inspector, trace viewer, visor del harness): [docs/COMO_VER_LAS_PRUEBAS.md](docs/COMO_VER_LAS_PRUEBAS.md)
 
 ## URLs de Producción
 

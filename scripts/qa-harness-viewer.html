@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Visor del harness QA — Turnobot</title>
+<style>
+  :root {
+    --bg: #0b1120; --panel: #111a2e; --panel2: #16213a; --line: #24314d;
+    --txt: #e2e8f0; --dim: #94a3b8; --dim2: #64748b;
+    --ok: #22c55e; --bad: #ef4444; --warn: #f59e0b; --info: #3b82f6;
+    --add: #22c55e; --mod: #f59e0b; --rem: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    position: sticky; top: 0; background: var(--bg); z-index: 10;
+  }
+  h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+  h1 span { color: var(--dim2); font-weight: 400; }
+  .grow { flex: 1; }
+  input, select, button {
+    background: var(--panel2); color: var(--txt); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 10px; font: inherit; font-size: 13px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--info); outline-offset: -1px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--info); }
+  .main { display: grid; grid-template-columns: 380px 1fr; height: calc(100vh - 57px); }
+  .list { border-right: 1px solid var(--line); overflow-y: auto; }
+  .row {
+    padding: 9px 14px; border-bottom: 1px solid var(--line); cursor: pointer;
+    display: grid; grid-template-columns: 8px 1fr auto; gap: 9px; align-items: center;
+  }
+  .row:hover { background: var(--panel); }
+  .row.sel { background: var(--panel2); box-shadow: inset 3px 0 0 var(--info); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.pass { background: var(--ok); } .dot.fail { background: var(--warn); }
+  .dot.completed { background: var(--dim2); }
+  .name { font-size: 12.5px; word-break: break-word; }
+  .meta { color: var(--dim2); font-size: 11px; font-family: ui-monospace, monospace; }
+  .code { font-family: ui-monospace, monospace; font-size: 11.5px; padding: 1px 6px;
+          border-radius: 4px; background: var(--panel2); border: 1px solid var(--line); }
+  .code.c2 { color: var(--ok); } .code.c4 { color: var(--warn); } .code.c5 { color: var(--bad); }
+  .detail { overflow-y: auto; padding: 18px 22px; }
+  .empty { color: var(--dim2); padding: 40px; text-align: center; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .8px; color: var(--dim);
+       margin: 22px 0 9px; font-weight: 600; }
+  h2:first-child { margin-top: 0; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+          padding: 12px 14px; margin-bottom: 10px; }
+  pre { margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 12px; white-space: pre-wrap; word-break: break-word; color: var(--txt); }
+  pre.dim { color: var(--dim); }
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: 4px 12px; font-size: 13px; }
+  .kv dt { color: var(--dim2); }
+  .kv dd { margin: 0; font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+  .delta { border-left: 3px solid var(--line); padding-left: 12px; margin: 10px 0; }
+  .delta.added { border-color: var(--add); }
+  .delta.modified { border-color: var(--mod); }
+  .delta.removed { border-color: var(--rem); }
+  .badge { display: inline-block; font-size: 10.5px; padding: 1px 7px; border-radius: 10px;
+           font-weight: 600; letter-spacing: .3px; text-transform: uppercase; }
+  .badge.added { background: rgba(34,197,94,.15); color: var(--add); }
+  .badge.modified { background: rgba(245,158,11,.15); color: var(--mod); }
+  .badge.removed { background: rgba(239,68,68,.15); color: var(--rem); }
+  .coll { color: var(--info); font-weight: 600; font-family: ui-monospace, monospace; font-size: 12px; }
+  .logs { background: #0a0f1c; border: 1px solid var(--line); border-radius: 6px;
+          padding: 10px 12px; max-height: 320px; overflow: auto; }
+  .logs div { font-family: ui-monospace, monospace; font-size: 11.5px; color: var(--dim);
+              padding: 1px 0; }
+  .empty-delta { color: var(--dim2); font-style: italic; font-size: 13px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab { padding: 5px 12px; border-radius: 6px; border: 1px solid var(--line);
+         background: var(--panel); cursor: pointer; font-size: 12.5px; }
+  .tab.on { background: var(--info); border-color: var(--info); color: #fff; }
+  .panel { display: none; } .panel.on { display: block; }
+  .stats { display: flex; gap: 16px; font-size: 12px; color: var(--dim); flex-wrap: wrap; }
+  .stats b { color: var(--txt); font-family: ui-monospace, monospace; }
+  .hint { color: var(--dim2); font-size: 12px; margin-left: 8px; }
+  a { color: var(--info); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Visor del harness QA <span>· Turnobot</span></h1>
+  <input id="q" placeholder="filtrar por nombre o URL…" size="26" />
+  <select id="fstatus">
+    <option value="">todos</option>
+    <option value="pass">pass</option>
+    <option value="fail">fail</option>
+    <option value="completed">completed</option>
+  </select>
+  <select id="fdelta">
+    <option value="">cualquier delta</option>
+    <option value="yes">con cambios en BD</option>
+    <option value="no">sin cambios en BD</option>
+  </select>
+  <div class="grow"></div>
+  <div class="stats" id="stats"></div>
+  <button id="reload">↻ recargar</button>
+</header>
+
+<div class="main">
+  <div class="list" id="list"></div>
+  <div class="detail" id="detail"><div class="empty">← Elegí un reporte</div></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let reports = [];
+let selected = null;
+
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function codeClass(c) {
+  if (c >= 500) return 'c5'; if (c >= 400) return 'c4'; if (c >= 200) return 'c2'; return '';
+}
+
+async function load() {
+  const r = await fetch('/api/reports');
+  reports = await r.json();
+  render();
+}
+
+function filtered() {
+  const q = $('#q').value.toLowerCase();
+  const st = $('#fstatus').value;
+  const dl = $('#fdelta').value;
+  return reports.filter((r) => {
+    if (st && r.status !== st) return false;
+    if (dl === 'yes' && !r.docs_touched) return false;
+    if (dl === 'no' && r.docs_touched) return false;
+    if (q && !(`${r.test_name} ${r.url} ${r.file}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+
+function render() {
+  const list = filtered();
+  const totals = reports.reduce((a, r) => {
+    a.total++; a[r.status] = (a[r.status] || 0) + 1;
+    a.docs += r.docs_touched;
+    if (r.docs_touched) a.conDelta++;
+    return a;
+  }, { total: 0, docs: 0, conDelta: 0 });
+
+  $('#stats').innerHTML =
+    `<span><b>${totals.total}</b> llamadas</span>` +
+    `<span title="La llamada devolvió 2xx">HTTP ok <b style="color:var(--ok)">${totals.pass || 0}</b></span>` +
+    `<span title="La llamada devolvió 4xx/5xx — el handler rechazó">HTTP error <b style="color:var(--warn)">${totals.fail || 0}</b></span>` +
+    `<span>con cambios en BD <b>${totals.conDelta}</b></span>` +
+    `<span>docs tocados <b>${totals.docs}</b></span>` +
+    `<span class="hint">⚠ el color es de la RESPUESTA HTTP, no del test</span>`;
+
+  $('#list').innerHTML = list.length ? list.map((r) => `
+    <div class="row ${selected === r.file ? 'sel' : ''}" data-file="${esc(r.file)}">
+      <div class="dot ${esc(r.status)}"></div>
+      <div>
+        <div class="name">${esc(r.test_name)}</div>
+        <div class="meta">${esc(r.method || '')} ${esc((r.url || '').split('/').slice(-1)[0])} · ${r.duration_ms}ms${r.docs_touched ? ` · ${r.docs_touched} docs` : ''}</div>
+      </div>
+      <div class="code ${codeClass(r.code)}">${esc(r.code ?? '—')}</div>
+    </div>`).join('') : '<div class="empty">Sin resultados</div>';
+  $('#list').querySelectorAll('.row').forEach((el) => {
+    el.onclick = () => show(el.dataset.file);
+  });
+}
+
+function kv(pairs) {
+  return `<dl class="kv">${pairs.map(([k, v]) =>
+    `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`;
+}
+
+async function show(file) {
+  selected = file;
+  render();
+  const r = await fetch('/api/report/' + encodeURIComponent(file));
+  const d = await r.json();
+
+  const delta = d.db_delta || {};
+  const colls = Object.entries(delta).filter(([, docs]) => docs && Object.keys(docs).length);
+  const deltaHtml = colls.length ? colls.map(([coll, docs]) => `
+    <div class="coll">${esc(coll)}</div>
+    ${Object.entries(docs).map(([id, info]) => `
+      <div class="delta ${esc(info.status)}">
+        <span class="badge ${esc(info.status)}">${esc(info.status)}</span>
+        <code style="margin-left:8px">${esc(id)}</code>
+        ${info.after ? `<div class="meta" style="margin-top:6px">después:</div><pre class="dim">${esc(JSON.stringify(info.after, null, 2))}</pre>` : ''}
+        ${info.before ? `<div class="meta" style="margin-top:6px">antes:</div><pre class="dim">${esc(JSON.stringify(info.before, null, 2))}</pre>` : ''}
+      </div>`).join('')}
+  `).join('') : `<div class="empty-delta">Sin cambios en Firestore — el handler no escribió nada.</div>`;
+
+  const logs = d.console_logs || [];
+
+  $('#detail').innerHTML = `
+    <h2>Reporte</h2>
+    <div class="card">
+      ${kv([
+        ['test', d.test_name],
+        ['estado', d.status],
+        ['entorno', d.environment],
+        ['duración', d.duration_ms + ' ms'],
+        ['archivo', d.report_path || '(no escrito)'],
+      ])}
+    </div>
+
+    <div class="tabs">
+      <div class="tab on" data-t="req">Request / Response</div>
+      <div class="tab" data-t="delta">Delta de Firestore</div>
+      <div class="tab" data-t="logs">Logs (${logs.length})</div>
+      <div class="tab" data-t="raw">JSON crudo</div>
+    </div>
+
+    <div class="panel on" id="p-req">
+      <div class="card">
+        <h2 style="margin-top:0">Request</h2>
+        ${kv([['método', d.http_request?.method], ['url', d.http_request?.url],
+               ['body', '']])}
+        <pre>${esc(JSON.stringify(d.http_request?.body ?? {}, null, 2))}</pre>
+      </div>
+      <div class="card">
+        <h2 style="margin-top:0">Response</h2>
+        ${kv([['status', d.response?.status_code]])}
+        <pre>${esc(JSON.stringify(d.response?.body ?? {}, null, 2))}</pre>
+      </div>
+    </div>
+
+    <div class="panel" id="p-delta">
+      <div class="card">${deltaHtml}</div>
+    </div>
+
+    <div class="panel" id="p-logs">
+      <div class="logs">${logs.length
+        ? logs.map((l) => `<div>${esc(l)}</div>`).join('')
+        : '<div style="color:var(--dim2)">Sin logs capturados</div>'}</div>
+    </div>
+
+    <div class="panel" id="p-raw">
+      <div class="card"><pre>${esc(JSON.stringify(d, null, 2))}</pre></div>
+    </div>`;
+
+  $('#detail').querySelectorAll('.tab').forEach((t) => {
+    t.onclick = () => {
+      $('#detail').querySelectorAll('.tab').forEach((x) => x.classList.remove('on'));
+      $('#detail').querySelectorAll('.panel').forEach((x) => x.classList.remove('on'));
+      t.classList.add('on');
+      $('#p-' + t.dataset.t).classList.add('on');
+    };
+  });
+}
+
+['#q', '#fstatus', '#fdelta'].forEach((s) => {
+  $(s).oninput = render;
+  $(s).onchange = render;
+});
+$('#reload').onclick = load;
+load();
+</script>
+</body>
+</html>

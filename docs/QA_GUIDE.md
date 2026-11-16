@@ -35,8 +35,10 @@ turnobot/
 ├── docs/QA_GUIDE.md           # esta guía
 ├── docs/BITACORA.md           # bitácora de aprendizaje
 ├── docs/NOTAS_CODIGO.md       # reglas de negocio extraídas del código
+├── docs/COMO_VER_LAS_PRUEBAS.md # cómo ver las pruebas en el navegador
 ├── docs/bugs/                 # bug reports
 ├── scripts/run-qa.sh          # ejecuta todo local
+├── scripts/qa-harness-viewer.mjs  # visor web de los reportes del arnés
 ├── harness.sh                 # orquestador local (emulador + backend + vite + Playwright)
 └── .github/workflows/qa.yml   # CI/CD
 ```
@@ -261,6 +263,19 @@ Para medir cobertura frontend: `npx vitest run --coverage` (requiere `@vitest/co
 - **Contract test**: valida que la API respete su contrato (campos, tipos, status).
 - **Smoke test**: prueba mínima de que el sistema arranca.
 - **Regression**: re-ejecutar tests para detectar roturas por cambios.
+
+## 9.b Ver las pruebas en el navegador
+
+Guía completa: **[docs/COMO_VER_LAS_PRUEBAS.md](COMO_VER_LAS_PRUEBAS.md)**.
+
+| Quiero… | Comando |
+|----------|---------|
+| Ver el test corriendo en vivo, poder parar y probar | `npm run test:e2e:ui` |
+| Depurar paso a paso con el DOM y las variables | `npm run test:e2e:debug` |
+| Ver el navegador working | `npm run test:e2e:headed` |
+| Revisar la corrida con video y errores | `npm run test:e2e:report` |
+| Rebobinar la ejecución paso a paso (trace viewer) | `npx playwright test <spec> --trace on` → `npx playwright show-trace <ruta>` |
+| **Ver qué escribió cada handler en Firestore** | `npm run qa:harness` |
 
 ## 10. Recursos
 

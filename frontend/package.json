@@ -16,6 +16,11 @@
     "test:e2e:gcp:smoke": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 SMOKE_PROD=1 playwright test smoke-prod.spec.js",
     "test:e2e:seed": "E2E_TARGET=gcp E2E_ALLOW_GCP=1 node e2e-tests/seed-gcp.mjs",
     "test:e2e:clean": "node e2e-tests/cleanup-staging.mjs",
+    "test:e2e:ui": "E2E_TARGET=local playwright test --ui",
+    "test:e2e:debug": "E2E_TARGET=local playwright test --debug",
+    "test:e2e:headed": "E2E_TARGET=local playwright test --headed",
+    "test:e2e:report": "playwright show-report",
+    "qa:harness": "node ../scripts/qa-harness-viewer.mjs --root .. --dir backend/test-reports",
     "test:unit": "vitest run"
   },
   "dependencies": {
